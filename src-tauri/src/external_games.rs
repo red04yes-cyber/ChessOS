@@ -354,6 +354,10 @@ fn bounded_archive_size(current: usize, chunk_len: usize) -> Option<usize> {
     (next <= MAX_ARCHIVE_BYTES).then_some(next)
 }
 
+fn pending_game_exceeds_limit(buffer: &[u8]) -> bool {
+    buffer.len() > MAX_GAME_PGN_BYTES
+}
+
 fn check_http_status(status: StatusCode, provider: &str) -> Result<(), String> {
     if status.is_success() {
         return Ok(());
@@ -478,6 +482,14 @@ pub async fn import_online_games(
                 buffer.extend_from_slice(&chunk);
                 let complete = take_complete_games(&mut buffer, false);
                 process_games(database.inner(), &app, &provider, &username, complete, &mut batch, &mut counts)?;
+                if pending_game_exceeds_limit(&buffer) {
+                    let _ = persist_batch(database.inner(), &mut batch, &mut counts);
+                    emit_progress(&app, &provider, &username, &counts, "interrupted");
+                    return Err(format!(
+                        "Una partita PGN dell'archivio {}/{} supera il limite di 5 MiB. Le partite già elaborate sono state salvate.",
+                        year, month
+                    ));
+                }
                 if counts.processed > 0 && counts.processed % 100 == 0 {
                     emit_progress(&app, &provider, &username, &counts, "download");
                 }
@@ -518,6 +530,13 @@ pub async fn import_online_games(
             buffer.extend_from_slice(&chunk);
             let games = take_complete_games(&mut buffer, false);
             process_games(database.inner(), &app, &provider, &username, games, &mut batch, &mut counts)?;
+            if pending_game_exceeds_limit(&buffer) {
+                let _ = persist_batch(database.inner(), &mut batch, &mut counts);
+                emit_progress(&app, &provider, &username, &counts, "interrupted");
+                return Err(
+                    "Una partita PGN Lichess supera il limite di 5 MiB. Le partite già elaborate sono state salvate.".into()
+                );
+            }
             if counts.processed % 100 == 0 && counts.processed > 0 {
                 emit_progress(&app, &provider, &username, &counts, "download");
             }
@@ -697,6 +716,13 @@ mod tests {
         assert_eq!(bounded_archive_size(MAX_ARCHIVE_BYTES - 1, 1), Some(MAX_ARCHIVE_BYTES));
         assert_eq!(bounded_archive_size(MAX_ARCHIVE_BYTES, 1), None);
         assert_eq!(bounded_archive_size(usize::MAX, 1), None);
+    }
+
+    #[test]
+    fn bounds_the_incomplete_game_buffer_for_both_providers() {
+        assert!(!pending_game_exceeds_limit(&[]));
+        assert!(!pending_game_exceeds_limit(&vec![b'x'; MAX_GAME_PGN_BYTES]));
+        assert!(pending_game_exceeds_limit(&vec![b'x'; MAX_GAME_PGN_BYTES + 1]));
     }
 
     #[test]
