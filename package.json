@@ -11,7 +11,9 @@
     "test": "node --test",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build"
+    "tauri:build": "tauri build",
+    "stockfish:install": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/install-stockfish.ps1",
+    "stockfish:smoke": "node scripts/stockfish-smoke.mjs"
   },
   "dependencies": {
     "chess.js": "1.4.0",
