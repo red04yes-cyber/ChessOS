@@ -61,6 +61,6 @@ test("supports all four promotion choices, including underpromotion", () => {
 test("recognises stalemate and insufficient material", () => {
   const stalemate = new Chess("7k/5Q2/6K1/8/8/8/8/8 b - - 0 1");
   assert.equal(stalemate.isStalemate(), true);
-  const insufficient = new Chess("8/8/8/8/8/8/4k3/4K3 w - - 0 1");
+  const insufficient = new Chess("8/8/8/8/8/8/4k3/7K w - - 0 1");
   assert.equal(insufficient.isInsufficientMaterial(), true);
 });
