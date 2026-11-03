@@ -8,9 +8,9 @@ This document describes the remaining owner-controlled steps for a public Chess 
 - [x] Rust/SQLite tests pass on Windows CI.
 - [x] NSIS installer builds and is uploaded by GitHub Actions.
 - [x] CI actions are pinned to Node 24-compatible releases.
-- [ ] Windows installer smoke test is automated: baseline install, app launch, test-only patch upgrade, SQLite sentinel preservation, uninstall and data-retention check; first run pending.
-- [ ] Verify the 90-day installer artifact and separate SHA-256 file on the next successful CI run.
-- [ ] Re-run and confirm the new install/upgrade/uninstall smoke test on the latest `main`.
+- [x] Windows installer smoke test passed in run #134: baseline install, app launch, test-only patch upgrade, SQLite sentinel preservation, uninstall and data-retention check.
+- [x] Verify installer SHA-256 sidecar and upload with the NSIS artifact (run #134; 90-day artifact retention).
+- [ ] Re-run and confirm the same checks on the latest `main` commit (`2288abac`, run #145 in progress).
 - [ ] Test on a separate clean Windows 10/11 VM or physical PC, including WebView2 bootstrapper behavior.
 - [ ] Choose and add the project licence.
 - [ ] Configure branch protection for `main`.
@@ -67,4 +67,4 @@ The owner must select the intended model before a `LICENSE` file is added. Stock
 6. Verify the published asset checksum after download.
 7. Store a second copy of the installer, checksum and release notes in a durable backup location.
 
-The release-notes file is a draft, not a published GitHub Release.
+The release-notes file is prepared, but there is no published GitHub Release yet. A tag-triggered workflow now creates the release and attaches the installer plus checksum after the verification jobs pass.
