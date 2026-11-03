@@ -353,7 +353,7 @@ fn parse_chess_com_archive_url(url: &str) -> Option<(String, String)> {
     let path = parsed.path().trim_end_matches('/');
     let parts: Vec<&str> = path.split('/').collect();
     if parts.len() != 7
-        || parts[0] != ""
+        || !parts[0].is_empty()
         || parts[1] != "pub"
         || parts[2] != "player"
         || parts[3].is_empty()
