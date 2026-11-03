@@ -26,7 +26,9 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis"],
+    "targets": [
+      "nsis"
+    ],
     "icon": [],
     "windows": {
       "webviewInstallMode": {
@@ -38,6 +40,9 @@
         "displayLanguageSelector": false,
         "startMenuFolder": "Chess OS"
       }
-    }
+    },
+    "resources": [
+      "resources/stockfish/*"
+    ]
   }
 }
