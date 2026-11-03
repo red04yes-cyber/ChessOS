@@ -9,6 +9,7 @@ import "@fontsource-variable/inter/wght.css";
 import "./style.css";
 
 const STORAGE_KEY = "chess-os.repertoire.v1";
+const UI_SETTINGS_KEY = "chess-os.ui.v1";
 const DEFAULT_FEN = new Chess().fen();
 const files = "abcdefgh";
 const pieceNames = {
@@ -75,6 +76,46 @@ const titleInput = $("#line-title");
 const moveListElement = $("#move-list");
 const promotionDialog = $("#promotion-dialog");
 const promotionOptions = $("#promotion-options");
+
+function readUiPreferences() {
+  const defaults = { theme: "dark", boardTheme: "salvia", coordinates: "inside", motion: "system" };
+  try {
+    const saved = JSON.parse(localStorage.getItem(UI_SETTINGS_KEY) || "{}");
+    return {
+      theme: ["dark", "light", "system"].includes(saved.theme) ? saved.theme : defaults.theme,
+      boardTheme: ["salvia", "noce", "ardesia"].includes(saved.boardTheme) ? saved.boardTheme : defaults.boardTheme,
+      coordinates: ["inside", "hidden"].includes(saved.coordinates) ? saved.coordinates : defaults.coordinates,
+      motion: ["system", "active", "reduced"].includes(saved.motion) ? saved.motion : defaults.motion,
+    };
+  } catch {
+    return defaults;
+  }
+}
+
+const uiPreferences = readUiPreferences();
+
+function applyUiPreferences() {
+  const systemDark = window.matchMedia?.("(prefers-color-scheme: dark)").matches ?? true;
+  const systemReduced = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+  const theme = uiPreferences.theme === "system" ? (systemDark ? "dark" : "light") : uiPreferences.theme;
+  const motion = uiPreferences.motion === "system" ? (systemReduced ? "reduced" : "active") : uiPreferences.motion;
+  document.documentElement.dataset.theme = theme;
+  document.documentElement.dataset.uiTheme = uiPreferences.theme;
+  document.documentElement.dataset.boardTheme = uiPreferences.boardTheme;
+  document.documentElement.dataset.coordinates = uiPreferences.coordinates;
+  document.documentElement.dataset.motion = motion;
+}
+
+function saveUiPreferences() {
+  try {
+    localStorage.setItem(UI_SETTINGS_KEY, JSON.stringify(uiPreferences));
+  } catch {
+    showToast("Non riesco a salvare le preferenze visive in questa sessione.", { type: "warning" });
+  }
+}
+
+applyUiPreferences();
+
 
 const engineEventsReady = desktopApp
   ? Promise.all([
@@ -181,12 +222,39 @@ function activeGame() {
   return mode === "training" && trainingGame ? trainingGame : game;
 }
 
-function showToast(message) {
-  const toast = $("#toast");
-  toast.textContent = message;
-  toast.classList.add("visible");
-  window.clearTimeout(toastTimer);
-  toastTimer = window.setTimeout(() => toast.classList.remove("visible"), 2600);
+function showToast(message, options = {}) {
+  const container = $("#toast");
+  if (!container) return;
+  const inferred = /(errore|non riusc|non valido|non disponibile|non riesco|timeout)/i.test(String(message))
+    ? "error"
+    : "info";
+  const type = ["success", "info", "warning", "error"].includes(options.type) ? options.type : inferred;
+  const icon = { success: "✓", info: "i", warning: "!", error: "×" }[type];
+  const item = document.createElement("div");
+  item.className = "toast-item toast-" + type;
+  item.setAttribute("role", type === "error" ? "alert" : "status");
+  const mark = document.createElement("span");
+  mark.className = "toast-icon";
+  mark.setAttribute("aria-hidden", "true");
+  mark.textContent = icon;
+  const text = document.createElement("p");
+  text.className = "toast-message";
+  text.textContent = String(message);
+  item.append(mark, text);
+  if (type === "error") {
+    const close = document.createElement("button");
+    close.type = "button";
+    close.className = "toast-close";
+    close.setAttribute("aria-label", "Chiudi notifica");
+    close.textContent = "×";
+    close.addEventListener("click", () => item.remove());
+    item.append(close);
+  }
+  container.append(item);
+  while (container.children.length > 3) container.firstElementChild?.remove();
+  const duration = type === "error" ? 10_000 : type === "warning" ? 5_000 : 2_800;
+  const timer = window.setTimeout(() => item.remove(), duration);
+  item.addEventListener("mouseenter", () => window.clearTimeout(timer), { once: true });
 }
 
 function setEngineStatus(message, state = "normal") {
