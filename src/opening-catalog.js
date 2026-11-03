@@ -30,7 +30,7 @@ export function getOpeningFamilies() {
 }
 
 export function positionSignature(fen) {
-  return String(fen || "").trim().split(/\\s+/).slice(0, POSITION_FIELDS).join(" ");
+  return String(fen || "").trim().split(/\s+/).slice(0, POSITION_FIELDS).join(" ");
 }
 
 export function buildOpeningIndex(rows = openingRows) {
