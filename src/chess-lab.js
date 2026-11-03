@@ -89,26 +89,30 @@ export function initChessLab(options) {
     element.classList.toggle("error", isError);
   }
 
-  const eventReady = listen("stockfish://line", (event) => {
-    const payload = event.payload || {};
-    const requestId = Number(payload.requestId ?? payload.request_id ?? 0);
-    const line = String(payload.line || "");
-    const search = pending.get(requestId);
-    if (!search) return;
-    if (line.startsWith("info ")) {
-      const info = parseUciInfo(line);
-      if (info && info.multipv === 1) search.info = info;
-    } else if (line.startsWith("bestmove ")) {
-      pending.delete(requestId);
-      window.clearTimeout(search.timer);
-      search.resolve({ bestmove: line.trim().split(/\s+/)[1] || "(none)", info: search.info });
-    }
-  });
+  let eventError = null;
+  const eventReady = desktopApp
+    ? listen("stockfish://line", (event) => {
+        const payload = event.payload || {};
+        const requestId = Number(payload.requestId ?? payload.request_id ?? 0);
+        const line = String(payload.line || "");
+        const search = pending.get(requestId);
+        if (!search) return;
+        if (line.startsWith("info ")) {
+          const info = parseUciInfo(line);
+          if (info && info.multipv === 1) search.info = info;
+        } else if (line.startsWith("bestmove ")) {
+          pending.delete(requestId);
+          window.clearTimeout(search.timer);
+          search.resolve({ bestmove: line.trim().split(/\s+/)[1] || "(none)", info: search.info });
+        }
+      }).catch((error) => { eventError = error; })
+    : Promise.resolve();
 
   async function ensureEngine() {
     if (!desktopApp) throw new Error("Stockfish è disponibile solo nell'app desktop Windows.");
     if (!(await startEngine())) throw new Error("Stockfish non è riuscito ad avviarsi.");
     await eventReady;
+    if (eventError) throw eventError;
   }
 
   async function searchPosition(fen, depth) {
