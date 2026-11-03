@@ -94,8 +94,19 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh run download "$GITHUB_RUN_ID" --name chess-os-windows-installer --dir release-assets
+      - name: Verify release asset checksum
+        shell: bash
+        run: |
+          installer="$(find release-assets -type f -name '*.exe' -print -quit)"
+          checksum="$(find release-assets -type f -name '*.sha256' -print -quit)"
+          test -n "$installer" && test -n "$checksum"
+          expected="$(awk '{print $1}' "$checksum")"
+          actual="$(sha256sum "$installer" | awk '{print $1}')"
+          test "$expected" = "$actual"
+          echo "INSTALLER_ASSET=$installer" >> "$GITHUB_ENV"
+          echo "CHECKSUM_ASSET=$checksum" >> "$GITHUB_ENV"
       - name: Publish GitHub Release with notes, installer and checksum
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" --verify-tag --title "Chess OS $GITHUB_REF_NAME" --notes-file "docs/releases/$GITHUB_REF_NAME.md" release-assets/*.exe release-assets/*.sha256
+          gh release create "$GITHUB_REF_NAME" --verify-tag --title "Chess OS $GITHUB_REF_NAME" --notes-file "docs/releases/$GITHUB_REF_NAME.md" "$INSTALLER_ASSET" "$CHECKSUM_ASSET"
