@@ -68,15 +68,15 @@ function tokenizeMovetext(source) {
 
 function parseHeaders(pgn) {
   const headers = {};
-  const body = pgn.replace(/^\s*\[([A-Za-z0-9_]+)\s+"([^"]*)"\]\s*$/gm, (_line, key, value) => {
-    headers[key] = value;
+  const body = pgn.replace(/^\s*\[([A-Za-z0-9_]+)\s+"((?:\\.|[^"])*)"\]\s*$/gm, (_line, key, value) => {
+    headers[key] = value.replace(/\\(["\\])/g, "$1");
     return "";
   });
   return { headers, body };
 }
 
 function escapeHeader(value) {
-  return String(value).replace(/\\\\/g, "\\\\\\\\").replace(/"/g, '\\\"');
+  return String(value).replaceAll("\\", "\\\\").replaceAll('"', '\\"');
 }
 
 function moveUci(move) {
