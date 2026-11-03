@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { RepertoireTree } from "../src/repertoire-tree.js";
 import {
   encodeBoardMarks, emptyBoardMarks, nagsToSymbols, normalizeNag,
   parseBoardMarks, stripBoardMarkTags, toggleArrowMark, toggleSquareMark,
@@ -32,4 +33,19 @@ test("supports common move NAGs and renders their symbols", () => {
   assert.equal(normalizeNag("$3"), "$3");
   assert.equal(normalizeNag("$999"), "");
   assert.equal(nagsToSymbols(["$1", "$5", "$2"]), "!!??");
+});
+
+test("round trips move comments and visual markings through PGN storage", () => {
+  const source = '1. e4 {Plan the center. [%csl Ge4] [%cal Gg1f3]} e5 *';
+  const tree = RepertoireTree.fromPgn(source);
+  const edge = tree.getOutgoing(tree.rootId)[0];
+  assert.equal(stripBoardMarkTags(edge.comment), "Plan the center.");
+  assert.deepEqual(parseBoardMarks(edge.comment), {
+    squares: [{ color: "G", square: "e4" }],
+    arrows: [{ color: "G", from: "g1", to: "f3" }],
+  });
+  const restored = RepertoireTree.fromPgn(tree.toPgn());
+  const restoredEdge = restored.getOutgoing(restored.rootId)[0];
+  assert.deepEqual(parseBoardMarks(restoredEdge.comment), parseBoardMarks(edge.comment));
+  assert.equal(stripBoardMarkTags(restoredEdge.comment), "Plan the center.");
 });
