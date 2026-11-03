@@ -36,16 +36,27 @@ test("exports and re-imports a PGN with nested RAV branches", () => {
   assert.match(exported, /\(2\. Bc4/);
 });
 
-test("merges transposed positions reached through different move orders", () => {
-  const pgn = [
-    "1. Nf3 (1. g3 d5 2. Nf3 Nf6 3. Bg2) d5 2. g3 Nf6 3. Bg2 *",
-  ].join("\n");
+test("merges transposed positions even when FEN move clocks differ", () => {
+  const pgn = "1. e4 (1. Nf3 Nc6 2. e4 e5) e5 2. Nf3 Nc6 *";
   const tree = RepertoireTree.fromPgn(pgn);
-  const bishopMoves = [...tree.edges.values()].filter((edge) => edge.san === "Bg2");
+  const merged = [...tree.nodes.values()].find((node) => node.incoming.length === 2);
 
-  assert.equal(bishopMoves.length, 2);
-  assert.equal(bishopMoves[0].to, bishopMoves[1].to);
-  assert.equal(tree.getIncoming(bishopMoves[0].to).length, 2);
+  assert.ok(merged, "the two move orders should converge on one position node");
+  const incoming = tree.getIncoming(merged.id);
+  assert.equal(incoming.length, 2);
+  assert.notEqual(
+    tree.getNode(incoming[0].from).fen.split(/\\s+/)[4],
+    tree.getNode(incoming[1].from).fen.split(/\\s+/)[4],
+  );
+});
+
+test("keeps repeated positions acyclic without dropping the repetition from PGN", () => {
+  const tree = RepertoireTree.fromPgn("1. Nf3 Nf6 2. Ng1 Ng8 3. Nf3 *");
+  assert.equal(tree.edges.size, 5);
+  assert.equal(tree.mainlinePath().length, 5);
+
+  const restored = RepertoireTree.fromPgn(tree.toPgn());
+  assert.equal(restored.edges.size, 5);
 });
 
 test("allows editing a branch and exporting the new continuation", () => {
