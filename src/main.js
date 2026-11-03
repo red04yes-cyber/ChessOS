@@ -2639,6 +2639,12 @@ chessSuite = initializeChessSuite({
     const edgeId = studioPath[studioPly - 1];
     return edgeId ? studioTree.getEdge(edgeId) : null;
   },
+  getStudyMetrics: () => ({
+    reviewCards: activeLineId
+      ? buildReviewCards(repertoire.filter((entry) => entry.id === activeLineId), studyCards, new Date())
+      : [],
+    reviewLogs,
+  }),
   onAnnotationSaved: () => {
     setDirty(true);
     renderAll();
