@@ -80,3 +80,11 @@ On first desktop startup, Chess OS imports legacy `chess-os.repertoire.v1` entri
 ## License
 
 No license has been selected yet. All rights remain with the project owner unless a license is added.
+
+## Visual design refresh
+
+The desktop interface uses a local, token-based design system documented in [docs/DESIGN.md](docs/DESIGN.md). It includes dark, light and system UI themes; Salvia, Walnut and Slate board themes; local inline SVG chess pieces; internal board coordinates; pointer drag-and-drop alongside click-to-move; and reduced-motion support. Appearance settings use a separate `chess-os.ui.v1` localStorage key and do not alter repertoire or SQLite data.
+
+No external fonts, icons, image services, or runtime network assets are introduced by the visual refresh. The piece artwork is an original geometric set included inline in `index.html`. The font stack uses system UI fonts installed on the user's operating system.
+
+The new interface keeps the existing Studio, FSRS-6 review, Dashboard, repertoire exams, imported-game library, and SQLite persistence. The UI refresh does not change the repertoire graph, database schema, Tauri commands, or saved record formats. Manual Windows/WebView2 visual and accessibility checks are listed in [docs/DESIGN.md](docs/DESIGN.md).
