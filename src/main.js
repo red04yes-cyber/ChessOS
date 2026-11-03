@@ -11,6 +11,12 @@ import {
   parseUci,
   selectDailyCards,
 } from "./fsrs-review.js";
+import {
+  buildDashboardSnapshot,
+  calculateExamResult,
+  normalizeStudyGoal,
+  selectExamQuestions,
+} from "./dashboard.js";
 import "./style.css";
 
 const STORAGE_KEY = "chess-os.repertoire.v1";
@@ -40,7 +46,21 @@ let trainingStartFen = DEFAULT_FEN;
 let studyCards = [];
 let reviewLogs = [];
 let reviewSessions = [];
+let studyGoals = [];
+let examAttempts = [];
+let examAnswers = [];
 let reviewQueue = [];
+let examQueue = [];
+let currentExamCard = null;
+let examAttemptId = null;
+let examQuestionIndex = 0;
+let examTotalQuestions = 0;
+let examCorrectCount = 0;
+let examAnswered = false;
+let examFeedback = "";
+let examLastMove = null;
+let examPassThreshold = 70;
+let isSavingExamAnswer = false;
 let currentReviewCard = null;
 let reviewSessionId = null;
 let reviewSessionTotal = 0;
@@ -99,9 +119,12 @@ function readReviewState() {
       cards: Array.isArray(parsed.cards) ? parsed.cards : [],
       logs: Array.isArray(parsed.logs) ? parsed.logs : [],
       sessions: Array.isArray(parsed.sessions) ? parsed.sessions : [],
+      goals: Array.isArray(parsed.goals) ? parsed.goals : [],
+      examAttempts: Array.isArray(parsed.examAttempts) ? parsed.examAttempts : [],
+      examAnswers: Array.isArray(parsed.examAnswers) ? parsed.examAnswers : [],
     };
   } catch {
-    return { cards: [], logs: [], sessions: [] };
+    return { cards: [], logs: [], sessions: [], goals: [], examAttempts: [], examAnswers: [] };
   }
 }
 
@@ -111,6 +134,9 @@ function persistLocalReviewState() {
       cards: studyCards,
       logs: reviewLogs,
       sessions: reviewSessions,
+      goals: studyGoals,
+      examAttempts,
+      examAnswers,
     }));
     return true;
   } catch {
@@ -121,9 +147,12 @@ function persistLocalReviewState() {
 
 async function loadStudyData() {
   if (persistenceMode === "sqlite") {
-    const [storedCards, storedLogs] = await Promise.all([
+    const [storedCards, storedLogs, storedSessions, storedGoals, storedExams] = await Promise.all([
       invoke("list_study_cards"),
       invoke("list_review_logs"),
+      invoke("list_training_sessions"),
+      invoke("list_study_goals"),
+      invoke("list_exam_attempts"),
     ]);
     studyCards = storedCards.map((record) => {
       let fsrs;
@@ -131,12 +160,18 @@ async function loadStudyData() {
       return { ...record, fsrs };
     }).filter((record) => record.fsrs && typeof record.fsrs === "object");
     reviewLogs = storedLogs;
-    reviewSessions = [];
+    reviewSessions = storedSessions;
+    studyGoals = storedGoals;
+    examAttempts = storedExams;
+    examAnswers = [];
   } else {
     const saved = readReviewState();
     studyCards = saved.cards;
     reviewLogs = saved.logs;
     reviewSessions = saved.sessions;
+    studyGoals = saved.goals;
+    examAttempts = saved.examAttempts;
+    examAnswers = saved.examAnswers;
   }
 }
 
