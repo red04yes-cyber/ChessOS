@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="it">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#10151d" />
+    <meta name="description" content="Chess OS — repertorio, studio e allenamento scacchistico." />
+    <title>Chess OS</title>
+  </head>
+  <body>
+    <div id="app">
+      <header class="topbar">
+        <a class="brand" href="#" aria-label="Chess OS home">
+          <span class="brand-mark">♞</span>
+          <span>CHESS <b>OS</b><small>STUDY DESK</small></span>
+        </a>
+        <div class="topbar-center"><span class="status-dot"></span> WORKSPACE LOCALE</div>
+        <div class="topbar-right"><span class="version">PREVIEW 0.1.0</span></div>
+      </header>
+
+      <main class="app-shell">
+        <aside class="sidebar">
+          <div class="section-kicker">WORKSPACE</div>
+          <button class="nav-item active" id="nav-studio"><span>▦</span> Studio</button>
+          <button class="nav-item" id="nav-training"><span>♟</span> Allenamento</button>
+          <div class="sidebar-heading">
+            <span>IL MIO REPERTORIO</span>
+            <button class="icon-button" id="new-line" title="Nuova partita">＋</button>
+          </div>
+          <div id="repertoire-list" class="repertoire-list"></div>
+          <div class="sidebar-note">
+            <span class="note-icon">◈</span>
+            <div><b>Salvataggio locale</b><small>Le linee restano su questo dispositivo.</small></div>
+          </div>
+        </aside>
+
+        <section class="workspace">
+          <div class="page-heading">
+            <div>
+              <div class="eyebrow" id="mode-eyebrow">REPERTORIO / ANALISI</div>
+              <h1 id="page-title">Chess Studio</h1>
+              <p id="page-subtitle">Costruisci le tue linee, una mossa alla volta.</p>
+            </div>
+            <div class="heading-actions">
+              <button class="button ghost" id="undo">↶ <span>Annulla</span></button>
+              <button class="button ghost" id="reset">Nuova posizione</button>
+              <button class="button primary" id="save-line">Salva linea <span>＋</span></button>
+            </div>
+          </div>
+
+          <div class="study-grid">
+            <section class="board-panel">
+              <div class="board-topline">
+                <div><span class="live-dot"></span><span id="board-label">PARTITA IN CORSO</span></div>
+                <span class="turn-label" id="turn-label">Bianco al tratto</span>
+              </div>
+              <div class="board-wrap">
+                <div class="rank-labels" aria-hidden="true"><span>8</span><span>7</span><span>6</span><span>5</span><span>4</span><span>3</span><span>2</span><span>1</span></div>
+                <div id="chessboard" class="chessboard" role="group" aria-label="Scacchiera"></div>
+                <div class="file-labels" aria-hidden="true"><span>a</span><span>b</span><span>c</span><span>d</span><span>e</span><span>f</span><span>g</span><span>h</span></div>
+              </div>
+              <div class="board-footer">
+                <span id="game-status">Partita pronta</span>
+                <span id="move-count">0 mosse</span>
+              </div>
+            </section>
+
+            <aside class="details-panel">
+              <section class="detail-card line-card">
+                <div class="card-heading"><span class="card-icon">⌘</span><span>LINEA ATTIVA</span></div>
+                <label class="field-label" for="line-title">Nome del repertorio</label>
+                <input id="line-title" class="text-input" maxlength="70" value="Nuova linea" />
+                <div class="line-meta"><span id="line-move-count">Ancora nessuna mossa</span><span class="saved-indicator" id="saved-indicator">NON SALVATA</span></div>
+              </section>
+
+              <section class="detail-card moves-card">
+                <div class="card-heading"><span class="card-icon">≋</span><span>NOTAZIONE</span></div>
+                <div id="move-list" class="move-list"><span class="empty-state">Le mosse appariranno qui.</span></div>
+              </section>
+
+              <section class="detail-card import-card">
+                <div class="card-heading"><span class="card-icon">⇧</span><span>IMPORTA PGN</span></div>
+                <textarea id="pgn-input" class="pgn-input" rows="3" placeholder="Incolla qui una partita o una linea in formato PGN…"></textarea>
+                <div class="import-actions">
+                  <button class="button small ghost" id="import-pgn">Carica PGN</button>
+                  <button class="button small ghost" id="export-pgn">Esporta PGN ↓</button>
+                </div>
+              </section>
+            </aside>
+          </div>
+          <div class="workspace-footer"><span>CHESS OS <b>·</b> I tuoi dati restano sul dispositivo</span><span>LEGAL MOVES <i>ON</i></span></div>
+        </section>
+      </main>
+      <div id="toast" class="toast" role="status" aria-live="polite"></div>
+      <script type="module" src="/src/main.js"></script>
+    </div>
+  </body>
+</html>
