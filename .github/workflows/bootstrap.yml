@@ -1,0 +1,63 @@
+name: Bootstrap, verify and package Chess OS
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reconstruct the source tree
+        shell: pwsh
+        run: |
+          $archive = "chessos-source-0.7.0.tar.gz.b64"
+          if (Test-Path $archive) {
+            $encoded = Get-Content $archive -Raw
+            [IO.File]::WriteAllBytes("chessos-source-0.7.0.tar.gz", [Convert]::FromBase64String($encoded))
+            tar -xzf chessos-source-0.7.0.tar.gz -C .
+            Remove-Item $archive, "chessos-source-0.7.0.tar.gz"
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add -A
+            git commit -m "chore: publish Chess OS 0.7.0 source tree"
+            git push origin HEAD:main
+          }
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+      - name: Install dependencies and generate Stockfish assets
+        run: npm install --no-audit --no-fund
+      - name: Verify dependencies and Stockfish assets
+        run: |
+          npm ls chess.js ts-fsrs stockfish react react-dom
+          npm run verify:stockfish
+      - name: Type-check
+        run: npm run typecheck
+      - name: Unit and migration tests
+        run: |
+          npm test
+          npm run verify:schema
+      - name: Browser engine test
+        run: |
+          npx playwright install chromium
+          npm run build
+          npm run smoke:engine
+      - name: Build Windows installer
+        run: npm run tauri:build -- --bundles nsis
+      - name: Smoke test desktop executable
+        shell: pwsh
+        run: ./scripts/smoke-windows-exe.ps1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: chess-os-windows-nsis
+          path: src-tauri/target/release/bundle/nsis/*.exe
+          if-no-files-found: error
