@@ -5,6 +5,7 @@ import { classifyBoardMove } from "./board-input.js";
 import { listenForOptionalImportProgress } from "./online-import-progress.js";
 import { RepertoireTree } from "./repertoire-tree.js";
 import { initializeChessSuite } from "./chess-suite.js";
+import { initializeExtendedTraining } from "./extended-training.js";
 import { fenToEditorState, editorStateToFen } from "./fen-editor.js";
 import { createOpeningPreset, getOpeningFamilyCount, identifyOpeningFromFens } from "./opening-catalog.js";
 import { encodeBoardMarks, emptyBoardMarks, nagsToSymbols, normalizeNag, parseBoardMarks, stripBoardMarkTags, toggleArrowMark, toggleSquareMark } from "./board-annotations.js";
@@ -44,6 +45,7 @@ const promotionNames = { q: "Donna", r: "Torre", b: "Alfiere", n: "Cavallo" };
 let game = new Chess();
 let mode = "studio";
 let chessSuite = null;
+let extendedTraining = null;
 let selectedSquare = null;
 let boardFlipped = false;
 let pendingPromotion = null;
@@ -1139,6 +1141,7 @@ function renderAll() {
   renderExamPanel();
   renderImportedGames();
   renderBackupList();
+  extendedTraining?.refresh();
 }
 
 function renderImportedGames() {
@@ -2973,6 +2976,29 @@ $("#fen-editor-standard").addEventListener("click", () => {
 });
 $("#fen-editor-apply").addEventListener("click", applyFenEditorPosition);
 $("#save-line").addEventListener("click", saveLine);
+$("#select-pgn-file").addEventListener("click", () => $("#pgn-file").click());
+$("#pgn-file").addEventListener("change", async (event) => {
+  const input = event.currentTarget;
+  const file = input.files?.[0];
+  if (!file) return;
+  try {
+    if (file.size > 10_000_000) {
+      showToast("Il file PGN supera il limite di 10 MB.", { type: "warning" });
+      return;
+    }
+    const contents = await file.text();
+    if (!contents.trim()) {
+      showToast("Il file selezionato è vuoto.", { type: "warning" });
+      return;
+    }
+    $("#pgn-input").value = contents;
+    showToast("File PGN caricato. Premi “Carica PGN” per importarlo.");
+  } catch (error) {
+    showToast("Impossibile leggere il file PGN: " + (error?.message || String(error)), { type: "error" });
+  } finally {
+    input.value = "";
+  }
+});
 $("#import-pgn").addEventListener("click", importPgn);
 $("#export-pgn").addEventListener("click", exportPgn);
 $("#promotion-cancel").addEventListener("click", () => {
@@ -3085,6 +3111,19 @@ document.addEventListener("keydown", (event) => {
 });
 
 
+extendedTraining = initializeExtendedTraining({
+  getCurrentTree: () => studioTree,
+  getCurrentMoves: () => studioMoveObjects,
+  getBaseFen: () => baseFen,
+  getCurrentTitle: () => titleInput.value,
+  loadPath: (edgeIds) => {
+    syncStudioPath(edgeIds);
+    selectedSquare = null;
+    mode = "studio";
+    renderAll();
+  },
+  toast: showToast,
+});
 chessSuite = initializeChessSuite({
   getCurrentTree: () => studioTree,
   loadGeneratedTree: (tree, title) => {
@@ -3106,7 +3145,22 @@ chessSuite = initializeChessSuite({
     setDirty(true);
     renderAll();
   },
+  onImportedGames: (pgn) => extendedTraining?.loadImportedPgn(pgn),
 });
+
+function createEndgameFlashcard() {
+  const lesson = chessSuite?.getCurrentEndgameLesson?.();
+  if (!lesson) {
+    showToast("Seleziona prima una lezione Endgame.", { type: "warning" });
+    return;
+  }
+  extendedTraining?.addConceptCard({
+    front: "Richiama la tecnica: " + lesson.title + ". " + lesson.focus,
+    back: "Obiettivo: " + lesson.objective + "\n\nMetodo: " + lesson.method + "\n\nErrore tipico: " + lesson.errors,
+    fen: lesson.fen,
+  });
+}
+$("#endgame-create-card")?.addEventListener("click", createEndgameFlashcard);
 
 renderAll();
 void initializePersistence();

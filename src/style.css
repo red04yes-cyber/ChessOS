@@ -927,3 +927,47 @@ h1 { color: var(--text); font-weight: 750; }
   z-index: 2;
 }
 .chessboard .piece { pointer-events: none; -webkit-user-drag: none; }
+
+
+/* Extended training: FSRS flashcards, blindfold, heatmap and transpositions */
+.flashcard-review, .heatmap-list, .transposition-list { display:grid; gap:9px; margin-top:10px; }
+.flashcard-face, .flashcard-answer { border:1px solid var(--border,#39495b); border-radius:7px; padding:13px; color:var(--text-primary,#e5ebf2); background:var(--surface-raised,#192330); font-size:12px; line-height:1.6; }
+.flashcard-answer { font-weight:700; }
+.blindfold-input-wrap { margin-top:13px; padding-top:12px; border-top:1px solid var(--border,#303c4b); }
+.blindfold-input-wrap[hidden] { display:none; }
+.blindfold-input-wrap .tool-actions { align-items:stretch; }
+.blindfold-input-wrap input { flex:1; min-width:90px; }
+.heatmap-list, .transposition-list { max-height:300px; overflow:auto; }
+.heatmap-row { display:grid; grid-template-columns:9px minmax(0,1fr) auto; align-items:center; gap:9px; padding:8px 9px; border:1px solid var(--border,#303d4d); border-radius:6px; background:var(--surface-raised,#192330); }
+.heatmap-marker { width:8px; height:8px; border-radius:50%; background:#677587; }
+.heatmap-marker.weak { background:#d46d62; }
+.heatmap-marker.learning { background:#d4a44d; }
+.heatmap-marker.stable { background:#70af86; }
+.heatmap-position { min-width:0; display:grid; gap:3px; }
+.heatmap-position strong { font:10px/1.35 ui-monospace,SFMono-Regular,Consolas,monospace; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.heatmap-position small,.heatmap-state { color:var(--text-muted,#8695a8); font-size:9px; }
+.heatmap-state { text-align:right; }
+.report-heading { display:block; font-size:10px; margin:10px 0 5px; }
+.report-row { font-size:10px; line-height:1.5; padding:4px 0; border-bottom:1px solid var(--border,#2b3745); overflow-wrap:anywhere; }
+.transposition-entry { padding:10px; border:1px solid var(--border,#39495b); border-radius:7px; background:var(--surface-raised,#192330); }
+.transposition-entry strong { display:block; font-size:10px; }
+.transposition-entry small { display:block; margin-top:5px; font:9px ui-monospace,SFMono-Regular,Consolas,monospace; overflow-wrap:anywhere; }
+.transposition-path-button { display:block; width:100%; margin-top:7px; padding:7px 9px; border:1px solid var(--border,#354354); border-radius:5px; background:var(--surface-raised,#202a37); color:inherit; font:inherit; font-size:10px; line-height:1.5; text-align:left; cursor:pointer; }
+.transposition-path-button:hover,.transposition-path-button:focus-visible { border-color:var(--accent,#b68b50); outline:2px solid transparent; }
+.endgame-lab { grid-column:1 / -1; }
+.endgame-selectors { display:grid; grid-template-columns:minmax(180px,.8fr) minmax(260px,1.2fr); gap:12px; margin:12px 0; }
+.endgame-lesson { display:grid; gap:7px; padding:13px; border:1px solid var(--border,#354253); border-radius:7px; font-size:11px; line-height:1.6; }
+.endgame-lesson p { margin:0; }
+.endgame-progress-row { display:flex; align-items:center; justify-content:space-between; gap:12px; margin:5px 0 10px; }
+.endgame-progress-row .tool-description { margin:0; text-align:right; }
+.endgame-workbench { display:grid; grid-template-columns:minmax(220px,380px) minmax(220px,1fr); align-items:start; gap:16px; margin-top:14px; }
+.endgame-feedback { display:grid; gap:9px; align-content:start; }
+.endgame-feedback p { padding:10px; margin:0; border:1px solid var(--border,#303d4d); border-radius:6px; background:var(--surface-raised,#192330); }
+body.blindfold-active .board-panel,body.blindfold-active .moves-card,body.blindfold-active .variations-card,body.blindfold-active #undo,body.blindfold-active #redo,body.blindfold-active #copy-fen { display:none !important; }
+@media(max-width:850px) {
+ .endgame-lab { grid-column:auto; }
+ .endgame-selectors,.endgame-workbench { grid-template-columns:1fr; }
+ .endgame-workbench .mini-board { margin-inline:auto; }
+ .endgame-progress-row { align-items:flex-start; flex-direction:column; }
+ .endgame-progress-row .tool-description { text-align:left; }
+}
