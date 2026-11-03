@@ -2619,3 +2619,421 @@
     }
   }
 }
+
+@layer utilities {
+  .repertoire-search {
+    position: sticky;
+    top: 0;
+    z-index: var(--z-sticky);
+    padding: 4px 0 7px;
+    background: var(--bg-1);
+  }
+
+  .repertoire-search .text-input {
+    min-height: 34px;
+    font-size: 13px;
+  }
+
+  .repertoire-entry {
+    position: relative;
+    min-height: 56px;
+    align-items: center;
+    gap: 7px;
+    padding-right: 2px;
+  }
+
+  .repertoire-open {
+    min-height: 52px;
+    padding: 7px 9px;
+  }
+
+  .repertoire-open small {
+    font-size: 12px;
+    line-height: 1.35;
+  }
+
+  .repertoire-menu {
+    position: relative;
+    flex: 0 0 34px;
+    align-self: center;
+  }
+
+  .repertoire-menu > summary {
+    width: 32px;
+    height: 32px;
+    display: grid;
+    place-items: center;
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    color: var(--text-2);
+    font-size: 19px;
+    line-height: 1;
+    list-style: none;
+    cursor: pointer;
+  }
+
+  .repertoire-menu > summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .repertoire-menu > summary:hover,
+  .repertoire-menu[open] > summary {
+    border-color: var(--border);
+    background: var(--surface-2);
+    color: var(--text-1);
+  }
+
+  .repertoire-menu-panel {
+    position: absolute;
+    z-index: var(--z-menu);
+    top: calc(100% + 4px);
+    right: 0;
+    width: 160px;
+    display: grid;
+    gap: 2px;
+    padding: 5px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background: var(--surface-2);
+    box-shadow: var(--shadow-2);
+  }
+
+  .repertoire-menu-panel button {
+    min-height: 34px;
+    padding: 7px 9px;
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--text-1);
+    text-align: left;
+    font-size: 13px;
+    cursor: pointer;
+  }
+
+  .repertoire-menu-panel button:hover {
+    background: var(--surface-3);
+  }
+
+  .repertoire-menu-panel button.menu-danger {
+    color: var(--danger);
+  }
+
+  .repertoire-menu-panel button.menu-danger:hover {
+    background: var(--danger-soft);
+  }
+
+  .menu-separator {
+    height: 1px;
+    margin: 3px 2px;
+    background: var(--border);
+  }
+
+  .repertoire-empty {
+    display: grid;
+    justify-items: start;
+    gap: 8px;
+    margin-top: 5px;
+    padding: 14px 11px;
+    border: 1px dashed var(--border-strong);
+    border-radius: var(--radius-md);
+    color: var(--text-2);
+  }
+
+  .repertoire-empty p {
+    margin: 0;
+    color: var(--text-2);
+    font-size: 13px;
+  }
+
+  .variation-list {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 7px;
+    max-height: 180px;
+    padding: 2px 1px 5px;
+  }
+
+  .variation-choice {
+    width: auto;
+    min-height: 34px;
+    flex: 0 0 auto;
+    justify-content: flex-start;
+    gap: 7px;
+    padding: 6px 9px;
+    border-radius: 99px;
+    background: var(--surface-2);
+  }
+
+  .variation-choice strong {
+    color: var(--text-1);
+    font-size: 14px;
+  }
+
+  .variation-choice small {
+    padding-left: 7px;
+    border-left: 1px solid var(--border);
+    color: var(--text-3);
+    font-size: 11px;
+    text-align: left;
+  }
+
+  .variation-choice.selected {
+    border-color: var(--accent-line);
+    background: var(--accent-soft);
+  }
+
+  .variation-choice.selected strong {
+    color: var(--accent-hover);
+  }
+
+  .square.hint-source,
+  .square.hint-target {
+    background-image: linear-gradient(var(--hl-hint), var(--hl-hint));
+  }
+
+  .square.hint-target {
+    box-shadow: inset 0 0 0 3px color-mix(in srgb, var(--success) 75%, transparent);
+  }
+
+  .square.training-error {
+    background-image: linear-gradient(var(--hl-error), var(--hl-error));
+  }
+
+  .square.invalid-move {
+    animation: invalid-square 120ms ease-out;
+  }
+
+  @keyframes invalid-square {
+    0% { transform: translateX(0); }
+    30% { transform: translateX(-2px); }
+    70% { transform: translateX(2px); }
+    100% { transform: translateX(0); }
+  }
+
+  .training-session-card[hidden] {
+    display: none;
+  }
+
+  .training-session-card {
+    min-height: 0;
+    display: grid;
+    align-content: start;
+    gap: 15px;
+    padding: 16px;
+  }
+
+  body[data-mode="training"] .line-card,
+  body[data-mode="training"] .moves-card,
+  body[data-mode="training"] .variations-card,
+  body[data-mode="training"] .tools-card,
+  body[data-mode="training"] .chess-lab-card {
+    display: none;
+  }
+
+  body[data-mode="training"] #training-session-card {
+    display: grid;
+    flex: 1 1 auto;
+  }
+
+  .training-empty {
+    display: grid;
+    justify-items: start;
+    gap: 9px;
+    padding: 12px 0;
+  }
+
+  .training-empty[hidden] {
+    display: none;
+  }
+
+  .training-empty h2 {
+    margin: 0;
+    font-size: 18px;
+  }
+
+  .training-empty p {
+    margin: 0;
+    font-size: 13px;
+    line-height: 1.5;
+  }
+
+  .training-progress-meta {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    color: var(--text-2);
+    font-size: 13px;
+  }
+
+  .training-progress-meta b {
+    color: var(--danger);
+    font-weight: 700;
+  }
+
+  .training-progress {
+    height: 7px;
+    overflow: hidden;
+    border-radius: 99px;
+    background: var(--surface-3);
+  }
+
+  .training-progress span {
+    display: block;
+    width: 0;
+    height: 100%;
+    border-radius: inherit;
+    background: var(--accent);
+    transition: width 200ms var(--ease-out);
+  }
+
+  .training-stats {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .training-stats > div {
+    min-width: 0;
+    display: grid;
+    gap: 4px;
+    padding: 11px 9px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background: var(--surface-2);
+  }
+
+  .training-stats strong {
+    color: var(--text-1);
+    font-size: 21px;
+    font-weight: 700;
+    line-height: 1.1;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .training-stats span {
+    color: var(--text-2);
+    font-size: 12px;
+    line-height: 1.35;
+  }
+
+  .training-status {
+    min-height: 42px;
+    padding: 10px 11px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--surface-2);
+    color: var(--text-2);
+    font-size: 13px;
+    line-height: 1.45;
+  }
+
+  .training-status.error {
+    border-color: var(--danger);
+    background: var(--danger-soft);
+    color: var(--danger);
+  }
+
+  .training-status.success {
+    border-color: var(--success);
+    background: var(--success-soft);
+    color: var(--success);
+  }
+
+  .training-hint-text {
+    min-height: 20px;
+    margin: 0;
+    color: var(--accent-hover);
+    font-size: 13px;
+    font-weight: 600;
+  }
+
+  .training-history-heading {
+    margin: 2px 0 0;
+    color: var(--text-2);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+  }
+
+  .training-move-history {
+    max-height: min(24dvh, 210px);
+    min-height: 55px;
+    padding: 5px;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    background: var(--surface-1);
+  }
+
+  .training-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 7px;
+  }
+
+  .training-actions .button {
+    white-space: normal;
+  }
+
+  .training-actions #training-exit {
+    grid-column: 1 / -1;
+  }
+
+  .training-summary {
+    display: grid;
+    gap: 9px;
+    padding: 13px;
+    border: 1px solid color-mix(in srgb, var(--success) 35%, var(--border));
+    border-radius: var(--radius-md);
+    background: var(--success-soft);
+    color: var(--text-1);
+  }
+
+  .training-summary[hidden] {
+    display: none;
+  }
+
+  .training-summary h3 {
+    margin: 0;
+    color: var(--text-1);
+    font-size: 16px;
+  }
+
+  .training-summary p {
+    margin: 0;
+    color: var(--text-2);
+    font-size: 13px;
+  }
+
+  .training-summary-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 7px;
+  }
+
+  .training-summary-grid span {
+    padding: 7px 8px;
+    border: 1px solid color-mix(in srgb, var(--success) 20%, var(--border));
+    border-radius: var(--radius-sm);
+    background: var(--surface-1);
+    color: var(--text-2);
+    font-size: 12px;
+  }
+
+  .training-summary-grid b {
+    color: var(--text-1);
+    font-size: 16px;
+  }
+
+  body[data-mode="training"] .board-navigation #undo,
+  body[data-mode="training"] .board-navigation #redo,
+  body[data-mode="training"] .board-navigation #to-start,
+  body[data-mode="training"] .board-navigation #to-end {
+    display: none;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .square.invalid-move {
+      animation: none;
+    }
+  }
+}
