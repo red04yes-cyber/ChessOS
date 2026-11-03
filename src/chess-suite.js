@@ -32,7 +32,7 @@ function setButtonBusy(button, busy, label) {
   if (busy) { button.dataset.originalLabel = button.textContent; button.textContent = label || "Elaborazione…"; }
   else if (button.dataset.originalLabel) { button.textContent = button.dataset.originalLabel; delete button.dataset.originalLabel; }
 }
-async async function getAppSetting(key) {
+async function getAppSetting(key) {
   if (isTauri()) return await invoke("get_app_setting", { key });
   try { return localStorage.getItem(key); } catch { return null; }
 }
