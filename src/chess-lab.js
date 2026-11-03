@@ -232,8 +232,8 @@ export function initChessLab(options) {
       button.type = "button";
       button.className = "button small primary";
       button.textContent = "Risolvi puzzle";
-      button.addEventListener("click", () => {
-        if (!openPuzzle(puzzle.fen, puzzle.solutionUci)) {
+      button.addEventListener("click", async () => {
+        if (!(await openPuzzle(puzzle.fen, puzzle.solutionUci))) {
           setStatus("#lab-review-status", "Non è stato possibile aprire questo puzzle.", true);
         }
       });
@@ -368,8 +368,8 @@ export function initChessLab(options) {
       open.type = "button";
       open.className = "button small ghost";
       open.textContent = "Apri report";
-      open.addEventListener("click", () => {
-        if (!openArchiveGame(report.id)) {
+      open.addEventListener("click", async () => {
+        if (!(await openArchiveGame(report.id))) {
           setStatus("#lab-archive-status", "Non è stato possibile aprire la partita nel repertorio.", true);
           return;
         }
