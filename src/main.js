@@ -705,10 +705,14 @@ function renderBoard() {
   $("#line-move-count").textContent = mode === "training"
     ? trainingIndex + " / " + trainingMoves.length + " mosse eseguite"
     : studioPly + " / " + studioSans.length + " semimosse · posizione " + (studioPly + 1);
-  $("#board-label").textContent = mode === "training" ? "MODALITÀ ALLENAMENTO" : "PARTITA / ANALISI";
+  $("#board-label").textContent = mode === "training" ? "ALLENAMENTO" : "STUDIO";
+  $("#board-orientation").textContent = boardFlipped ? "Vista: Nero" : "Vista: Bianco";
   $("#undo").disabled = mode === "training" || studioPly === 0;
   $("#redo").disabled = mode === "training" || studioPly >= studioSans.length;
-  $("#flip-board").textContent = boardFlipped ? "Vista Bianco" : "Vista Nero";
+  $("#flip-board").textContent = "↻";
+  $("#flip-board").setAttribute("aria-pressed", String(boardFlipped));
+  $("#flip-board").setAttribute("aria-label", "Ruota la scacchiera (F)");
+  $("#flip-board").title = "Ruota la scacchiera (F) · Vista: " + (boardFlipped ? "Nero" : "Bianco");
 }
 
 function renderMoves() {
