@@ -912,3 +912,111 @@ h1 { color: var(--text); font-weight: 750; }
 :root[data-theme="light"] .pgn-input,
 :root[data-theme="system"] .text-input,
 :root[data-theme="system"] .pgn-input { background: var(--surface-2); color: var(--text); border-color: var(--border); }
+
+
+/* ChessOS UI/UX pass: clearer hierarchy, calmer surfaces, and narrow-window support */
+:root {
+  --radius-card: 14px;
+  --radius-control: 9px;
+  --surface-shadow: 0 16px 40px #05090e24;
+  --board-size: min(660px, calc(100dvh - 345px), calc(100vw - 475px));
+}
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  height: 64px;
+  padding-inline: clamp(16px, 2.2vw, 32px);
+}
+.app-shell { min-height: calc(100dvh - 64px); }
+.sidebar {
+  position: sticky;
+  top: 64px;
+  align-self: start;
+  height: calc(100dvh - 64px);
+  min-height: 540px;
+  overflow: auto;
+  scrollbar-width: thin;
+}
+.workspace { padding-top: clamp(24px, 3vw, 42px); }
+.page-heading { align-items: flex-end; flex-wrap: wrap; }
+.heading-actions { flex-wrap: wrap; justify-content: flex-end; }
+.board-panel, .detail-card, .dashboard-kpi, .dashboard-card {
+  border-radius: var(--radius-card);
+  box-shadow: var(--surface-shadow);
+}
+.board-panel { padding: clamp(14px, 1.5vw, 22px); }
+.detail-card { padding: 17px; }
+.card-heading { letter-spacing: .1em; }
+.button, .text-input, .pgn-input, .board-tool-select, .appearance-menu > summary {
+  border-radius: var(--radius-control);
+}
+.button { min-height: 38px; }
+.button.primary { box-shadow: 0 5px 14px color-mix(in srgb, var(--accent) 20%, transparent); }
+.nav-item {
+  min-height: 42px;
+  transition: color 140ms ease, background 140ms ease, border-color 140ms ease;
+}
+.nav-item.active {
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface-2));
+  color: var(--text);
+}
+.repertoire-entry.current { background: color-mix(in srgb, var(--accent) 8%, var(--surface-2)); }
+.repertoire-empty, .backup-empty { line-height: 1.65; }
+.text-input, .pgn-input, .board-tool-select { min-height: 40px; }
+:where(button, a, input, select, textarea, summary):focus-visible {
+  outline: 2px solid var(--accent-strong);
+  outline-offset: 2px;
+}
+.square:focus-visible { outline-offset: -3px; }
+
+@media (max-width: 1180px) {
+  :root { --board-size: min(620px, calc(100dvh - 340px), calc(100vw - 430px)); }
+  .heading-actions { justify-content: flex-start; }
+}
+@media (max-width: 850px) {
+  :root { --board-size: min(690px, calc(100vw - 48px)); }
+  .topbar { position: relative; }
+  .sidebar {
+    position: static;
+    height: auto;
+    min-height: 0;
+    max-height: 42dvh;
+    overflow: auto;
+    scrollbar-width: thin;
+  }
+  .primary-nav {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 5px;
+  }
+  .nav-item { width: 100%; min-height: 44px; margin: 0; }
+  .sidebar-heading { margin-top: 17px; }
+  .workspace { padding: 22px 16px 28px; }
+  .page-heading { align-items: flex-start; }
+  .heading-actions { width: 100%; display: flex; justify-content: flex-start; }
+}
+@media (max-width: 560px) {
+  :root { --board-size: calc(100vw - 44px); }
+  .topbar { height: 58px; padding-inline: 12px; }
+  .brand { gap: 8px; font-size: 13px; }
+  .brand-mark { width: 32px; height: 32px; font-size: 22px; }
+  .topbar-right { gap: 5px; }
+  .appearance-menu > summary { min-height: 36px; padding: 8px; }
+  .workspace { padding: 18px 12px 24px; }
+  .page-heading { gap: 14px; margin-bottom: 18px; }
+  h1 { font-size: 26px; }
+  .heading-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }
+  .heading-actions .button { width: 100%; min-width: 0; white-space: normal; }
+  .heading-actions #save-line { grid-column: 1 / -1; }
+  .board-panel { padding: 11px; }
+  .board-wrap { margin-block: 12px 10px; }
+  .board-topline, .board-footer { font-size: 9px; }
+  .board-tools { flex-wrap: wrap; }
+  .board-tool-help { flex-basis: 100%; }
+  .details-panel { grid-template-columns: 1fr; }
+  .detail-card { padding: 14px; }
+}
+@media (min-width: 851px) and (max-height: 780px) {
+  .sidebar { min-height: 0; }
+}
