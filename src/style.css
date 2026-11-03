@@ -566,6 +566,19 @@
     stroke-linejoin: round;
   }
 
+  .repertoire-search {
+    width: 100%;
+    min-height: 36px;
+    margin: 0 0 8px;
+    padding: 7px 10px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background: var(--surface-2);
+    color: var(--text-1);
+    font-size: 13px;
+  }
+  .repertoire-search::placeholder { color: var(--text-3); opacity: 1; }
+  .repertoire-search:focus-visible { border-color: var(--accent); }
   .repertoire-list {
     min-height: 72px;
     max-height: min(35vh, 320px);
@@ -584,6 +597,7 @@
     line-height: 1.5;
   }
   .repertoire-entry {
+    position: relative;
     min-width: 0;
     display: flex;
     align-items: stretch;
@@ -627,18 +641,58 @@
     line-height: 1.3;
     font-variant-numeric: tabular-nums;
   }
-  .remove-line, .imported-game-delete {
+  .repertoire-menu {
+    position: relative;
+    flex: 0 0 32px;
+    align-self: center;
+    opacity: 0;
+    pointer-events: none;
+  }
+  .repertoire-entry:hover .repertoire-menu,
+  .repertoire-entry:focus-within .repertoire-menu,
+  .repertoire-menu[open] { opacity: 1; pointer-events: auto; }
+  .repertoire-menu > summary {
+    width: 32px;
+    height: 32px;
+    display: grid;
+    place-items: center;
+    border-radius: var(--radius-sm);
+    color: var(--text-2);
+    font-size: 17px;
+    line-height: 1;
+    list-style: none;
+    cursor: pointer;
+  }
+  .repertoire-menu > summary::-webkit-details-marker { display: none; }
+  .repertoire-menu > summary:hover { background: var(--surface-3); color: var(--text-1); }
+  .repertoire-menu[open] > summary { background: var(--accent-soft); color: var(--accent); }
+  .repertoire-menu-panel {
+    position: absolute;
+    z-index: var(--z-menu);
+    top: calc(100% + 4px);
+    right: 0;
+    width: 180px;
+    padding: 5px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background: var(--surface-2);
+    box-shadow: var(--shadow-2);
+  }
+  .menu-action.danger { color: var(--danger); }
+  .menu-action.danger:hover { background: var(--danger-soft); color: var(--danger); }
+  .imported-game-delete {
     width: 32px;
     min-width: 32px;
-    margin: 6px 3px 6px 0;
+    margin: 4px;
     border: 0;
+    border-left: 1px solid var(--border);
     border-radius: var(--radius-sm);
     background: transparent;
     color: var(--text-3);
     font-size: 18px;
     cursor: pointer;
   }
-  .remove-line:hover, .imported-game-delete:hover { background: var(--danger-soft); color: var(--danger); }
+  .imported-game-delete:hover { background: var(--danger-soft); color: var(--danger); }
 
   .sidebar-note {
     margin-top: auto;
