@@ -230,3 +230,28 @@ h1 { margin: 9px 0 5px; font-size: clamp(24px, 2.2vw, 31px); line-height: 1.1; l
 @media (max-width: 850px) {
   .variation-list { max-height: 180px; }
 }
+
+
+/* FSRS daily review */
+.review-card[hidden], #line-card[hidden], #moves-card[hidden], #variations-card[hidden], #import-card[hidden] { display: none; }
+.review-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; margin: 0 0 18px; }
+.review-stats > div { display: grid; gap: 5px; padding: 10px 8px; border: 1px solid #354253; border-radius: 7px; background: #202a37; text-align: center; }
+.review-stats strong { color: var(--accent-strong); font-size: 19px; font-variant-numeric: tabular-nums; }
+.review-stats small { color: #8796a8; font-size: 9px; }
+.review-note { margin: 9px 0 14px; color: #8796a8; font-size: 10px; line-height: 1.5; }
+.review-start { width: 100%; }
+.review-card-meta { color: var(--accent-strong); font-size: 10px; font-weight: 700; letter-spacing: .04em; }
+.review-feedback { color: #d5dde7; font-size: 12px; line-height: 1.55; margin: 12px 0; }
+.review-action { width: 100%; margin-top: 4px; }
+.review-grades { margin-top: 15px; }
+.review-grades p { color: #91a0b2; font-size: 10px; margin: 0 0 8px; }
+.review-grade-buttons { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 5px; }
+.review-grade-buttons .button { padding: 9px 5px; font-size: 10px; }
+.grade-again { border-color: #8c4b4b; color: #ffaaa4; }
+.grade-hard { border-color: #8a6a43; color: #f3c17b; }
+.grade-good { border-color: #47795e; color: #9ad6b2; }
+.grade-easy { border-color: #4b7190; color: #9bc8ed; }
+@media (max-width: 850px) {
+  .review-grade-buttons { gap: 4px; }
+  .review-grade-buttons .button { padding-inline: 3px; }
+}
