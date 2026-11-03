@@ -88,6 +88,39 @@
                 </div>
               </section>
 
+              <section class="detail-card engine-card">
+                <div class="card-heading"><span class="card-icon">♟</span><span>ANALISI STOCKFISH</span></div>
+                <div class="engine-status" id="engine-status" role="status" aria-live="polite">Motore non avviato</div>
+                <div class="engine-controls">
+                  <button class="button small ghost" id="engine-start">Avvia motore</button>
+                  <button class="button small primary" id="engine-analyze" disabled>Analizza posizione</button>
+                  <button class="button small ghost" id="engine-stop" disabled>Interrompi</button>
+                  <button class="button small ghost" id="engine-shutdown" disabled>Spegni</button>
+                </div>
+                <div class="engine-settings">
+                  <label for="engine-depth">Profondità
+                    <select id="engine-depth" class="text-input">
+                      <option value="12">12</option>
+                      <option value="16" selected>16</option>
+                      <option value="20">20</option>
+                      <option value="24">24</option>
+                      <option value="28">28</option>
+                    </select>
+                  </label>
+                  <label for="engine-multipv">Linee
+                    <select id="engine-multipv" class="text-input">
+                      <option value="1">1</option>
+                      <option value="3" selected>3</option>
+                      <option value="5">5</option>
+                    </select>
+                  </label>
+                </div>
+                <div class="engine-results" id="engine-results">
+                  <span class="empty-state">Avvia Stockfish e analizza la posizione corrente.</span>
+                </div>
+                <p class="engine-footnote">Analisi locale sul dispositivo. L'anteprima browser non avvia processi esterni.</p>
+              </section>
+
               <section class="detail-card import-card">
                 <div class="card-heading"><span class="card-icon">⇧</span><span>IMPORTA PGN</span></div>
                 <textarea id="pgn-input" class="pgn-input" rows="3" placeholder="Incolla qui una partita o una linea in formato PGN…"></textarea>
