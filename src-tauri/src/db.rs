@@ -25,7 +25,7 @@ pub struct MoveEdge {
     pub uci: String,
     pub san: String,
     #[serde(default)]
-    pub order: usize,
+    pub order: i64,
     #[serde(default)]
     pub nags: Vec<String>,
     #[serde(default)]
