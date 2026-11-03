@@ -12,14 +12,19 @@ fn main() {
                 .path()
                 .app_data_dir()?
                 .join("chess-os.sqlite3");
-            let connection = db::open_database(&database_path)?;
+            let connection = db::open_database(&database_path).map_err(std::io::Error::other)?;
             app.manage(db::Database(Mutex::new(connection)));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             db::list_repertoires,
             db::save_repertoire,
-            db::delete_repertoire
+            db::delete_repertoire,
+            db::list_study_cards,
+            db::list_review_logs,
+            db::start_training_session,
+            db::record_study_review,
+            db::finish_training_session
         ])
         .run(tauri::generate_context!())
         .expect("error while running Chess OS");
