@@ -24,6 +24,11 @@ test("creates stable FSRS flashcards from game mistakes and de-duplicates positi
   assert.equal(created.cards.length, 1);
   assert.equal(created.cards[0].expectedSan, "e4");
   assert.equal(created.cards[0].fsrs.reps, 0);
+  const samePositionDifferentCounters = upsertMistakeFlashcards([], [{
+    ...mistake,
+    fen: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 18 99",
+  }], now);
+  assert.equal(samePositionDifferentCounters.cards[0].id, created.cards[0].id);
 });
 
 test("updates mistake context without resetting FSRS scheduling state", () => {
