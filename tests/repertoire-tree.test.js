@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { Chess } from "chess.js";
 import { RepertoireTree } from "../src/repertoire-tree.js";
 
 const sampleWithVariations = [
@@ -50,7 +51,7 @@ test("merges transposed positions reached through different move orders", () => 
 test("allows editing a branch and exporting the new continuation", () => {
   const tree = RepertoireTree.fromPgn("1. e4 (1. d4 d5) e5 *");
   const d4 = tree.getOutgoing(tree.rootId).find((edge) => edge.san === "d4");
-  const afterD4 = new (await import("chess.js")).Chess(tree.getNode(d4.to).fen);
+  const afterD4 = new Chess(tree.getNode(d4.to).fen);
   const d5 = afterD4.move("d5");
   const edge = tree.addMove(d4.to, d5, afterD4.fen());
 
