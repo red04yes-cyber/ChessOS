@@ -325,51 +325,190 @@ fn now_timestamp() -> String {
     millis.to_string()
 }
 
+fn is_valid_fen(fen: &str) -> bool {
+    let fields: Vec<&str> = fen.split_whitespace().collect();
+    if fields.len() != 6 || (fields[1] != "w" && fields[1] != "b") {
+        return false;
+    }
+
+    let ranks: Vec<&str> = fields[0].split('/').collect();
+    if ranks.len() != 8 {
+        return false;
+    }
+
+    let mut white_kings = 0usize;
+    let mut black_kings = 0usize;
+    for (rank_index, rank) in ranks.iter().enumerate() {
+        let mut squares = 0usize;
+        let mut previous_was_digit = false;
+        for piece in rank.chars() {
+            match piece {
+                '1'..='8' => {
+                    if previous_was_digit {
+                        return false;
+                    }
+                    squares += piece.to_digit(10).unwrap_or(0) as usize;
+                    previous_was_digit = true;
+                }
+                'p' | 'n' | 'b' | 'r' | 'q' | 'k'
+                | 'P' | 'N' | 'B' | 'R' | 'Q' | 'K' => {
+                    if matches!(piece, 'p' | 'P') && (rank_index == 0 || rank_index == 7) {
+                        return false;
+                    }
+                    match piece {
+                        'k' => black_kings += 1,
+                        'K' => white_kings += 1,
+                        _ => {}
+                    }
+                    squares += 1;
+                    previous_was_digit = false;
+                }
+                _ => return false,
+            }
+            if squares > 8 {
+                return false;
+            }
+        }
+        if squares != 8 {
+            return false;
+        }
+    }
+    if white_kings != 1 || black_kings != 1 {
+        return false;
+    }
+
+    if fields[2] != "-" {
+        let mut seen = std::collections::HashSet::new();
+        if !fields[2].chars().all(|right| {
+            matches!(right, 'K' | 'Q' | 'k' | 'q') && seen.insert(right)
+        }) {
+            return false;
+        }
+    }
+
+    if fields[3] != "-" {
+        let expected_rank = if fields[1] == "w" { b'6' } else { b'3' };
+        if fields[3].len() != 2
+            || !(b'a'..=b'h').contains(&fields[3].as_bytes()[0])
+            || fields[3].as_bytes()[1] != expected_rank
+        {
+            return false;
+        }
+    }
+
+    fields[4].parse::<u32>().is_ok()
+        && fields[5].parse::<u32>().is_ok_and(|fullmove| fullmove > 0)
+}
+
 fn validate_input(input: &SaveRepertoireInput) -> Result<(), String> {
+    const MAX_PGN_BYTES: usize = 5_000_000;
+    const MAX_PAYLOAD_BYTES: usize = 25_000_000;
+    const MAX_NODES: usize = 100_000;
+    const MAX_EDGES: usize = 100_000;
+
     if input.id.trim().is_empty() || input.id.len() > 160 {
         return Err("ID repertorio non valido.".into());
     }
     if input.title.trim().is_empty() || input.title.len() > 200 {
         return Err("Titolo repertorio non valido.".into());
     }
-    if input.pgn.len() > 5_000_000 {
+    if input.pgn.len() > MAX_PGN_BYTES {
         return Err("PGN troppo grande.".into());
     }
-    if input.tree.nodes.is_empty() || input.tree.nodes.len() > 100_000 {
+    if input.created_at.as_ref().is_some_and(|value| value.len() > 64)
+        || input.updated_at.as_ref().is_some_and(|value| value.len() > 64)
+    {
+        return Err("Timestamp repertorio non valido.".into());
+    }
+    if input.sans.len() > MAX_EDGES || input.sans.iter().any(|san| san.is_empty() || san.len() > 32) {
+        return Err("Elenco delle mosse non valido o troppo grande.".into());
+    }
+    if input.tree.nodes.is_empty() || input.tree.nodes.len() > MAX_NODES {
         return Err("Albero delle posizioni vuoto o troppo grande.".into());
     }
-    if input.tree.edges.len() > 500_000 {
+    if input.tree.edges.len() > MAX_EDGES {
         return Err("Albero delle mosse troppo grande.".into());
     }
+    if input.tree.root_fen.is_empty() || input.tree.root_fen.len() > 256
+        || input.tree.headers.len() > 64
+        || input.tree.headers.iter().any(|(key, value)| key.is_empty() || key.len() > 128 || value.len() > 4096)
+    {
+        return Err("Metadati dell'albero non validi o troppo grandi.".into());
+    }
 
+    let mut payload_bytes = input.id.len()
+        .saturating_add(input.title.len())
+        .saturating_add(input.pgn.len())
+        .saturating_add(input.tree.root_id.len())
+        .saturating_add(input.tree.root_fen.len());
     let mut ids = std::collections::HashSet::new();
+    let mut root_matches = false;
     for node in &input.tree.nodes {
-        if node.id.is_empty() || node.fen.is_empty() || !ids.insert(node.id.as_str()) {
+        let fen_fields: Vec<&str> = node.fen.split_whitespace().collect();
+        let expected_key = fen_fields.iter().take(4).copied().collect::<Vec<_>>().join(" ");
+        if node.id.is_empty() || node.id.len() > 160
+            || node.key.is_empty() || node.key.len() > 256
+            || node.fen.is_empty() || node.fen.len() > 256
+            || !is_valid_fen(&node.fen) || node.key != expected_key
+            || !ids.insert(node.id.as_str())
+        {
             return Err("Nodo dell'albero non valido o duplicato.".into());
         }
+        root_matches |= node.id == input.tree.root_id && node.fen == input.tree.root_fen;
+        payload_bytes = payload_bytes
+            .saturating_add(node.id.len())
+            .saturating_add(node.key.len())
+            .saturating_add(node.fen.len());
     }
-    if !ids.contains(input.tree.root_id.as_str()) {
-        return Err("Nodo radice non trovato.".into());
+    if !root_matches {
+        return Err("Nodo radice non valido o non coerente con la posizione iniziale.".into());
     }
-    let root = input
-        .tree
-        .nodes
-        .iter()
-        .find(|node| node.id == input.tree.root_id);
-    if root.map(|node| node.fen.as_str()) != Some(input.tree.root_fen.as_str()) {
-        return Err("La FEN del nodo radice non coincide con la FEN iniziale.".into());
-    }
+
     let mut edge_ids = std::collections::HashSet::new();
+    let mut edge_orders: std::collections::HashMap<&str, std::collections::HashSet<i64>> =
+        std::collections::HashMap::new();
     for edge in &input.tree.edges {
-        if edge.id.is_empty()
-            || edge.uci.len() < 4
-            || edge.uci.len() > 5
+        let uci = edge.uci.as_bytes();
+        let valid_uci = (uci.len() == 4 || uci.len() == 5)
+            && (b'a'..=b'h').contains(&uci[0])
+            && (b'1'..=b'8').contains(&uci[1])
+            && (b'a'..=b'h').contains(&uci[2])
+            && (b'1'..=b'8').contains(&uci[3])
+            && (uci.len() == 4 || b"qrbn".contains(&uci[4]));
+        if edge.id.is_empty() || edge.id.len() > 320
+            || !valid_uci || edge.san.is_empty() || edge.san.len() > 32
+            || edge.comment.len() > 4096
+            || edge.nags.len() > 32
+            || edge.nags.iter().any(|nag| nag.is_empty() || nag.len() > 16)
             || !ids.contains(edge.from.as_str())
             || !ids.contains(edge.to.as_str())
+            || edge.id != format!("{}|{}", edge.from, edge.uci)
             || !edge_ids.insert(edge.id.as_str())
+            || edge.order < 0
+            || !edge_orders.entry(edge.from.as_str()).or_default().insert(edge.order)
         {
             return Err("Arco dell'albero non valido o duplicato.".into());
         }
+        payload_bytes = payload_bytes
+            .saturating_add(edge.id.len())
+            .saturating_add(edge.from.len())
+            .saturating_add(edge.to.len())
+            .saturating_add(edge.uci.len())
+            .saturating_add(edge.san.len())
+            .saturating_add(edge.comment.len())
+            .saturating_add(edge.nags.iter().map(String::len).sum::<usize>());
+    }
+    for (key, value) in &input.tree.headers {
+        payload_bytes = payload_bytes.saturating_add(key.len()).saturating_add(value.len());
+    }
+    for san in &input.sans {
+        payload_bytes = payload_bytes.saturating_add(san.len());
+    }
+    for timestamp in [&input.created_at, &input.updated_at].into_iter().flatten() {
+        payload_bytes = payload_bytes.saturating_add(timestamp.len());
+    }
+    if payload_bytes > MAX_PAYLOAD_BYTES {
+        return Err("Dati del repertorio troppo voluminosi.".into());
     }
     Ok(())
 }
@@ -1805,4 +1944,66 @@ mod tests {
         assert_eq!(positions, 0);
         assert_eq!(moves, 0);
     }
+    #[test]
+    fn repertoire_validation_rejects_malformed_fens_and_position_keys() {
+        let mut invalid_fen = fixture();
+        invalid_fen.tree.nodes[1].fen = "not a FEN".into();
+        assert!(validate_input(&invalid_fen).is_err());
+
+        let mut invalid_key = fixture();
+        invalid_key.tree.nodes[1].key = "unrelated position key".into();
+        assert!(validate_input(&invalid_key).is_err());
+
+        let mut mismatched_root = fixture();
+        mismatched_root.tree.root_fen = "8/8/8/8/8/8/8/8 w - - 0 1".into();
+        assert!(validate_input(&mismatched_root).is_err());
+    }
+
+    #[test]
+    fn repertoire_validation_rejects_invalid_uci_edges_and_orders() {
+        let mut invalid_uci = fixture();
+        invalid_uci.tree.edges[0].uci = "e2e9".into();
+        invalid_uci.tree.edges[0].id = "root|e2e9".into();
+        assert!(validate_input(&invalid_uci).is_err());
+
+        let mut invalid_id = fixture();
+        invalid_id.tree.edges[0].id = "not-the-from-node-and-uci".into();
+        assert!(validate_input(&invalid_id).is_err());
+
+        let mut negative_order = fixture();
+        negative_order.tree.edges[0].order = -1;
+        assert!(validate_input(&negative_order).is_err());
+
+        let mut duplicate_order = fixture();
+        let mut second = duplicate_order.tree.edges[0].clone();
+        second.id = "root|d2d4".into();
+        second.uci = "d2d4".into();
+        duplicate_order.tree.edges.push(second);
+        assert!(validate_input(&duplicate_order).is_err());
+    }
+
+    #[test]
+    fn repertoire_validation_bounds_pgn_headers_timestamps_and_payload() {
+        let mut oversized_pgn = fixture();
+        oversized_pgn.pgn = "x".repeat(5_000_001);
+        assert!(validate_input(&oversized_pgn).is_err());
+
+        let mut oversized_timestamp = fixture();
+        oversized_timestamp.created_at = Some("x".repeat(65));
+        assert!(validate_input(&oversized_timestamp).is_err());
+
+        let mut invalid_headers = fixture();
+        invalid_headers.tree.headers.insert(String::new(), "value".into());
+        assert!(validate_input(&invalid_headers).is_err());
+
+        let mut oversized_comment = fixture();
+        oversized_comment.tree.edges[0].comment = "x".repeat(4097);
+        assert!(validate_input(&oversized_comment).is_err());
+
+        let mut valid = fixture();
+        assert!(validate_input(&valid).is_ok());
+        valid.tree.edges[0].comment = "x".repeat(4096);
+        assert!(validate_input(&valid).is_ok());
+    }
+
 }
