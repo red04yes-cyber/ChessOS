@@ -226,6 +226,59 @@ pub fn migrate(connection: &mut Connection) -> rusqlite::Result<()> {
         )?;
         transaction.commit()?;
     }
+    let version_after_v3: i64 = connection.query_row(
+        "SELECT COALESCE(MAX(version), 0) FROM schema_migrations",
+        [],
+        |row| row.get(0),
+    )?;
+    if version_after_v3 < 4 {
+        let transaction = connection.transaction()?;
+        transaction.execute_batch(
+            "CREATE TABLE study_goals (
+                period TEXT PRIMARY KEY NOT NULL CHECK (period IN ('daily', 'weekly')),
+                target_reviews INTEGER NOT NULL CHECK (target_reviews BETWEEN 1 AND 10000),
+                target_minutes INTEGER NOT NULL CHECK (target_minutes BETWEEN 1 AND 10000),
+                target_accuracy INTEGER NOT NULL CHECK (target_accuracy BETWEEN 1 AND 100),
+                updated_at TEXT NOT NULL
+            );
+            CREATE TABLE exam_attempts (
+                id TEXT PRIMARY KEY NOT NULL,
+                repertoire_id TEXT NOT NULL,
+                repertoire_title TEXT NOT NULL,
+                started_at TEXT NOT NULL,
+                finished_at TEXT,
+                total_questions INTEGER NOT NULL CHECK (total_questions BETWEEN 1 AND 500),
+                correct_count INTEGER NOT NULL DEFAULT 0,
+                pass_threshold INTEGER NOT NULL DEFAULT 70 CHECK (pass_threshold BETWEEN 1 AND 100),
+                passed INTEGER NOT NULL DEFAULT 0 CHECK (passed IN (0, 1)),
+                side TEXT NOT NULL CHECK (side IN ('white', 'black', 'both')),
+                status TEXT NOT NULL DEFAULT 'in_progress'
+                    CHECK (status IN ('in_progress', 'completed', 'aborted')),
+                FOREIGN KEY (repertoire_id) REFERENCES repertoires(id) ON DELETE CASCADE
+            );
+            CREATE TABLE exam_answers (
+                id TEXT PRIMARY KEY NOT NULL,
+                attempt_id TEXT NOT NULL,
+                question_index INTEGER NOT NULL CHECK (question_index >= 0),
+                edge_id TEXT NOT NULL,
+                position_fen TEXT NOT NULL,
+                expected_uci TEXT NOT NULL,
+                selected_uci TEXT NOT NULL,
+                correct INTEGER NOT NULL CHECK (correct IN (0, 1)),
+                answered_at TEXT NOT NULL,
+                UNIQUE (attempt_id, question_index),
+                FOREIGN KEY (attempt_id) REFERENCES exam_attempts(id) ON DELETE CASCADE
+            );
+            CREATE INDEX idx_exam_attempts_started ON exam_attempts(started_at DESC);
+            CREATE INDEX idx_exam_attempts_repertoire ON exam_attempts(repertoire_id, started_at DESC);
+            CREATE INDEX idx_exam_answers_attempt ON exam_answers(attempt_id, question_index);"
+        )?;
+        transaction.execute(
+            "INSERT INTO schema_migrations (version, applied_at) VALUES (4, ?1)",
+            params![now_timestamp()],
+        )?;
+        transaction.commit()?;
+    }
     Ok(())
 }
 
@@ -745,6 +798,331 @@ pub fn finish_training_session(
     Ok(true)
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StudyGoalRecord {
+    pub period: String,
+    pub target_reviews: i64,
+    pub target_minutes: i64,
+    pub target_accuracy: i64,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SaveStudyGoalInput {
+    pub period: String,
+    pub target_reviews: i64,
+    pub target_minutes: i64,
+    pub target_accuracy: i64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExamAttemptRecord {
+    pub id: String,
+    pub repertoire_id: String,
+    pub repertoire_title: String,
+    pub started_at: String,
+    pub finished_at: Option<String>,
+    pub total_questions: i64,
+    pub correct_count: i64,
+    pub pass_threshold: i64,
+    pub passed: bool,
+    pub side: String,
+    pub status: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StartExamInput {
+    pub id: String,
+    pub repertoire_id: String,
+    pub repertoire_title: String,
+    pub started_at: String,
+    pub total_questions: i64,
+    pub pass_threshold: i64,
+    pub side: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecordExamAnswerInput {
+    pub id: String,
+    pub attempt_id: String,
+    pub question_index: i64,
+    pub edge_id: String,
+    pub position_fen: String,
+    pub expected_uci: String,
+    pub selected_uci: String,
+    pub answered_at: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FinishExamInput {
+    pub id: String,
+    pub finished_at: String,
+    pub aborted: bool,
+}
+
+fn save_study_goal_with_connection(
+    connection: &mut Connection,
+    input: SaveStudyGoalInput,
+) -> Result<StudyGoalRecord, String> {
+    if !["daily", "weekly"].contains(&input.period.as_str())
+        || !(1..=10000).contains(&input.target_reviews)
+        || !(1..=10000).contains(&input.target_minutes)
+        || !(1..=100).contains(&input.target_accuracy)
+    {
+        return Err("Obiettivo di studio non valido.".into());
+    }
+    let updated_at = now_timestamp();
+    connection.execute(
+        "INSERT INTO study_goals
+            (period, target_reviews, target_minutes, target_accuracy, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5)
+         ON CONFLICT(period) DO UPDATE SET
+            target_reviews = excluded.target_reviews,
+            target_minutes = excluded.target_minutes,
+            target_accuracy = excluded.target_accuracy,
+            updated_at = excluded.updated_at",
+        params![
+            input.period, input.target_reviews, input.target_minutes,
+            input.target_accuracy, updated_at
+        ],
+    ).map_err(|error| error.to_string())?;
+    Ok(StudyGoalRecord {
+        period: input.period,
+        target_reviews: input.target_reviews,
+        target_minutes: input.target_minutes,
+        target_accuracy: input.target_accuracy,
+        updated_at,
+    })
+}
+
+#[tauri::command]
+pub fn list_study_goals(database: State<'_, Database>) -> Result<Vec<StudyGoalRecord>, String> {
+    let connection = database.0.lock().map_err(|_| "Database non disponibile.".to_string())?;
+    let mut statement = connection.prepare(
+        "SELECT period, target_reviews, target_minutes, target_accuracy, updated_at
+         FROM study_goals ORDER BY CASE period WHEN 'daily' THEN 0 ELSE 1 END"
+    ).map_err(|error| error.to_string())?;
+    let rows = statement.query_map([], |row| Ok(StudyGoalRecord {
+        period: row.get(0)?,
+        target_reviews: row.get(1)?,
+        target_minutes: row.get(2)?,
+        target_accuracy: row.get(3)?,
+        updated_at: row.get(4)?,
+    })).map_err(|error| error.to_string())?;
+    rows.collect::<Result<Vec<_>, _>>().map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn save_study_goal(
+    database: State<'_, Database>,
+    input: SaveStudyGoalInput,
+) -> Result<StudyGoalRecord, String> {
+    let mut connection = database.0.lock().map_err(|_| "Database non disponibile.".to_string())?;
+    save_study_goal_with_connection(&mut connection, input)
+}
+
+fn start_exam_with_connection(
+    connection: &mut Connection,
+    input: StartExamInput,
+) -> Result<bool, String> {
+    if input.id.trim().is_empty()
+        || input.repertoire_id.trim().is_empty()
+        || input.repertoire_title.trim().is_empty()
+        || !(1..=500).contains(&input.total_questions)
+        || !(1..=100).contains(&input.pass_threshold)
+        || !["white", "black", "both"].contains(&input.side.as_str())
+    {
+        return Err("Configurazione esame non valida.".into());
+    }
+    let exists: bool = connection.query_row(
+        "SELECT EXISTS(SELECT 1 FROM repertoires WHERE id = ?1)",
+        params![input.repertoire_id],
+        |row| row.get(0),
+    ).map_err(|error| error.to_string())?;
+    if !exists {
+        return Err("Il repertorio selezionato non esiste più.".into());
+    }
+    connection.execute(
+        "INSERT INTO exam_attempts
+            (id, repertoire_id, repertoire_title, started_at, total_questions,
+             pass_threshold, side, status)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'in_progress')",
+        params![
+            input.id, input.repertoire_id, input.repertoire_title, input.started_at,
+            input.total_questions, input.pass_threshold, input.side
+        ],
+    ).map_err(|error| error.to_string())?;
+    Ok(true)
+}
+
+#[tauri::command]
+pub fn start_exam(
+    database: State<'_, Database>,
+    input: StartExamInput,
+) -> Result<bool, String> {
+    let mut connection = database.0.lock().map_err(|_| "Database non disponibile.".to_string())?;
+    start_exam_with_connection(&mut connection, input)
+}
+
+fn record_exam_answer_with_connection(
+    connection: &mut Connection,
+    input: RecordExamAnswerInput,
+) -> Result<bool, String> {
+    if input.id.trim().is_empty()
+        || input.attempt_id.trim().is_empty()
+        || input.question_index < 0
+        || input.edge_id.trim().is_empty()
+        || input.position_fen.trim().is_empty()
+        || input.expected_uci.trim().is_empty()
+        || input.selected_uci.trim().is_empty()
+    {
+        return Err("Risposta d'esame non valida.".into());
+    }
+    let transaction = connection.transaction().map_err(|error| error.to_string())?;
+    let attempt: Option<(i64, String, String)> = transaction.query_row(
+        "SELECT total_questions, status, repertoire_id FROM exam_attempts WHERE id = ?1",
+        params![input.attempt_id],
+        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+    ).optional().map_err(|error| error.to_string())?;
+    let Some((total_questions, status, repertoire_id)) = attempt else {
+        return Err("Sessione d'esame non trovata.".into());
+    };
+    if status != "in_progress" || input.question_index >= total_questions {
+        return Err("La sessione d'esame non accetta altre risposte.".into());
+    }
+    let previous_answers: i64 = transaction.query_row(
+        "SELECT COUNT(*) FROM exam_answers WHERE attempt_id = ?1",
+        params![input.attempt_id],
+        |row| row.get(0),
+    ).map_err(|error| error.to_string())?;
+    if previous_answers != input.question_index {
+        return Err("Le risposte dell'esame devono essere registrate in ordine.".into());
+    }
+    let expected_position: Option<String> = transaction.query_row(
+        "SELECT p.fen
+         FROM repertoire_moves m
+         JOIN repertoire_positions p
+           ON p.repertoire_id = m.repertoire_id
+          AND p.position_id = m.from_position_id
+         WHERE m.repertoire_id = ?1 AND m.edge_id = ?2 AND m.uci = ?3",
+        params![repertoire_id, input.edge_id, input.expected_uci],
+        |row| row.get(0),
+    ).optional().map_err(|error| error.to_string())?;
+    if expected_position.as_deref() != Some(input.position_fen.as_str()) {
+        return Err("La domanda non corrisponde al repertorio selezionato.".into());
+    }
+    let correct = input.expected_uci == input.selected_uci;
+    transaction.execute(
+        "INSERT INTO exam_answers
+            (id, attempt_id, question_index, edge_id, position_fen,
+             expected_uci, selected_uci, correct, answered_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+        params![
+            input.id, input.attempt_id, input.question_index, input.edge_id,
+            input.position_fen, input.expected_uci, input.selected_uci,
+            if correct { 1 } else { 0 }, input.answered_at
+        ],
+    ).map_err(|error| error.to_string())?;
+    let updated = transaction.execute(
+        "UPDATE exam_attempts SET correct_count = correct_count + ?1
+         WHERE id = ?2 AND status = 'in_progress'",
+        params![if correct { 1 } else { 0 }, input.attempt_id],
+    ).map_err(|error| error.to_string())?;
+    if updated != 1 {
+        return Err("La sessione d'esame non è più attiva.".into());
+    }
+    transaction.commit().map_err(|error| error.to_string())?;
+    Ok(correct)
+}
+
+#[tauri::command]
+pub fn record_exam_answer(
+    database: State<'_, Database>,
+    input: RecordExamAnswerInput,
+) -> Result<bool, String> {
+    let mut connection = database.0.lock().map_err(|_| "Database non disponibile.".to_string())?;
+    record_exam_answer_with_connection(&mut connection, input)
+}
+
+fn finish_exam_with_connection(
+    connection: &mut Connection,
+    input: FinishExamInput,
+) -> Result<bool, String> {
+    if input.id.trim().is_empty() || input.finished_at.trim().is_empty() {
+        return Err("Chiusura esame non valida.".into());
+    }
+    let status = if input.aborted { "aborted" } else { "completed" };
+    if !input.aborted {
+        let counts: Option<(i64, i64)> = connection.query_row(
+            "SELECT a.total_questions,
+                    (SELECT COUNT(*) FROM exam_answers WHERE attempt_id = a.id)
+             FROM exam_attempts a
+             WHERE a.id = ?1 AND a.status = 'in_progress'",
+            params![input.id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        ).optional().map_err(|error| error.to_string())?;
+        let Some((total_questions, answers_recorded)) = counts else {
+            return Ok(false);
+        };
+        if answers_recorded != total_questions {
+            return Err("Non è possibile concludere un esame con domande senza risposta.".into());
+        }
+    }
+    let updated = connection.execute(
+        "UPDATE exam_attempts
+         SET finished_at = ?1,
+             status = ?2,
+             passed = CASE
+                 WHEN ?2 = 'completed'
+                  AND correct_count * 100 >= total_questions * pass_threshold THEN 1
+                 ELSE 0
+             END
+         WHERE id = ?3 AND status = 'in_progress'",
+        params![input.finished_at, status, input.id],
+    ).map_err(|error| error.to_string())?;
+    Ok(updated == 1)
+}
+
+#[tauri::command]
+pub fn finish_exam(
+    database: State<'_, Database>,
+    input: FinishExamInput,
+) -> Result<bool, String> {
+    let mut connection = database.0.lock().map_err(|_| "Database non disponibile.".to_string())?;
+    finish_exam_with_connection(&mut connection, input)
+}
+
+#[tauri::command]
+pub fn list_exam_attempts(database: State<'_, Database>) -> Result<Vec<ExamAttemptRecord>, String> {
+    let connection = database.0.lock().map_err(|_| "Database non disponibile.".to_string())?;
+    let mut statement = connection.prepare(
+        "SELECT id, repertoire_id, repertoire_title, started_at, finished_at,
+                total_questions, correct_count, pass_threshold, passed, side, status
+         FROM exam_attempts ORDER BY started_at DESC LIMIT 50"
+    ).map_err(|error| error.to_string())?;
+    let rows = statement.query_map([], |row| Ok(ExamAttemptRecord {
+        id: row.get(0)?,
+        repertoire_id: row.get(1)?,
+        repertoire_title: row.get(2)?,
+        started_at: row.get(3)?,
+        finished_at: row.get(4)?,
+        total_questions: row.get(5)?,
+        correct_count: row.get(6)?,
+        pass_threshold: row.get(7)?,
+        passed: row.get::<_, i64>(8)? != 0,
+        side: row.get(9)?,
+        status: row.get(10)?,
+    })).map_err(|error| error.to_string())?;
+    rows.collect::<Result<Vec<_>, _>>().map_err(|error| error.to_string())
+}
+
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -800,7 +1178,7 @@ mod tests {
         let version: i64 = connection.query_row(
             "SELECT MAX(version) FROM schema_migrations", [], |row| row.get(0)
         ).unwrap();
-        assert_eq!(version, 3);
+        assert_eq!(version, 4);
     }
 
     #[test]
@@ -935,6 +1313,144 @@ mod tests {
             (sessions[0].cards_reviewed, sessions[0].correct_count, sessions[0].again_count),
             (8, 6, 2),
         );
+    }
+
+    #[test]
+    fn exam_answer_rejects_a_question_not_in_the_selected_repertoire() {
+        let mut connection = memory_db();
+        save_with_connection(&mut connection, fixture()).unwrap();
+        start_exam_with_connection(&mut connection, StartExamInput {
+            id: "exam-secure".into(),
+            repertoire_id: "open-game".into(),
+            repertoire_title: "Open Game".into(),
+            started_at: "2026-11-03T10:00:00Z".into(),
+            total_questions: 1,
+            pass_threshold: 70,
+            side: "white".into(),
+        }).unwrap();
+
+        let tampered = record_exam_answer_with_connection(&mut connection, RecordExamAnswerInput {
+            id: "answer-tampered".into(),
+            attempt_id: "exam-secure".into(),
+            question_index: 0,
+            edge_id: "root|e2e4".into(),
+            position_fen: "8/8/8/8/8/8/8/8 w - - 0 1".into(),
+            expected_uci: "e2e4".into(),
+            selected_uci: "e2e4".into(),
+            answered_at: "2026-11-03T10:01:00Z".into(),
+        });
+        assert!(tampered.is_err());
+        let answers: i64 = connection.query_row(
+            "SELECT COUNT(*) FROM exam_answers WHERE attempt_id = 'exam-secure'",
+            [],
+            |row| row.get(0),
+        ).unwrap();
+        assert_eq!(answers, 0);
+
+        let skipped = record_exam_answer_with_connection(&mut connection, RecordExamAnswerInput {
+            id: "answer-skipped".into(),
+            attempt_id: "exam-secure".into(),
+            question_index: 1,
+            edge_id: "root|e2e4".into(),
+            position_fen: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1".into(),
+            expected_uci: "e2e4".into(),
+            selected_uci: "e2e4".into(),
+            answered_at: "2026-11-03T10:02:00Z".into(),
+        });
+        assert!(skipped.is_err());
+    }
+
+    #[test]
+    fn goals_and_exam_attempts_persist_and_score() {
+        let mut connection = memory_db();
+        save_with_connection(&mut connection, fixture()).unwrap();
+
+        let goal = save_study_goal_with_connection(&mut connection, SaveStudyGoalInput {
+            period: "daily".into(),
+            target_reviews: 25,
+            target_minutes: 30,
+            target_accuracy: 85,
+        }).unwrap();
+        assert_eq!(goal.target_reviews, 25);
+
+        start_exam_with_connection(&mut connection, StartExamInput {
+            id: "exam-1".into(),
+            repertoire_id: "open-game".into(),
+            repertoire_title: "Open Game".into(),
+            started_at: "2026-11-03T10:00:00Z".into(),
+            total_questions: 1,
+            pass_threshold: 70,
+            side: "white".into(),
+        }).unwrap();
+
+        record_exam_answer_with_connection(&mut connection, RecordExamAnswerInput {
+            id: "answer-1".into(),
+            attempt_id: "exam-1".into(),
+            question_index: 0,
+            edge_id: "root|e2e4".into(),
+            position_fen: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1".into(),
+            expected_uci: "e2e4".into(),
+            selected_uci: "e2e4".into(),
+            answered_at: "2026-11-03T10:01:00Z".into(),
+        }).unwrap();
+
+        finish_exam_with_connection(&mut connection, FinishExamInput {
+            id: "exam-1".into(),
+            finished_at: "2026-11-03T10:02:00Z".into(),
+            aborted: false,
+        }).unwrap();
+
+        let (correct, passed, status): (i64, i64, String) = connection.query_row(
+            "SELECT correct_count, passed, status FROM exam_attempts WHERE id = 'exam-1'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        ).unwrap();
+        assert_eq!(correct, 1);
+        assert_eq!(passed, 1);
+        assert_eq!(status, "completed");
+
+        let duplicate = record_exam_answer_with_connection(&mut connection, RecordExamAnswerInput {
+            id: "answer-duplicate".into(),
+            attempt_id: "exam-1".into(),
+            question_index: 0,
+            edge_id: "root|e2e4".into(),
+            position_fen: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1".into(),
+            expected_uci: "e2e4".into(),
+            selected_uci: "e2e4".into(),
+            answered_at: "2026-11-03T10:03:00Z".into(),
+        });
+        assert!(duplicate.is_err());
+    }
+
+    #[test]
+    fn completed_exam_requires_all_questions_to_be_answered() {
+        let mut connection = memory_db();
+        save_with_connection(&mut connection, fixture()).unwrap();
+        start_exam_with_connection(&mut connection, StartExamInput {
+            id: "exam-incomplete".into(),
+            repertoire_id: "open-game".into(),
+            repertoire_title: "Open Game".into(),
+            started_at: "2026-11-03T10:00:00Z".into(),
+            total_questions: 2,
+            pass_threshold: 70,
+            side: "white".into(),
+        }).unwrap();
+        assert!(finish_exam_with_connection(&mut connection, FinishExamInput {
+            id: "exam-incomplete".into(),
+            finished_at: "2026-11-03T10:01:00Z".into(),
+            aborted: false,
+        }).is_err());
+        let status: String = connection.query_row(
+            "SELECT status FROM exam_attempts WHERE id = 'exam-incomplete'",
+            [],
+            |row| row.get(0),
+        ).unwrap();
+        assert_eq!(status, "in_progress");
+        assert!(finish_exam_with_connection(&mut connection, FinishExamInput {
+            id: "exam-incomplete".into(),
+            finished_at: "2026-11-03T10:02:00Z".into(),
+            aborted: true,
+        }).unwrap());
     }
 
     #[test]

@@ -11,6 +11,12 @@ import {
   parseUci,
   selectDailyCards,
 } from "./fsrs-review.js";
+import {
+  buildDashboardSnapshot,
+  calculateExamResult,
+  normalizeStudyGoal,
+  selectExamQuestions,
+} from "./dashboard.js";
 import "./style.css";
 
 const STORAGE_KEY = "chess-os.repertoire.v1";
@@ -40,7 +46,21 @@ let trainingStartFen = DEFAULT_FEN;
 let studyCards = [];
 let reviewLogs = [];
 let reviewSessions = [];
+let studyGoals = [];
+let examAttempts = [];
+let examAnswers = [];
 let reviewQueue = [];
+let examQueue = [];
+let currentExamCard = null;
+let examAttemptId = null;
+let examQuestionIndex = 0;
+let examTotalQuestions = 0;
+let examCorrectCount = 0;
+let examAnswered = false;
+let examFeedback = "";
+let examLastMove = null;
+let examPassThreshold = 70;
+let isSavingExamAnswer = false;
 let currentReviewCard = null;
 let reviewSessionId = null;
 let reviewSessionTotal = 0;
@@ -99,9 +119,12 @@ function readReviewState() {
       cards: Array.isArray(parsed.cards) ? parsed.cards : [],
       logs: Array.isArray(parsed.logs) ? parsed.logs : [],
       sessions: Array.isArray(parsed.sessions) ? parsed.sessions : [],
+      goals: Array.isArray(parsed.goals) ? parsed.goals : [],
+      examAttempts: Array.isArray(parsed.examAttempts) ? parsed.examAttempts : [],
+      examAnswers: Array.isArray(parsed.examAnswers) ? parsed.examAnswers : [],
     };
   } catch {
-    return { cards: [], logs: [], sessions: [] };
+    return { cards: [], logs: [], sessions: [], goals: [], examAttempts: [], examAnswers: [] };
   }
 }
 
@@ -111,6 +134,9 @@ function persistLocalReviewState() {
       cards: studyCards,
       logs: reviewLogs,
       sessions: reviewSessions,
+      goals: studyGoals,
+      examAttempts,
+      examAnswers,
     }));
     return true;
   } catch {
@@ -121,10 +147,12 @@ function persistLocalReviewState() {
 
 async function loadStudyData() {
   if (persistenceMode === "sqlite") {
-    const [storedCards, storedLogs, storedSessions] = await Promise.all([
+    const [storedCards, storedLogs, storedSessions, storedGoals, storedExams] = await Promise.all([
       invoke("list_study_cards"),
       invoke("list_review_logs"),
       invoke("list_training_sessions"),
+      invoke("list_study_goals"),
+      invoke("list_exam_attempts"),
     ]);
     studyCards = storedCards.map((record) => {
       let fsrs;
@@ -133,11 +161,17 @@ async function loadStudyData() {
     }).filter((record) => record.fsrs && typeof record.fsrs === "object");
     reviewLogs = storedLogs;
     reviewSessions = storedSessions;
+    studyGoals = storedGoals;
+    examAttempts = storedExams;
+    examAnswers = [];
   } else {
     const saved = readReviewState();
     studyCards = saved.cards;
     reviewLogs = saved.logs;
     reviewSessions = saved.sessions;
+    studyGoals = saved.goals;
+    examAttempts = saved.examAttempts;
+    examAnswers = saved.examAnswers;
   }
 }
 
@@ -215,7 +249,7 @@ async function initializePersistence() {
 }
 
 function activeGame() {
-  return mode === "training" && trainingGame ? trainingGame : game;
+  return (mode === "training" || mode === "exam") && trainingGame ? trainingGame : game;
 }
 
 function showToast(message) {
@@ -293,6 +327,7 @@ function appendStudioMove(move) {
 
 function currentLastMove() {
   if (mode === "training") return reviewLastMove;
+  if (mode === "exam") return examLastMove;
   return studioMoveObjects[studioPly - 1] || null;
 }
 
@@ -361,17 +396,21 @@ function renderBoard() {
   updateBoardCoordinates();
   $("#turn-label").textContent = (chess.turn() === "w" ? "Bianco" : "Nero") + " al tratto";
   $("#game-status").textContent = gameStatus(chess);
-  const currentCount = mode === "training" ? reviewCompleted : studioPly;
-  const totalCount = mode === "training" ? reviewSessionTotal : studioSans.length;
-  $("#move-count").textContent = mode === "training"
-    ? currentCount + " / " + totalCount + " carte"
-    : currentCount + " / " + totalCount + " semimosse";
+  const currentCount = mode === "training" ? reviewCompleted : mode === "exam" ? examQuestionIndex + (examAnswered ? 1 : 0) : studioPly;
+  const totalCount = mode === "training" ? reviewSessionTotal : mode === "exam" ? examTotalQuestions : studioSans.length;
+  $("#move-count").textContent = mode === "studio"
+    ? currentCount + " / " + totalCount + " semimosse"
+    : currentCount + " / " + totalCount + " domande";
   $("#line-move-count").textContent = mode === "training"
     ? (currentReviewCard ? currentReviewCard.repertoireTitle + " · " + currentReviewCard.side : "Sessione giornaliera")
-    : studioPly + " / " + studioSans.length + " semimosse · posizione " + (studioPly + 1);
-  $("#board-label").textContent = mode === "training" ? "MODALITÀ ALLENAMENTO" : "PARTITA / ANALISI";
-  $("#undo").disabled = mode === "training" || studioPly === 0;
-  $("#redo").disabled = mode === "training" || studioPly >= studioSans.length;
+    : mode === "exam"
+      ? (currentExamCard ? currentExamCard.repertoireTitle + " · " + (currentExamCard.side === "white" ? "Bianco" : "Nero") : "Esame repertorio")
+      : studioPly + " / " + studioSans.length + " semimosse · posizione " + (studioPly + 1);
+  $("#board-label").textContent = mode === "training"
+    ? "MODALITÀ ALLENAMENTO"
+    : mode === "exam" ? "ESAME DEL REPERTORIO" : "PARTITA / ANALISI";
+  $("#undo").disabled = mode !== "studio" || studioPly === 0;
+  $("#redo").disabled = mode !== "studio" || studioPly >= studioSans.length;
   $("#flip-board").textContent = boardFlipped ? "Vista Bianco" : "Vista Nero";
 }
 
@@ -463,27 +502,44 @@ function renderRepertoire() {
 
 function renderMode() {
   const training = mode === "training";
-  $("#nav-studio").classList.toggle("active", !training);
+  const exam = mode === "exam";
+  const dashboard = mode === "dashboard";
+  const study = !dashboard;
+  $("#nav-studio").classList.toggle("active", mode === "studio");
   $("#nav-training").classList.toggle("active", training);
-  $("#mode-eyebrow").textContent = training ? "REPERTORIO / RIPASSO FSRS" : "REPERTORIO / ANALISI";
-  $("#page-title").textContent = training ? "Ripasso giornaliero" : "Chess Studio";
-  $("#page-subtitle").textContent = training
-    ? "Allena il richiamo delle mosse con intervalli adattivi."
-    : "Costruisci linee principali, varianti e transposizioni.";
-  $("#save-line").disabled = training || !databaseReady;
-  $("#reset").textContent = training ? "Esci dal ripasso" : "Nuova posizione";
+  $("#nav-dashboard").classList.toggle("active", dashboard);
+  $("#mode-eyebrow").textContent = dashboard
+    ? "ATTIVITÀ / STATISTICHE"
+    : training ? "REPERTORIO / RIPASSO FSRS"
+      : exam ? "REPERTORIO / ESAME"
+        : "REPERTORIO / ANALISI";
+  $("#page-title").textContent = dashboard
+    ? "Dashboard e progressi"
+    : training ? "Ripasso giornaliero"
+      : exam ? "Esame del repertorio" : "Chess Studio";
+  $("#page-subtitle").textContent = dashboard
+    ? "Controlla i progressi, gli obiettivi e la preparazione dei tuoi repertori."
+    : training ? "Allena il richiamo delle mosse con intervalli adattivi."
+      : exam ? "Verifica quanto ricordi senza aiuti e registra il risultato."
+        : "Costruisci linee principali, varianti e transposizioni.";
+  $("#heading-actions").hidden = dashboard || exam;
+  $("#study-grid").hidden = !study;
+  $("#dashboard-panel").hidden = !dashboard;
+  $("#save-line").disabled = mode !== "studio" || !databaseReady;
+  $("#reset").textContent = training ? "Esci dal ripasso" : exam ? "Interrompi esame" : "Nuova posizione";
   for (const selector of ["#line-card", "#moves-card", "#variations-card", "#import-card"]) {
-    $(selector).hidden = training;
+    $(selector).hidden = mode !== "studio";
   }
   $("#review-panel").hidden = !training;
-  $("#flip-board").disabled = false;
+  $("#exam-panel").hidden = !exam;
+  $("#flip-board").disabled = dashboard;
 }
 
 function renderVariations() {
   const list = $("#variation-list");
   if (!list) return;
   list.replaceChildren();
-  if (mode === "training") {
+  if (mode !== "studio") {
     const note = document.createElement("span");
     note.className = "empty-state";
     note.textContent = "Le varianti sono disponibili in Studio.";
@@ -550,6 +606,8 @@ function renderAll() {
   renderRepertoire();
   renderMode();
   renderReviewPanel();
+  renderDashboard();
+  renderExamPanel();
 }
 
 function closePromotionChooser() {
@@ -591,6 +649,10 @@ function openPromotionChooser(from, to, legalMoves) {
 }
 
 function commitSelectedMove(selectedMove) {
+  if (mode === "exam") {
+    void recordExamMove(selectedMove);
+    return;
+  }
   if (mode === "training") {
     if (!currentReviewCard || reviewSolved || reviewRevealed) return;
     let played;
@@ -657,6 +719,7 @@ function commitSelectedMove(selectedMove) {
 }
 
 function handleSquareClick(square) {
+  if (mode === "exam" && examAnswered) return;
   const chess = activeGame();
   if (pendingPromotion) return;
   if (chess.isGameOver()) {
@@ -704,8 +767,10 @@ function handleSquareClick(square) {
 }
 
 function openLine(id) {
-  const line = repertoire.find((item) => item.id === id);
-  if (!line || !confirmDiscardChanges("aprire un'altra linea")) return;
+  if (mode === "exam" && examAttemptId) {
+    void finishRepertoireExam(true).then(() => openLine(id));
+    return;
+  }
   if (mode === "training" && reviewSessionId && !reviewSessionFinished) {
     void markReviewSessionFinished().catch((error) => {
       showToast("Non riesco a chiudere la sessione: " + error.message);
@@ -713,6 +778,8 @@ function openLine(id) {
     reviewSessionId = null;
     reviewSessionFinished = false;
   }
+  const line = repertoire.find((item) => item.id === id);
+  if (!line || !confirmDiscardChanges("aprire un'altra linea")) return;
   try {
     const loaded = line.tree ? RepertoireTree.fromJSON(line.tree) : RepertoireTree.fromPgn(line.pgn);
     rebuildTimeline(loaded);
@@ -733,10 +800,19 @@ async function deleteLine(id) {
   if (!line) return;
   const accepted = window.confirm("Eliminare “" + (line.title || "Linea senza nome") + "” dal repertorio?");
   if (!accepted) return;
+  if (mode === "exam" && examAttemptId) {
+    await finishRepertoireExam(true);
+  }
   if (!databaseReady) {
     showToast("Database non pronto: eliminazione non eseguita.");
     return;
   }
+  const removedCardIds = new Set(studyCards
+    .filter((card) => (card.repertoireId ?? card.repertoire_id) === id)
+    .map((card) => card.id));
+  const removedExamIds = new Set(examAttempts
+    .filter((attempt) => (attempt.repertoireId ?? attempt.repertoire_id) === id)
+    .map((attempt) => attempt.id));
   try {
     if (persistenceMode === "sqlite") {
       await invoke("delete_repertoire", { id });
@@ -745,6 +821,11 @@ async function deleteLine(id) {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
     }
     repertoire = repertoire.filter((item) => item.id !== id);
+    studyCards = studyCards.filter((card) => !removedCardIds.has(card.id));
+    reviewLogs = reviewLogs.filter((log) => !removedCardIds.has(log.cardId ?? log.card_id));
+    examAnswers = examAnswers.filter((answer) => !removedExamIds.has(answer.attemptId ?? answer.attempt_id));
+    examAttempts = examAttempts.filter((attempt) => !removedExamIds.has(attempt.id));
+    if (persistenceMode !== "sqlite") persistLocalReviewState();
     if (activeLineId === id) {
       activeLineId = null;
       setDirty(true);
@@ -757,7 +838,7 @@ async function deleteLine(id) {
 }
 
 async function saveLine() {
-  if (mode === "training") return;
+  if (mode !== "studio") return;
   if (!databaseReady) {
     showToast("Database non pronto: il salvataggio è disattivato.");
     return;
@@ -804,6 +885,10 @@ async function saveLine() {
 }
 
 function startTraining() {
+  if (mode === "exam" && examAttemptId) {
+    void finishRepertoireExam(true).then(() => startTraining());
+    return;
+  }
   if (reviewSessionId && !reviewSessionFinished) {
     void markReviewSessionFinished().catch((error) => {
       showToast("Non riesco a chiudere la sessione precedente: " + error.message);
@@ -863,21 +948,21 @@ async function beginDailyReviewSession() {
       await invoke("start_training_session", {
         input: { id, startedAt: now.toISOString(), side },
       });
-    }
-    reviewSessions.unshift({
-      id,
-      startedAt: now.toISOString(),
-      finishedAt: null,
-      side,
-      cardsReviewed: 0,
-      correctCount: 0,
-      againCount: 0,
-    });
-    if (persistenceMode === "browser" && !persistLocalReviewState()) {
-      reviewSessions = reviewSessions.filter((session) => session.id !== id);
-      isStartingReviewSession = false;
-      startButton.disabled = false;
-      return;
+    } else {
+      reviewSessions.unshift({
+        id,
+        startedAt: now.toISOString(),
+        finishedAt: null,
+        side,
+        cardsReviewed: 0,
+        correctCount: 0,
+        againCount: 0,
+      });
+      if (!persistLocalReviewState()) {
+        isStartingReviewSession = false;
+        startButton.disabled = false;
+        return;
+      }
     }
   } catch (error) {
     isStartingReviewSession = false;
@@ -920,21 +1005,19 @@ function openNextReviewCard() {
 }
 
 async function markReviewSessionFinished() {
-  const sessionId = reviewSessionId;
-  if (!sessionId || reviewSessionFinished) return;
+  if (!reviewSessionId || reviewSessionFinished) return;
   const finishedAt = new Date().toISOString();
   if (persistenceMode === "sqlite") {
     await invoke("finish_training_session", {
-      input: { id: sessionId, finishedAt },
+      input: { id: reviewSessionId, finishedAt },
     });
+  } else {
+    reviewSessions = reviewSessions.map((session) => (
+      session.id === reviewSessionId ? { ...session, finishedAt } : session
+    ));
+    persistLocalReviewState();
   }
-  reviewSessions = reviewSessions.map((session) => (
-    session.id === sessionId ? { ...session, finishedAt } : session
-  ));
-  if (persistenceMode === "browser" && !persistLocalReviewState()) {
-    throw new Error("Storico sessioni non salvato nella memoria locale.");
-  }
-  if (reviewSessionId === sessionId) reviewSessionFinished = true;
+  reviewSessionFinished = true;
 }
 
 async function finishReviewSession() {
@@ -1011,16 +1094,16 @@ async function rateCurrentCard(ratingName) {
     } else {
       studyCards = studyCards.filter((entry) => entry.id !== updatedCard.id).concat(updatedCard);
       reviewLogs = [reviewLog, ...reviewLogs];
-    }
-    const session = reviewSessions.find((entry) => entry.id === reviewSessionId);
-    if (session) {
-      session.cardsReviewed = (session.cardsReviewed || 0) + 1;
-      session.correctCount = (session.correctCount || 0) + (reviewSolved ? 1 : 0);
-      session.againCount = (session.againCount || 0) + (result.log.rating === 1 ? 1 : 0);
-    }
-    if (persistenceMode === "browser" && !persistLocalReviewState()) {
-      isSavingReview = false;
-      return;
+      const session = reviewSessions.find((entry) => entry.id === reviewSessionId);
+      if (session) {
+        session.cardsReviewed = (session.cardsReviewed || 0) + 1;
+        session.correctCount = (session.correctCount || 0) + (result.log.rating > 1 ? 1 : 0);
+        session.againCount = (session.againCount || 0) + (result.log.rating === 1 ? 1 : 0);
+      }
+      if (!persistLocalReviewState()) {
+        isSavingReview = false;
+        return;
+      }
     }
   } catch (error) {
     isSavingReview = false;
@@ -1049,104 +1132,10 @@ function showReviewAnswer() {
   }
 }
 
-function formatHistoryDate(value) {
-  if (!value) return "Data non disponibile";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "Data non valida";
-  return new Intl.DateTimeFormat("it-IT", {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(date);
-}
-
-function historyRow(titleText, detailText, statusText, statusClass = "") {
-  const row = document.createElement("div");
-  row.className = "review-history-row";
-  const copy = document.createElement("div");
-  copy.className = "review-history-copy";
-  const title = document.createElement("strong");
-  title.textContent = titleText;
-  const detail = document.createElement("small");
-  detail.textContent = detailText;
-  copy.append(title, detail);
-  row.append(copy);
-  if (statusText) {
-    const status = document.createElement("span");
-    status.className = "review-history-status" + (statusClass ? " " + statusClass : "");
-    status.textContent = statusText;
-    row.append(status);
-  }
-  return row;
-}
-
-function renderReviewHistory(cards) {
-  const sessionsList = $("#review-history-sessions");
-  const reviewsList = $("#review-history-reviews");
-  sessionsList.replaceChildren();
-  reviewsList.replaceChildren();
-
-  const sessions = [...reviewSessions].sort((a, b) => (
-    new Date(b.startedAt || 0) - new Date(a.startedAt || 0)
-  ));
-  if (!sessions.length) {
-    const empty = document.createElement("p");
-    empty.className = "review-history-empty";
-    empty.textContent = "Le sessioni completate appariranno qui.";
-    sessionsList.append(empty);
-  } else {
-    for (const session of sessions.slice(0, 8)) {
-      const count = Number(session.cardsReviewed || 0);
-      const correct = Number(session.correctCount || 0);
-      const accuracy = count ? Math.round((correct / count) * 100) : 0;
-      const side = session.side === "white" ? "Bianco" : session.side === "black" ? "Nero" : "Entrambi";
-      const status = session.finishedAt
-        ? "Completata"
-        : session.id === reviewSessionId ? "In corso" : "Interrotta";
-      const detail = formatHistoryDate(session.startedAt) + " · " + side + " · " +
-        count + " carte · " + accuracy + "% richiamo corretto" +
-        (session.finishedAt ? " · fine " + formatHistoryDate(session.finishedAt) : "");
-      sessionsList.append(historyRow("Sessione di ripasso", detail, status,
-        status === "Interrotta" ? "interrupted" : status === "In corso" ? "active" : "complete"));
-    }
-  }
-
-  const cardsById = new Map(cards.map((card) => [card.id, card]));
-  const ratingNames = { 1: "Again", 2: "Hard", 3: "Good", 4: "Easy" };
-  if (!reviewLogs.length) {
-    const empty = document.createElement("p");
-    empty.className = "review-history-empty";
-    empty.textContent = "Non hai ancora registrato valutazioni.";
-    reviewsList.append(empty);
-  } else {
-    for (const log of reviewLogs.slice(0, 15)) {
-      const card = cardsById.get(log.cardId || log.card_id);
-      const moveLabel = card
-        ? card.repertoireTitle + " · " + card.san + " · " + (card.side === "white" ? "Bianco" : "Nero")
-        : "Carta del repertorio";
-      const detail = formatHistoryDate(log.reviewedAt || log.reviewed_at) +
-        (Number.isFinite(Number(log.elapsedMs ?? log.elapsed_ms))
-          ? " · " + (Number(log.elapsedMs ?? log.elapsed_ms) / 1000).toFixed(1) + " s"
-          : "");
-      let recalled = false;
-      try {
-        const metadata = JSON.parse(log.stateJson || log.state_json || "{}");
-        recalled = metadata.recalled === true;
-      } catch {
-        recalled = false;
-      }
-      const result = recalled ? "Richiamo corretto" : "Richiamo mancato";
-      const rating = ratingNames[Number(log.rating)] || "Valutazione";
-      reviewsList.append(historyRow(moveLabel, detail + " · " + result, rating,
-        rating === "Again" ? "interrupted" : "complete"));
-    }
-  }
-}
-
 function renderReviewPanel() {
   const now = new Date();
   const side = $("#review-side").value;
   const cards = buildReviewCards(repertoire, studyCards, now);
-  renderReviewHistory(cards);
   const todayStats = getTodayReviewStats(reviewLogs, now);
   $("#review-stat-due").textContent = String(countDueCards(cards, now, side));
   $("#review-stat-today").textContent = String(todayStats.reviews);
@@ -1170,6 +1159,523 @@ function renderReviewPanel() {
   $("#review-complete-summary").textContent =
     "Sessione completata: " + reviewCompleted + " carte ripassate, " +
     reviewAgainCount + " valutate Again. " + countReviewsToday(reviewLogs, now) + " ripassi oggi.";
+}
+
+function renderDashboardBars(selector, points) {
+  const container = $(selector);
+  if (!container) return;
+  container.replaceChildren();
+  const maximum = Math.max(1, ...points.map((point) => Number(point.reviews) || 0));
+  for (const point of points) {
+    const item = document.createElement("div");
+    item.className = "dashboard-bar-item";
+    item.title = point.reviews + " ripassi · " + (point.accuracy == null ? "nessun dato" : point.accuracy + "% richiamo");
+    const value = document.createElement("span");
+    value.className = "dashboard-bar-value";
+    value.textContent = String(point.reviews || 0);
+    const track = document.createElement("div");
+    track.className = "dashboard-bar-track";
+    const fill = document.createElement("div");
+    fill.className = "dashboard-bar-fill";
+    fill.style.height = (point.reviews ? Math.max(4, (point.reviews / maximum) * 100) : 2) + "%";
+    track.append(fill);
+    const label = document.createElement("span");
+    label.className = "dashboard-bar-label";
+    label.textContent = point.label;
+    item.append(value, track, label);
+    container.append(item);
+  }
+}
+
+function appendDashboardEmpty(container, message) {
+  const empty = document.createElement("div");
+  empty.className = "dashboard-empty";
+  empty.textContent = message;
+  container.append(empty);
+}
+
+function appendGoalProgress(container, label, actual, target, suffix = "") {
+  const row = document.createElement("div");
+  row.className = "dashboard-goal-progress-row";
+  const header = document.createElement("div");
+  header.className = "dashboard-goal-progress-head";
+  const name = document.createElement("span");
+  name.textContent = label;
+  const value = document.createElement("strong");
+  value.textContent = actual + " / " + target + suffix;
+  header.append(name, value);
+  const track = document.createElement("div");
+  track.className = "dashboard-progress-track";
+  const fill = document.createElement("div");
+  fill.className = "dashboard-progress-fill";
+  const progress = target > 0 ? Math.min(100, Math.round((actual / target) * 100)) : 0;
+  fill.style.width = progress + "%";
+  track.append(fill);
+  row.append(header, track);
+  container.append(row);
+}
+
+function renderDashboard() {
+  if (!$("#dashboard-panel")) return;
+  const now = new Date();
+  const cards = buildReviewCards(repertoire, studyCards, now);
+  const snapshot = buildDashboardSnapshot({
+    repertoires: repertoire,
+    reviewCards: cards,
+    reviewLogs,
+    sessions: reviewSessions,
+    goals: studyGoals,
+    examAttempts,
+  }, now);
+
+  $("#dashboard-stat-repertoires").textContent = String(snapshot.overview.repertoireCount);
+  $("#dashboard-stat-moves").textContent = String(snapshot.overview.totalMoves);
+  $("#dashboard-stat-today").textContent = String(snapshot.today.reviews);
+  $("#dashboard-stat-today-detail").textContent = snapshot.today.minutes + " minuti · " + snapshot.today.sessions + " sessioni";
+  $("#dashboard-stat-accuracy").textContent = snapshot.week.accuracy == null ? "—" : snapshot.week.accuracy + "%";
+  $("#dashboard-stat-week-detail").textContent = snapshot.week.recalled + " mosse ricordate su " + snapshot.week.reviews;
+  $("#dashboard-stat-due").textContent = String(snapshot.overview.dueCards);
+  $("#dashboard-daily-total").textContent = String(snapshot.today.reviews);
+  $("#dashboard-weekly-total").textContent = String(snapshot.week.reviews);
+  renderDashboardBars("#dashboard-daily-chart", snapshot.dailyTrend);
+  renderDashboardBars("#dashboard-weekly-chart", snapshot.weeklyTrend);
+
+  const goalsForm = $("#dashboard-goals-form");
+  if (!goalsForm.contains(document.activeElement)) {
+    $("#goal-daily-reviews").value = String(snapshot.today.goal.targetReviews);
+    $("#goal-daily-minutes").value = String(snapshot.today.goal.targetMinutes);
+    $("#goal-weekly-reviews").value = String(snapshot.week.goal.targetReviews);
+    $("#goal-weekly-minutes").value = String(snapshot.week.goal.targetMinutes);
+    $("#goal-target-accuracy").value = String(Math.max(snapshot.today.goal.targetAccuracy, snapshot.week.goal.targetAccuracy));
+  }
+  const goalBox = $("#dashboard-goal-progress");
+  goalBox.replaceChildren();
+  for (const [label, actual] of [["Oggi", snapshot.today], ["Questa settimana", snapshot.week]]) {
+    const group = document.createElement("div");
+    group.className = "dashboard-goal-group";
+    const heading = document.createElement("strong");
+    heading.className = "dashboard-goal-group-title";
+    heading.textContent = label;
+    group.append(heading);
+    appendGoalProgress(group, "Ripassi", actual.reviews, actual.goal.targetReviews);
+    appendGoalProgress(group, "Minuti", actual.minutes, actual.goal.targetMinutes);
+    appendGoalProgress(group, "Richiamo", actual.accuracy ?? 0, actual.goal.targetAccuracy, "%");
+    goalBox.append(group);
+  }
+
+  const repertoireList = $("#dashboard-repertoire-list");
+  repertoireList.replaceChildren();
+  if (!snapshot.repertoires.length) {
+    appendDashboardEmpty(repertoireList, "Crea e salva un repertorio in Studio per iniziare a misurare i progressi.");
+  } else {
+    for (const line of snapshot.repertoires) {
+      const row = document.createElement("div");
+      row.className = "dashboard-repertoire-row";
+      const details = document.createElement("div");
+      const title = document.createElement("strong");
+      title.className = "dashboard-repertoire-title";
+      title.textContent = line.title;
+      const detail = document.createElement("span");
+      detail.className = "dashboard-repertoire-detail";
+      detail.textContent = line.reviewedCards + "/" + line.moveCount + " schede viste · " +
+        line.reviews + " valutazioni" +
+        (line.lastReview ? " · ultimo ripasso " + new Date(line.lastReview).toLocaleDateString("it-IT") : "");
+      details.append(title, detail);
+      const metric = document.createElement("strong");
+      metric.className = "dashboard-repertoire-metric";
+      metric.textContent = line.accuracy == null ? "—" : line.accuracy + "%";
+      row.append(details, metric);
+      row.addEventListener("click", () => openLine(line.id));
+      row.tabIndex = 0;
+      row.setAttribute("role", "button");
+      row.setAttribute("aria-label", "Apri il repertorio " + line.title);
+      row.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          openLine(line.id);
+        }
+      });
+      repertoireList.append(row);
+    }
+  }
+
+  const examSelect = $("#exam-repertoire");
+  const previousSelection = examSelect.value;
+  examSelect.replaceChildren();
+  for (const line of repertoire) {
+    const option = document.createElement("option");
+    option.value = line.id;
+    option.textContent = line.title || "Linea senza nome";
+    examSelect.append(option);
+  }
+  if (repertoire.some((line) => line.id === previousSelection)) examSelect.value = previousSelection;
+  $("#exam-start").disabled = !repertoire.length || !databaseReady;
+
+  const history = $("#dashboard-exam-history");
+  history.replaceChildren();
+  if (!snapshot.exams.length) {
+    appendDashboardEmpty(history, "Gli esami completati appariranno qui.");
+  } else {
+    for (const attempt of snapshot.exams) {
+      const row = document.createElement("div");
+      row.className = "dashboard-history-row";
+      const details = document.createElement("div");
+      const title = document.createElement("strong");
+      title.className = "dashboard-history-title";
+      title.textContent = attempt.repertoireTitle || "Esame repertorio";
+      const correct = Number(attempt.correctCount ?? attempt.correct_count ?? 0);
+      const total = Number(attempt.totalQuestions ?? attempt.total_questions ?? 0);
+      const score = total ? Math.round((correct / total) * 100) : 0;
+      const started = attempt.startedAt ?? attempt.started_at;
+      const detail = document.createElement("span");
+      detail.className = "dashboard-history-detail";
+      detail.textContent = (started ? new Date(started).toLocaleDateString("it-IT") : "Data non disponibile") +
+        " · " + correct + "/" + total + " risposte corrette · " + score + "%";
+      details.append(title, detail);
+      const status = document.createElement("strong");
+      status.className = "dashboard-history-status";
+      const state = attempt.status || "completed";
+      if (state === "aborted") {
+        status.textContent = "Interrotto";
+        status.classList.add("aborted");
+      } else if (state === "in_progress") {
+        status.textContent = "In corso";
+      } else if (attempt.passed) {
+        status.textContent = "Superato";
+      } else {
+        status.textContent = "Da ripetere";
+        status.classList.add("failed");
+      }
+      row.append(details, status);
+      history.append(row);
+    }
+  }
+}
+
+function nextExamQuestion() {
+  if (!currentExamCard || !examAnswered || isSavingExamAnswer) return;
+  if (examQuestionIndex + 1 >= examTotalQuestions) {
+    void finishRepertoireExam(false);
+    return;
+  }
+  examQuestionIndex += 1;
+  openNextExamQuestion();
+}
+
+function renderExamPanel() {
+  const active = $("#exam-active");
+  if (!active) return;
+  active.hidden = mode !== "exam" || !currentExamCard;
+  if (!currentExamCard) return;
+  const side = currentExamCard.side === "white" ? "Bianco" : "Nero";
+  $("#exam-question-meta").textContent = (currentExamCard.repertoireTitle || "Repertorio") +
+    " · " + side + " · domanda " + (examQuestionIndex + 1) + "/" + examTotalQuestions;
+  $("#exam-feedback").textContent = examFeedback || "Trova la mossa prevista in questa posizione.";
+  const next = $("#exam-next");
+  next.hidden = !examAnswered;
+  next.textContent = examQuestionIndex + 1 >= examTotalQuestions ? "Concludi esame" : "Domanda successiva";
+  next.disabled = isSavingExamAnswer;
+}
+
+async function saveDashboardGoals(event) {
+  event.preventDefault();
+  try {
+    const targetAccuracy = Number($("#goal-target-accuracy").value);
+    const goals = [
+      normalizeStudyGoal({
+        period: "daily",
+        targetReviews: $("#goal-daily-reviews").value,
+        targetMinutes: $("#goal-daily-minutes").value,
+        targetAccuracy,
+      }),
+      normalizeStudyGoal({
+        period: "weekly",
+        targetReviews: $("#goal-weekly-reviews").value,
+        targetMinutes: $("#goal-weekly-minutes").value,
+        targetAccuracy,
+      }),
+    ];
+    for (const goal of goals) {
+      if (persistenceMode === "sqlite") {
+        const saved = await invoke("save_study_goal", { input: goal });
+        studyGoals = studyGoals.filter((entry) => entry.period !== saved.period).concat(saved);
+      } else {
+        studyGoals = studyGoals.filter((entry) => entry.period !== goal.period).concat(goal);
+      }
+    }
+    if (persistenceMode !== "sqlite" && !persistLocalReviewState()) return;
+    $("#dashboard-goal-status").textContent = "Obiettivi aggiornati.";
+    renderAll();
+  } catch (error) {
+    $("#dashboard-goal-status").textContent = "Errore nel salvataggio: " + error.message;
+  }
+}
+
+async function startRepertoireExam(event) {
+  event.preventDefault();
+  if (!databaseReady || !repertoire.length) {
+    showToast("Salva almeno un repertorio prima di avviare un esame.");
+    return;
+  }
+  if (examAttemptId) {
+    showToast("Concludi prima l'esame in corso.");
+    return;
+  }
+  const repertoireId = $("#exam-repertoire").value;
+  const line = repertoire.find((entry) => entry.id === repertoireId);
+  if (!line) {
+    showToast("Seleziona un repertorio valido.");
+    return;
+  }
+  const side = $("#exam-side").value;
+  const count = Number($("#exam-count").value);
+  const threshold = Number($("#exam-pass-threshold").value);
+  if (!Number.isInteger(count) || count < 1 || count > 500 ||
+      !Number.isInteger(threshold) || threshold < 1 || threshold > 100) {
+    showToast("Numero di domande o soglia non validi.");
+    return;
+  }
+  const availableCards = buildReviewCards([line], studyCards, new Date());
+  const questions = selectExamQuestions(availableCards, { repertoireId, side, count });
+  if (!questions.length) {
+    showToast("Il repertorio non contiene mosse per il lato scelto.");
+    return;
+  }
+
+  const now = new Date();
+  const id = globalThis.crypto?.randomUUID?.() ?? "exam-" + Date.now();
+  const attempt = {
+    id,
+    repertoireId,
+    repertoireTitle: line.title || "Linea senza nome",
+    startedAt: now.toISOString(),
+    finishedAt: null,
+    totalQuestions: questions.length,
+    correctCount: 0,
+    passThreshold: threshold,
+    passed: false,
+    side,
+    status: "in_progress",
+  };
+  try {
+    if (persistenceMode === "sqlite") {
+      await invoke("start_exam", {
+        input: {
+          id,
+          repertoireId,
+          repertoireTitle: attempt.repertoireTitle,
+          startedAt: attempt.startedAt,
+          totalQuestions: attempt.totalQuestions,
+          passThreshold: threshold,
+          side,
+        },
+      });
+    } else {
+      examAttempts = [attempt, ...examAttempts];
+      if (!persistLocalReviewState()) return;
+    }
+  } catch (error) {
+    showToast("Non riesco ad avviare l'esame: " + error.message);
+    return;
+  }
+
+  examAttemptId = id;
+  examQueue = [...questions];
+  examQuestionIndex = 0;
+  examTotalQuestions = questions.length;
+  examCorrectCount = 0;
+  examPassThreshold = threshold;
+  examAnswered = false;
+  examFeedback = "";
+  examLastMove = null;
+  mode = "exam";
+  selectedSquare = null;
+  openNextExamQuestion();
+  if (questions.length < count) {
+    showToast("Esame avviato con " + questions.length + " domande disponibili nel repertorio.");
+  }
+}
+
+function openNextExamQuestion() {
+  currentExamCard = examQueue.shift() || null;
+  examAnswered = false;
+  examFeedback = "";
+  examLastMove = null;
+  selectedSquare = null;
+  if (!currentExamCard) {
+    void finishRepertoireExam(false);
+    return;
+  }
+  trainingGame = new Chess(currentExamCard.fen);
+  boardFlipped = currentExamCard.side === "black";
+  renderAll();
+}
+
+async function recordExamMove(selectedMove) {
+  if (!currentExamCard || examAnswered || isSavingExamAnswer) return;
+  isSavingExamAnswer = true;
+  let played;
+  try {
+    played = trainingGame.move({
+      from: selectedMove.from,
+      to: selectedMove.to,
+      ...(selectedMove.promotion ? { promotion: selectedMove.promotion } : {}),
+    });
+  } catch {
+    played = null;
+  }
+  selectedSquare = null;
+  if (!played) {
+    isSavingExamAnswer = false;
+    renderBoard();
+    showToast("Mossa non legale.");
+    return;
+  }
+
+  const selectedUci = played.from + played.to + (played.promotion || "");
+  const correct = selectedUci === currentExamCard.uci;
+  let displayedMove = played;
+  if (!correct) {
+    trainingGame.undo();
+    try {
+      displayedMove = trainingGame.move(parseUci(currentExamCard.uci));
+    } catch (error) {
+      isSavingExamAnswer = false;
+      showToast("Non riesco a mostrare la soluzione: " + error.message);
+      return;
+    }
+  }
+
+  const answer = {
+    id: globalThis.crypto?.randomUUID?.() ?? "answer-" + Date.now(),
+    attemptId: examAttemptId,
+    questionIndex: examQuestionIndex,
+    edgeId: currentExamCard.edgeId,
+    positionFen: currentExamCard.fen,
+    expectedUci: currentExamCard.uci,
+    selectedUci,
+    correct,
+    answeredAt: new Date().toISOString(),
+  };
+  try {
+    if (persistenceMode === "sqlite") {
+      await invoke("record_exam_answer", {
+        input: {
+          id: answer.id,
+          attemptId: answer.attemptId,
+          questionIndex: answer.questionIndex,
+          edgeId: answer.edgeId,
+          positionFen: answer.positionFen,
+          expectedUci: answer.expectedUci,
+          selectedUci: answer.selectedUci,
+          answeredAt: answer.answeredAt,
+        },
+      });
+      const attempt = examAttempts.find((entry) => entry.id === examAttemptId);
+      if (attempt) attempt.correctCount = Number(attempt.correctCount || 0) + (correct ? 1 : 0);
+    } else {
+      const nextAnswers = [...examAnswers, answer];
+      const nextAttempts = examAttempts.map((attempt) => attempt.id === examAttemptId
+        ? { ...attempt, correctCount: Number(attempt.correctCount || 0) + (correct ? 1 : 0) }
+        : attempt);
+      const previousAnswers = examAnswers;
+      const previousAttempts = examAttempts;
+      examAnswers = nextAnswers;
+      examAttempts = nextAttempts;
+      if (!persistLocalReviewState()) {
+        examAnswers = previousAnswers;
+        examAttempts = previousAttempts;
+        trainingGame.undo();
+        isSavingExamAnswer = false;
+        renderAll();
+        return;
+      }
+    }
+  } catch (error) {
+    // Revert the tentative answer so the player can safely retry after a storage error.
+    trainingGame.undo();
+    isSavingExamAnswer = false;
+    renderAll();
+    showToast("Non riesco a registrare la risposta: " + error.message);
+    return;
+  }
+
+  if (correct) examCorrectCount += 1;
+  examAnswered = true;
+  examLastMove = displayedMove;
+  examFeedback = correct
+    ? "Risposta corretta: " + displayedMove.san + "."
+    : "Risposta errata. La mossa prevista era " + displayedMove.san + ".";
+  isSavingExamAnswer = false;
+  renderAll();
+}
+
+async function finishRepertoireExam(aborted = false) {
+  if (!examAttemptId) return;
+  const attemptId = examAttemptId;
+  const finishedAt = new Date().toISOString();
+  const result = calculateExamResult(
+    Array.from({ length: examTotalQuestions }, (_, index) => ({ correct: index < examCorrectCount })),
+    examPassThreshold,
+  );
+  try {
+    if (persistenceMode === "sqlite") {
+      await invoke("finish_exam", {
+        input: { id: attemptId, finishedAt, aborted },
+      });
+      examAttempts = await invoke("list_exam_attempts");
+    } else {
+      examAttempts = examAttempts.map((entry) => entry.id === attemptId ? {
+        ...entry,
+        finishedAt,
+        correctCount: result.correct,
+        passed: !aborted && result.passed,
+        status: aborted ? "aborted" : "completed",
+      } : entry);
+      persistLocalReviewState();
+    }
+  } catch (error) {
+    showToast("Non riesco a salvare la chiusura dell'esame: " + error.message);
+  }
+  examAttemptId = null;
+  examQueue = [];
+  currentExamCard = null;
+  examAnswered = false;
+  examLastMove = null;
+  trainingGame = null;
+  mode = "dashboard";
+  renderAll();
+  if (aborted) showToast("Esame interrotto. Il tentativo resta nello storico.");
+  else showToast(result.passed
+    ? "Esame superato: " + result.accuracy + "%."
+    : "Esame concluso: " + result.accuracy + "%. Da ripetere.");
+}
+
+function leaveExam() {
+  if (examAttemptId) void finishRepertoireExam(true);
+  else {
+    mode = "dashboard";
+    renderAll();
+  }
+}
+
+async function showStudio() {
+  if (mode === "training") leaveTraining();
+  if (mode === "exam" && examAttemptId) {
+    await finishRepertoireExam(true);
+  }
+  mode = "studio";
+  renderAll();
+}
+
+function showDashboard() {
+  if (mode === "training") leaveTraining();
+  if (mode === "exam" && examAttemptId) {
+    leaveExam();
+    return;
+  }
+  mode = "dashboard";
+  renderAll();
 }
 
 function leaveTraining() {
@@ -1214,7 +1720,7 @@ function importPgn() {
 }
 
 function exportPgn() {
-  const pgn = mode === "training" || !studioTree.edges.size ? "" : timelinePgn();
+  const pgn = mode !== "studio" || !studioTree.edges.size ? "" : timelinePgn();
   if (!pgn) {
     showToast("Non ci sono mosse da esportare.");
     return;
@@ -1227,11 +1733,18 @@ function exportPgn() {
   document.body.append(anchor);
   anchor.click();
   anchor.remove();
-  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  URL.revokeObjectURL(url);
   showToast("File PGN esportato.");
 }
 
 function newPosition() {
+  if (mode === "exam") {
+    leaveExam();
+    return;
+  }
+  if (mode === "dashboard") {
+    mode = "studio";
+  }
   if (mode === "training") {
     leaveTraining();
     return;
@@ -1247,6 +1760,7 @@ function newPosition() {
   titleInput.value = "Nuova linea";
   setDirty(true);
   renderAll();
+void initializePersistence();
 }
 
 async function copyFen() {
@@ -1264,10 +1778,21 @@ boardElement.addEventListener("click", (event) => {
   if (squareButton) handleSquareClick(squareButton.dataset.square);
 });
 
+$("#nav-dashboard").addEventListener("click", showDashboard);
 $("#nav-studio").addEventListener("click", () => {
-  if (mode === "training") leaveTraining();
+  if (mode === "training") {
+    leaveTraining();
+  } else if (mode === "exam" && examAttemptId) {
+    void finishRepertoireExam(true).then(() => { mode = "studio"; renderAll(); });
+  } else {
+    mode = "studio";
+    renderAll();
+  }
 });
 $("#nav-training").addEventListener("click", () => startTraining());
+$("#dashboard-goals-form").addEventListener("submit", (event) => { void saveDashboardGoals(event); });
+$("#dashboard-exam-form").addEventListener("submit", (event) => { void startRepertoireExam(event); });
+$("#exam-next").addEventListener("click", nextExamQuestion);
 $("#review-side").addEventListener("change", renderReviewPanel);
 $("#review-start").addEventListener("click", () => { void beginDailyReviewSession(); });
 $("#review-show-answer").addEventListener("click", showReviewAnswer);
