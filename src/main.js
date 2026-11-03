@@ -19,7 +19,12 @@ import {
   selectExamQuestions,
 } from "./dashboard.js";
 import "./style.css";
+import { applyUiPreferences, readUiPreferences, saveUiPreferences } from "./ui-preferences.js";
 
+const uiPreferences = readUiPreferences();
+applyUiPreferences(uiPreferences);
+
+const PIECE_NAMES = { k: "Re", q: "Donna", r: "Torre", b: "Alfiere", n: "Cavallo", p: "Pedone" };
 const STORAGE_KEY = "chess-os.repertoire.v1";
 const REVIEW_STORAGE_KEY = "chess-os.fsrs.review-state.v1";
 const DEFAULT_FEN = new Chess().fen();
@@ -267,8 +272,10 @@ function showToast(message) {
 function setDirty(value = true) {
   dirty = value;
   const indicator = $("#saved-indicator");
-  indicator.textContent = dirty ? "MODIFICHE NON SALVATE" : "SALVATA";
-  indicator.classList.toggle("unsaved", dirty);
+  if (indicator) {
+    indicator.textContent = dirty ? "Modifiche non salvate" : activeLineId ? "Salvato" : "Non ancora salvato";
+    indicator.classList.toggle("unsaved", dirty);
+  }
 }
 
 function confirmDiscardChanges(action) {
@@ -335,16 +342,7 @@ function currentLastMove() {
   return studioMoveObjects[studioPly - 1] || null;
 }
 
-function updateBoardCoordinates() {
-  const ranks = Array.from($(".rank-labels").children);
-  const rankValues = boardFlipped ? ["1", "2", "3", "4", "5", "6", "7", "8"] : ["8", "7", "6", "5", "4", "3", "2", "1"];
-  ranks.forEach((node, index) => { node.textContent = rankValues[index]; });
-  const fileNodes = Array.from($(".file-labels").children);
-  const fileValues = boardFlipped ? ["h", "g", "f", "e", "d", "c", "b", "a"] : ["a", "b", "c", "d", "e", "f", "g", "h"];
-  fileNodes.forEach((node, index) => { node.textContent = fileValues[index]; });
-}
-
-function renderBoard() {
+coords functionfunction renderBoard() {
   const chess = activeGame();
   const board = chess.board();
   const legalTargets = new Set(
@@ -379,26 +377,49 @@ function renderBoard() {
       button.type = "button";
       button.dataset.square = square;
       button.className = "square " + (isLight ? "light" : "dark");
+      if (piece) button.classList.add("has-piece");
       if (selectedSquare === square) button.classList.add("selected");
       if (lastSquares.has(square)) button.classList.add("last-move");
       if (checkedKingSquare === square) button.classList.add("in-check");
       if (legalTargets.has(square)) button.classList.add(piece ? "capture-target" : "legal-target");
 
       if (piece) {
-        const pieceSpan = document.createElement("span");
-        pieceSpan.className = "piece " + (piece.color === "w" ? "white-piece" : "black-piece");
-        pieceSpan.textContent = symbols[piece.color][piece.type];
-        button.append(pieceSpan);
-        button.setAttribute("aria-label", (piece.color === "w" ? "Bianco " : "Nero ") + piece.type + " in " + square);
+        const pieceSvg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+        pieceSvg.setAttribute("class", "piece " + (piece.color === "w" ? "white-piece" : "black-piece"));
+        pieceSvg.setAttribute("viewBox", "0 0 45 45");
+        pieceSvg.setAttribute("aria-hidden", "true");
+        pieceSvg.setAttribute("focusable", "false");
+        const use = document.createElementNS("http://www.w3.org/2000/svg", "use");
+        use.setAttribute("href", "#piece-" + piece.color + piece.type);
+        pieceSvg.append(use);
+        button.append(pieceSvg);
+        button.setAttribute("aria-label", (piece.color === "w" ? "Bianco " : "Nero ") + PIECE_NAMES[piece.type] + " in " + square);
       } else {
-        button.setAttribute("aria-label", square);
+        button.setAttribute("aria-label", "Casa vuota " + square);
+      }
+      if (displayRow === 7) {
+        const fileCoordinate = document.createElement("span");
+        fileCoordinate.className = "board-coordinate coordinate-file";
+        fileCoordinate.textContent = square[0];
+        fileCoordinate.setAttribute("aria-hidden", "true");
+        button.append(fileCoordinate);
+      }
+      if (displayCol === 0) {
+        const rankCoordinate = document.createElement("span");
+        rankCoordinate.className = "board-coordinate coordinate-rank";
+        rankCoordinate.textContent = square[1];
+        rankCoordinate.setAttribute("aria-hidden", "true");
+        button.append(rankCoordinate);
       }
       boardElement.append(button);
     }
   }
 
-  updateBoardCoordinates();
-  $("#turn-label").textContent = (chess.turn() === "w" ? "Bianco" : "Nero") + " al tratto";
+  const turnSide = chess.turn() === "w" ? "Bianco" : "Nero";
+  $("#turn-label").textContent = turnSide + " al tratto";
+  $("#board-view-label").textContent = "Vista: " + (boardFlipped ? "Nero" : "Bianco");
+  $("#flip-board").setAttribute("aria-pressed", String(boardFlipped));
+  $("#flip-board").title = "Ruota la scacchiera (F)";
   $("#game-status").textContent = gameStatus(chess);
   const currentCount = mode === "training" ? reviewCompleted : mode === "exam" ? examQuestionIndex + (examAnswered ? 1 : 0) : studioPly;
   const totalCount = mode === "training" ? reviewSessionTotal : mode === "exam" ? examTotalQuestions : studioSans.length;
@@ -415,7 +436,11 @@ function renderBoard() {
     : mode === "exam" ? "ESAME DEL REPERTORIO" : "PARTITA / ANALISI";
   $("#undo").disabled = mode !== "studio" || studioPly === 0;
   $("#redo").disabled = mode !== "studio" || studioPly >= studioSans.length;
-  $("#flip-board").textContent = boardFlipped ? "Vista Bianco" : "Vista Nero";
+  $("#topbar-active-title").textContent = titleInput.value.trim() || "Nuovo repertorio";
+  const boardLabel = $("#board-label");
+  if (boardLabel) boardLabel.textContent = mode === "training" ? "Allenamento FSRS" : mode === "exam" ? "Esame del repertorio" : "Studio";
+  const lineCount = $("#line-move-count");
+  if (lineCount) lineCount.textContent = studioPly + " / " + studioSans.length + " semimosse";
 }
 
 function renderMoves() {
@@ -487,7 +512,8 @@ function renderRepertoire() {
     const count = Number.isInteger(line.edgeCount)
       ? line.edgeCount
       : (Array.isArray(line.sans) ? line.sans.length : 0);
-    meta.textContent = count + " " + (count === 1 ? "arco" : "archi") + (line.nodeCount ? " · " + line.nodeCount + " posizioni" : "");
+    meta.textContent = count + " " + (count === 1 ? "mossa" : "mosse") + (line.nodeCount ? " · " + line.nodeCount + " posizioni" : "");
+    open.title = line.title || "Repertorio senza nome";
     open.append(name, meta);
     open.addEventListener("click", () => openLine(line.id));
 
@@ -518,9 +544,9 @@ function renderMode() {
       : exam ? "REPERTORIO / ESAME"
         : "REPERTORIO / ANALISI";
   $("#page-title").textContent = dashboard
-    ? "Dashboard e progressi"
-    : training ? "Ripasso giornaliero"
-      : exam ? "Esame del repertorio" : "Chess Studio";
+    ? "Dashboard"
+    : training ? "Allenamento"
+      : exam ? "Esame del repertorio" : "Studio";
   $("#page-subtitle").textContent = dashboard
     ? "Controlla i progressi, gli obiettivi e la preparazione dei tuoi repertori."
     : training ? "Allena il richiamo delle mosse con intervalli adattivi."
@@ -530,7 +556,8 @@ function renderMode() {
   $("#study-grid").hidden = !study;
   $("#dashboard-panel").hidden = !dashboard;
   $("#save-line").disabled = mode !== "studio" || !databaseReady;
-  $("#reset").textContent = training ? "Esci dal ripasso" : exam ? "Interrompi esame" : "Nuova posizione";
+  $("#save-line").title = !databaseReady ? "Database non pronto: salvataggio disattivato" : !studioTree.edges.size ? "Aggiungi una mossa prima di salvare" : "Salva il repertorio (Ctrl+S)";
+  $("#reset").textContent = training ? "Esci dall'allenamento" : exam ? "Interrompi esame" : "Nuovo";
   for (const selector of ["#line-card", "#moves-card", "#variations-card", "#import-card"]) {
     $(selector).hidden = mode !== "studio";
   }
@@ -817,9 +844,13 @@ function openPromotionChooser(from, to, legalMoves) {
     button.type = "button";
     button.className = "promotion-choice";
     button.setAttribute("aria-label", "Promuovi a " + promotionNames[type]);
-    const piece = document.createElement("span");
-    piece.className = "piece " + (color === "w" ? "white-piece" : "black-piece");
-    piece.textContent = symbols[color][type];
+    const piece = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    piece.setAttribute("class", "piece " + (color === "w" ? "white-piece" : "black-piece"));
+    piece.setAttribute("viewBox", "0 0 45 45");
+    piece.setAttribute("aria-hidden", "true");
+    const use = document.createElementNS("http://www.w3.org/2000/svg", "use");
+    use.setAttribute("href", "#piece-" + color + type);
+    piece.append(use);
     const label = document.createElement("small");
     label.textContent = promotionNames[type];
     button.append(piece, label);
@@ -1947,7 +1978,38 @@ function newPosition() {
   closePromotionChooser();
   titleInput.value = "Nuova linea";
   setDirty(true);
-  renderAll();
+  function initializeUiPreferences() {
+  const controls = [
+    ["#ui-theme-select", "theme"],
+    ["#board-theme-select", "boardTheme"],
+    ["#board-coordinates-select", "coordinates"],
+    ["#motion-select", "motion"],
+  ];
+  for (const [selector, key] of controls) {
+    const element = $(selector);
+    if (!element) continue;
+    element.value = uiPreferences[key];
+    element.addEventListener("change", () => {
+      uiPreferences[key] = element.value;
+      if (!saveUiPreferences(uiPreferences)) {
+        showToast("Preferenza applicata, ma non riesco a salvarla nel browser.", { type: "warning" });
+      }
+    });
+  }
+}
+
+function initializeKeyboardControls() {
+  $("#to-start")?.addEventListener("click", () => {
+    if (mode === "studio") positionForPly(0);
+  });
+  $("#to-end")?.addEventListener("click", () => {
+    if (mode === "studio") positionForPly(studioSans.length);
+  });
+}
+
+initializeUiPreferences();
+initializeKeyboardControls();
+renderAll();
 void initializePersistence();
 }
 
@@ -2038,14 +2100,34 @@ document.addEventListener("keydown", (event) => {
     renderBoard();
     return;
   }
-  if (mode !== "studio" || pendingPromotion) return;
   const target = event.target;
-  if (target instanceof HTMLElement && (
-    target.isContentEditable
-    || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)
-    || (target.tagName === "BUTTON" && !target.matches(".square, .san-move"))
-  )) return;
-  if (event.key === "ArrowLeft" && studioPly > 0) {
+  const editing = target instanceof HTMLElement && (
+    target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)
+  );
+  if (event.ctrlKey && event.key.toLowerCase() === "s") {
+    event.preventDefault();
+    if (mode === "studio") void saveLine();
+    return;
+  }
+  if (event.ctrlKey && event.key.toLowerCase() === "n") {
+    event.preventDefault();
+    if (mode === "studio") newPosition();
+    return;
+  }
+  if (!editing && event.key.toLowerCase() === "f" && !event.ctrlKey && !event.altKey) {
+    boardFlipped = !boardFlipped;
+    renderBoard();
+    return;
+  }
+  if (mode !== "studio" || pendingPromotion || editing ||
+      (target instanceof HTMLElement && target.tagName === "BUTTON" && !target.matches(".square, .san-move"))) return;
+  if (event.key === "Home") {
+    event.preventDefault();
+    positionForPly(0);
+  } else if (event.key === "End") {
+    event.preventDefault();
+    positionForPly(studioSans.length);
+  } else if (event.key === "ArrowLeft" && studioPly > 0) {
     event.preventDefault();
     positionForPly(studioPly - 1);
   } else if (event.key === "ArrowRight" && studioPly < studioSans.length) {
