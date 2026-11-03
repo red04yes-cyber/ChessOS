@@ -666,17 +666,81 @@ export function initChessLab(options) {
   }
 
   async function importCollection(source, label) {
-    if (!String(source || "").trim()) throw new Error("Nessun testo PGN da importare.");
+    if (!String(source || "").trim()) return { saved: 0, skipped: 0, errors: [] };
     const parsed = parsePgnCollection(source);
     if (!parsed.games.length) {
       showImportErrors(parsed.errors, []);
-      setStatus("#lab-import-status", "Nessuna partita valida da salvare.", true);
-      return;
+      setStatus("#lab-import-status", "Nessuna partita valida da salvare: " + parsed.errors.length + " errori.", true);
+      return { saved: 0, skipped: 0, errors: parsed.errors };
     }
     setStatus("#lab-import-status", "Salvataggio di " + parsed.games.length + " partite " + label + "…");
     const result = await importGames(parsed.games);
     showImportErrors(parsed.errors, result.errors || []);
-    setStatus("#lab-import-status", result.saved + " di " + parsed.total + " partite salvate nel repertorio.");
+    setStatus("#lab-import-status", result.saved + " nuove partite salvate, " + (result.skipped || 0) + " già presenti, " + (parsed.errors.length + (result.errors || []).length) + " errori.");
+    return { ...result, errors: [...parsed.errors, ...(result.errors || [])], total: parsed.total };
+  }
+
+  async function syncAccounts() {
+    const chesscom = $("#lab-chesscom-user").value.trim();
+    const lichess = $("#lab-lichess-user").value.trim();
+    const token = $("#lab-lichess-import-token").value.trim();
+    if (!chesscom && !lichess) {
+      setStatus("#lab-import-status", "Inserisci almeno uno username Chess.com o Lichess.", true);
+      return;
+    }
+    try {
+      localStorage.setItem("chess-os.connected-accounts.v1", JSON.stringify({ chesscom, lichess }));
+    } catch {
+      // I nomi utente sono una preferenza locale, non un requisito per la sincronizzazione.
+    }
+    $("#lab-sync-accounts").disabled = true;
+    let downloaded = 0;
+    let saved = 0;
+    let skipped = 0;
+    let failures = 0;
+    const importBatch = async (pgn, label) => {
+      const result = await importCollection(pgn, label);
+      downloaded += result.total || 0;
+      saved += result.saved || 0;
+      skipped += result.skipped || 0;
+      failures += (result.errors || []).length;
+    };
+    try {
+      if (chesscom) {
+        setStatus("#lab-import-status", "Sincronizzazione di tutte le mensilità pubbliche Chess.com…");
+        const result = await syncChessComGames(chesscom,
+          (pgn, meta) => importBatch(pgn, "da Chess.com " + (meta.label || "")),
+          (progress) => {
+            if (progress.phase === "archive") {
+              setStatus("#lab-import-status", "Chess.com: archivio " + progress.current + " / " + progress.total + " (" + progress.label + ")…");
+            }
+          });
+        downloaded += result.games % 100;
+      }
+      if (lichess) {
+        setStatus("#lab-import-status", "Sincronizzazione dell'export completo Lichess…");
+        const result = await syncLichessGames(lichess, token,
+          (pgn, meta) => importBatch(pgn, "da Lichess"),
+          (progress) => {
+            setStatus("#lab-import-status", "Lichess: " + progress.count + " partite scaricate…");
+          });
+        downloaded += result.games % 100;
+      }
+      setStatus("#lab-import-status", "Sincronizzazione terminata: " + saved + " nuove partite aggiunte, " + skipped + " doppioni saltati, " + failures + " errori di importazione.");
+    } catch (error) {
+      setStatus("#lab-import-status", "Sincronizzazione parziale: " + error.message + " · Le partite già importate restano salvate.", true);
+    } finally {
+      $("#lab-sync-accounts").disabled = false;
+      $("#lab-lichess-import-token").value = "";
+    }
+  }
+
+  try {
+    const profiles = JSON.parse(localStorage.getItem("chess-os.connected-accounts.v1") || "{}");
+    $("#lab-chesscom-user").value = typeof profiles.chesscom === "string" ? profiles.chesscom : "";
+    $("#lab-lichess-user").value = typeof profiles.lichess === "string" ? profiles.lichess : "";
+  } catch {
+    // Preferenze assenti o non leggibili: i campi restano modificabili.
   }
 
   $("#lab-review").addEventListener("click", () => { void reviewGame(); });
@@ -699,22 +763,10 @@ export function initChessLab(options) {
       event.target.value = "";
     }
   });
-  $("#lab-import-account").addEventListener("click", async () => {
-    const platform = $("#lab-platform").value;
-    const username = $("#lab-username").value.trim();
-    $("#lab-import-account").disabled = true;
-    try {
-      setStatus("#lab-import-status", "Download degli archivi pubblici da " + platform + "…");
-      const pgn = platform === "chesscom"
-        ? await fetchChessComGames(username, 2)
-        : await fetchLichessGames(username, 50);
-      await importCollection(pgn, "da " + platform);
-    } catch (error) {
-      setStatus("#lab-import-status", error.message, true);
-    } finally {
-      $("#lab-import-account").disabled = false;
-    }
-  });
+  $("#lab-sync-accounts").addEventListener("click", () => { void syncAccounts(); });
+  $("#lab-archive-analyze").disabled = !desktopApp;
+  $("#lab-archive-analyze").addEventListener("click", () => { void analyzeArchive(); });
+  $("#lab-archive-stop").addEventListener("click", () => { void stopArchiveAnalysis(); });
 
   return {
     onPositionChanged,
