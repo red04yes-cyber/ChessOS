@@ -188,7 +188,10 @@ fn create_snapshot(
         copy_database(source, &mut destination)?;
         verify_database(&destination)?;
         drop(destination);
-        File::open(&path)
+        OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(&path)
             .and_then(|file| file.sync_all())
             .map_err(|error| error.to_string())?;
         Ok(())
