@@ -16,7 +16,7 @@ Windows-first chess repertoire, analysis and training desktop app. The repositor
 - Repertoire generator that merges imported game trees, filters by observed frequency and annotates move frequencies.
 - Intelligent annotations on repertoire moves: comments, plans, warnings and NAG move-quality symbols.
 
-## Endgame Lab — 111 lessons in 9 chapters
+## Endgame Lab — 131 lessons in 10 chapters
 
 The Endgame Lab includes a structured curriculum that progresses from foundational king-and-pawn endings to advanced practical and material-imbalance positions:
 
@@ -29,6 +29,7 @@ The Endgame Lab includes a structured curriculum that progresses from foundation
 7. **Elementary mates:** queen, rook, two bishops and bishop+knight, including the correct mating corner and the non-forcing nature of two knights versus a bare king.
 8. **Practical technique and defence:** fortress recognition, blockades, domination, repetition, stalemate, 50-move rule, king activity, defender exchanges, conversion and clock management.
 9. **Advanced endings and studies:** quality imbalances, queen versus two rooks/minors, promotions and underpromotions, pawn structures, triangulation and complex zugzwang.
+10. **Classic studies and specialist endings:** Réti, Saavedra, Troitzky, Cochrane, rook-pawn variations, rook versus multiple passers, queen versus rook/pawns, minor-piece blocks, WDL/DTZ interpretation and fortress patterns.
 
 Every lesson includes a learning objective, positional idea, practical method, typical mistake and a study FEN. The Endgame Lab lets the user load/edit any FEN, move pieces on an interactive board, request Stockfish analysis, ask Stockfish to play a move, and query the online Syzygy tablebase.
 
