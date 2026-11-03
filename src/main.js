@@ -36,6 +36,8 @@ const promotionNames = { q: "Donna", r: "Torre", b: "Alfiere", n: "Cavallo" };
 let game = new Chess();
 let mode = "studio";
 let selectedSquare = null;
+let dragState = null;
+let suppressBoardClick = false;
 let boardFlipped = false;
 let pendingPromotion = null;
 const persistenceMode = isTauri() ? "sqlite" : "browser";
@@ -443,6 +445,181 @@ function appendStudioMove(move) {
   syncStudioPath([...prefix, edge.id]);
 }
 
+function captureMoveAnimation(move) {
+  const moving = [];
+  const captured = [];
+  const snapshot = (square) => {
+    const piece = boardElement.querySelector('[data-square="' + square + '"] .piece');
+    if (!piece) return null;
+    return { square, rect: piece.getBoundingClientRect() };
+  };
+  const from = snapshot(move.from);
+  if (from) moving.push(from);
+
+  const flags = String(move.flags || "");
+  if (flags.includes("k") || flags.includes("q")) {
+    const queenSide = flags.includes("q");
+    const rookFrom = (queenSide ? "a" : "h") + move.from[1];
+    const rook = snapshot(rookFrom);
+    if (rook) {
+      rook.to = (queenSide ? "d" : "f") + move.from[1];
+      moving.push(rook);
+    }
+  }
+
+  if (move.captured) {
+    const captureSquare = flags.includes("e")
+      ? move.to[0] + move.from[1]
+      : move.to;
+    const taken = snapshot(captureSquare);
+    if (taken) captured.push(taken);
+  }
+  return { moving, captured };
+}
+
+function animateBoardMove(snapshot) {
+  if (!snapshot || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  for (const item of snapshot.moving) {
+    const square = item.to || (item.square === snapshot.moving[0].square ? item.square : item.square);
+    const newPiece = boardElement.querySelector('[data-square="' + (item.to || (item === snapshot.moving[0] ? snapshot.moving[0].square : item.square)) + '"] .piece');
+    if (!newPiece) continue;
+    const nextRect = newPiece.getBoundingClientRect();
+    const dx = item.rect.left - nextRect.left;
+    const dy = item.rect.top - nextRect.top;
+    if (!Number.isFinite(dx) || !Number.isFinite(dy) || (Math.abs(dx) < 1 && Math.abs(dy) < 1)) continue;
+    newPiece.animate([
+      { transform: "translate(" + dx + "px, " + dy + "px)" },
+      { transform: "translate(0, 0)" },
+    ], { duration: 190, easing: "cubic-bezier(0.2, 0.8, 0.2, 1)" });
+  }
+  for (const item of snapshot.captured) {
+    const ghost = createPieceElement("b", "p");
+    const original = boardElement.querySelector('[data-square="' + item.square + '"] .piece');
+    if (!original) continue;
+    const clone = original.cloneNode(true);
+    clone.classList.add("board-capture-ghost");
+    clone.style.position = "fixed";
+    clone.style.left = item.rect.left + "px";
+    clone.style.top = item.rect.top + "px";
+    clone.style.width = item.rect.width + "px";
+    clone.style.height = item.rect.height + "px";
+    clone.style.zIndex = "1000";
+    document.body.append(clone);
+    clone.animate([
+      { opacity: 1, transform: "scale(1)" },
+      { opacity: 0, transform: "scale(0.9)" },
+    ], { duration: 120, easing: "ease-out" }).finished.finally(() => clone.remove());
+  }
+}
+
+function boardSquareAtPoint(x, y) {
+  const element = document.elementFromPoint(x, y);
+  const square = element?.closest?.(".square[data-square]");
+  return square && boardElement.contains(square) ? square : null;
+}
+
+function updateDragGhost(event) {
+  if (!dragState?.ghost) return;
+  dragState.ghost.style.left = event.clientX + "px";
+  dragState.ghost.style.top = event.clientY + "px";
+}
+
+function clearDragState() {
+  if (!dragState) return;
+  dragState.ghost?.remove();
+  boardElement.querySelector(".square.drag-over")?.classList.remove("drag-over");
+  boardElement.querySelector(".piece.dragging-source")?.classList.remove("dragging-source");
+  dragState = null;
+}
+
+function beginBoardDrag(event) {
+  if (event.button !== 0 || event.isPrimary === false || mode === "studio" && chessLab && !chessLab.canHumanMove()) return;
+  const squareButton = event.target.closest?.(".square[data-square]");
+  if (!squareButton) return;
+  const chess = activeGame();
+  const from = squareButton.dataset.square;
+  const piece = chess.get(from);
+  if (!piece || piece.color !== chess.turn() || chess.isGameOver() || pendingPromotion) return;
+  dragState = {
+    pointerId: event.pointerId,
+    from,
+    color: piece.color,
+    type: piece.type,
+    startX: event.clientX,
+    startY: event.clientY,
+    active: false,
+    target: null,
+    legalMoves: chess.moves({ square: from, verbose: true }),
+    ghost: null,
+  };
+}
+
+function moveBoardDrag(event) {
+  if (!dragState || event.pointerId !== dragState.pointerId) return;
+  const distance = Math.hypot(event.clientX - dragState.startX, event.clientY - dragState.startY);
+  if (!dragState.active && distance < 5) return;
+
+  if (!dragState.active) {
+    dragState.active = true;
+    try { boardElement.setPointerCapture(event.pointerId); } catch { /* Il puntatore può essere già stato catturato. */ }
+    selectedSquare = dragState.from;
+    renderBoard();
+    const source = boardElement.querySelector('[data-square="' + dragState.from + '"] .piece');
+    source?.classList.add("dragging-source");
+    const ghost = document.createElement("div");
+    ghost.className = "board-drag-ghost";
+    ghost.append(createPieceElement(dragState.color, dragState.type));
+    document.body.append(ghost);
+    dragState.ghost = ghost;
+  }
+
+  event.preventDefault();
+  updateDragGhost(event);
+  const targetSquare = boardSquareAtPoint(event.clientX, event.clientY);
+  const nextTarget = targetSquare?.dataset.square || null;
+  if (dragState.target !== nextTarget) {
+    boardElement.querySelector(".square.drag-over")?.classList.remove("drag-over");
+    dragState.target = nextTarget;
+    if (targetSquare) targetSquare.classList.add("drag-over");
+  }
+}
+
+function endBoardDrag(event) {
+  if (!dragState || event.pointerId !== dragState.pointerId) return;
+  const state = dragState;
+  const targetSquare = boardSquareAtPoint(event.clientX, event.clientY)?.dataset.square || state.target;
+  if (!state.active) {
+    dragState = null;
+    return;
+  }
+
+  suppressBoardClick = true;
+  window.setTimeout(() => { suppressBoardClick = false; }, 0);
+  clearDragState();
+  const legal = state.legalMoves.filter((move) => move.to === targetSquare);
+  if (!legal.length) {
+    selectedSquare = null;
+    renderBoard();
+    return;
+  }
+  const promotions = legal.filter((move) => Boolean(move.promotion));
+  if (promotions.length) {
+    openPromotionChooser(state.from, targetSquare, promotions);
+    return;
+  }
+  commitSelectedMove(legal[0]);
+}
+
+function cancelBoardDrag(event) {
+  if (!dragState || (event && event.pointerId !== dragState.pointerId)) return;
+  const wasActive = dragState.active;
+  clearDragState();
+  if (wasActive) {
+    selectedSquare = null;
+    renderBoard();
+  }
+}
+
 function currentLastMove() {
   if (mode === "training") return trainingMoves[trainingIndex - 1] || null;
   return studioMoveObjects[studioPly - 1] || null;
@@ -755,6 +932,7 @@ function commitSelectedMove(selectedMove) {
   if (mode === "training") {
     const expected = trainingMoves[trainingIndex];
     if (!expected) return;
+    const animation = captureMoveAnimation(selectedMove);
     let played;
     try {
       played = trainingGame.move({
@@ -787,6 +965,7 @@ function commitSelectedMove(selectedMove) {
     trainingIndex += 1;
     selectedSquare = null;
     renderAll();
+    animateBoardMove(animation);
     showToast(trainingIndex === trainingMoves.length ? "Linea completata. Ottimo lavoro!" : "Mossa corretta.");
     return;
   }
@@ -796,6 +975,7 @@ function commitSelectedMove(selectedMove) {
     return;
   }
 
+  const animation = captureMoveAnimation(selectedMove);
   let played;
   try {
     played = game.move({
@@ -816,6 +996,7 @@ function commitSelectedMove(selectedMove) {
   appendStudioMove(played);
   setDirty(true);
   renderAll();
+  animateBoardMove(animation);
 }
 
 function handleSquareClick(square) {
@@ -1164,7 +1345,16 @@ async function copyFen() {
   }
 }
 
+boardElement.addEventListener("pointerdown", beginBoardDrag);
+boardElement.addEventListener("pointermove", moveBoardDrag);
+boardElement.addEventListener("pointerup", endBoardDrag);
+boardElement.addEventListener("pointercancel", cancelBoardDrag);
+boardElement.addEventListener("lostpointercapture", cancelBoardDrag);
 boardElement.addEventListener("click", (event) => {
+  if (suppressBoardClick) {
+    suppressBoardClick = false;
+    return;
+  }
   const squareButton = event.target.closest("button[data-square]");
   if (squareButton) handleSquareClick(squareButton.dataset.square);
 });
