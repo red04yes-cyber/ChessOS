@@ -21,6 +21,7 @@
       <main class="app-shell">
         <aside class="sidebar">
           <div class="section-kicker">WORKSPACE</div>
+          <button class="nav-item" id="nav-dashboard"><span>◫</span> Dashboard</button>
           <button class="nav-item active" id="nav-studio"><span>▦</span> Studio</button>
           <button class="nav-item" id="nav-training"><span>♟</span> Allenamento</button>
           <div class="sidebar-heading">
@@ -41,7 +42,7 @@
               <h1 id="page-title">Chess Studio</h1>
               <p id="page-subtitle">Costruisci le tue linee, una mossa alla volta.</p>
             </div>
-            <div class="heading-actions">
+            <div class="heading-actions" id="heading-actions">
               <button class="button ghost" id="undo" aria-label="Vai alla mossa precedente">← Indietro</button>
               <button class="button ghost" id="redo" aria-label="Vai alla mossa successiva" disabled>Avanti →</button>
               <button class="button ghost" id="flip-board">Vista Nero</button>
@@ -51,7 +52,7 @@
             </div>
           </div>
 
-          <div class="study-grid">
+          <div class="study-grid" id="study-grid">
             <section class="board-panel">
               <div class="board-topline">
                 <div><span class="live-dot"></span><span id="board-label">PARTITA IN CORSO</span></div>
@@ -146,8 +147,106 @@
                   </div>
                 </details>
               </section>
+              <section id="exam-panel" class="detail-card exam-card" hidden>
+                <div class="card-heading"><span class="card-icon">♜</span><span>ESAME DEL REPERTORIO</span></div>
+                <div id="exam-active" hidden>
+                  <div id="exam-question-meta" class="review-card-meta"></div>
+                  <p id="exam-feedback" class="review-feedback">Trova la mossa prevista.</p>
+                  <button id="exam-next" class="button primary review-start" hidden>Domanda successiva</button>
+                </div>
+              </section>
             </aside>
           </div>
+          <section id="dashboard-panel" class="dashboard-panel" hidden>
+            <div class="dashboard-overview-grid">
+              <article class="dashboard-kpi"><span>Repertori</span><strong id="dashboard-stat-repertoires">0</strong><small>Linee salvate</small></article>
+              <article class="dashboard-kpi"><span>Mosse allenabili</span><strong id="dashboard-stat-moves">0</strong><small>Schede generate dal repertorio</small></article>
+              <article class="dashboard-kpi"><span>Ripassi oggi</span><strong id="dashboard-stat-today">0</strong><small id="dashboard-stat-today-detail">0 minuti di studio</small></article>
+              <article class="dashboard-kpi"><span>Richiamo settimanale</span><strong id="dashboard-stat-accuracy">—</strong><small id="dashboard-stat-week-detail">0 mosse ricordate</small></article>
+              <article class="dashboard-kpi"><span>Schede dovute</span><strong id="dashboard-stat-due">0</strong><small>Da ripassare con FSRS</small></article>
+            </div>
+
+            <div class="dashboard-grid">
+              <section class="dashboard-card">
+                <div class="dashboard-card-heading">
+                  <div><h2>Progressi giornalieri</h2><p>Ripassi registrati negli ultimi sette giorni</p></div>
+                  <span id="dashboard-daily-total" class="dashboard-card-total">0</span>
+                </div>
+                <div id="dashboard-daily-chart" class="dashboard-bars" aria-label="Grafico ripassi giornalieri"></div>
+              </section>
+              <section class="dashboard-card">
+                <div class="dashboard-card-heading">
+                  <div><h2>Andamento settimanale</h2><p>Confronto delle ultime sei settimane</p></div>
+                  <span id="dashboard-weekly-total" class="dashboard-card-total">0</span>
+                </div>
+                <div id="dashboard-weekly-chart" class="dashboard-bars weekly-bars" aria-label="Grafico ripassi settimanali"></div>
+              </section>
+            </div>
+
+            <div class="dashboard-grid dashboard-lower-grid">
+              <section class="dashboard-card">
+                <div class="dashboard-card-heading">
+                  <div><h2>Obiettivi di studio</h2><p>Traguardi giornalieri e settimanali</p></div>
+                </div>
+                <form id="dashboard-goals-form" class="dashboard-goals-form">
+                  <div class="dashboard-goal-row">
+                    <strong>Ogni giorno</strong>
+                    <label>Ripassi <input id="goal-daily-reviews" class="text-input" type="number" min="1" max="10000" required /></label>
+                    <label>Minuti <input id="goal-daily-minutes" class="text-input" type="number" min="1" max="10000" required /></label>
+                  </div>
+                  <div class="dashboard-goal-row">
+                    <strong>Ogni settimana</strong>
+                    <label>Ripassi <input id="goal-weekly-reviews" class="text-input" type="number" min="1" max="10000" required /></label>
+                    <label>Minuti <input id="goal-weekly-minutes" class="text-input" type="number" min="1" max="10000" required /></label>
+                  </div>
+                  <label class="dashboard-accuracy-goal">Obiettivo di richiamo (%) <input id="goal-target-accuracy" class="text-input" type="number" min="1" max="100" required /></label>
+                  <div class="dashboard-goal-actions">
+                    <span id="dashboard-goal-status" class="dashboard-muted">Gli obiettivi sono salvati su questo dispositivo.</span>
+                    <button class="button primary" type="submit">Salva obiettivi</button>
+                  </div>
+                </form>
+                <div id="dashboard-goal-progress" class="dashboard-goal-progress"></div>
+              </section>
+
+              <section class="dashboard-card">
+                <div class="dashboard-card-heading">
+                  <div><h2>Test ed esami</h2><p>Verifica il richiamo delle mosse di un repertorio</p></div>
+                </div>
+                <form id="dashboard-exam-form" class="dashboard-exam-form">
+                  <label>Repertorio
+                    <select id="exam-repertoire" class="text-input" required></select>
+                  </label>
+                  <div class="dashboard-exam-options">
+                    <label>Lato
+                      <select id="exam-side" class="text-input">
+                        <option value="both">Bianco e Nero</option>
+                        <option value="white">Solo Bianco</option>
+                        <option value="black">Solo Nero</option>
+                      </select>
+                    </label>
+                    <label>Domande
+                      <input id="exam-count" class="text-input" type="number" min="1" max="500" value="10" required />
+                    </label>
+                    <label>Superamento (%)
+                      <input id="exam-pass-threshold" class="text-input" type="number" min="1" max="100" value="70" required />
+                    </label>
+                  </div>
+                  <button id="exam-start" class="button primary" type="submit">Avvia esame</button>
+                  <p class="dashboard-muted">Una risposta per posizione. L’esame non modifica la pianificazione FSRS.</p>
+                </form>
+                <div class="dashboard-history-heading">Esami recenti</div>
+                <div id="dashboard-exam-history" class="dashboard-history-list"></div>
+              </section>
+            </div>
+
+            <section class="dashboard-card dashboard-repertoire-card">
+              <div class="dashboard-card-heading">
+                <div><h2>Panoramica dei repertori</h2><p>Copertura di studio e percentuale di richiamo per linea</p></div>
+              </div>
+              <div id="dashboard-repertoire-list" class="dashboard-repertoire-list"></div>
+            </section>
+          </section>
+
           <div class="workspace-footer"><span>CHESS OS <b>·</b> I tuoi dati restano sul dispositivo</span><span>LEGAL MOVES <i>ON</i></span></div>
         </section>
       </main>
