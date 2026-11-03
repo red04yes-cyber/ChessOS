@@ -23,10 +23,15 @@ import {
   selectExamQuestions,
 } from "./dashboard.js";
 import "./style.css";
+import { getAdjacentSquare } from "./board-navigation.js";
+import { applyUiPreferences, readUiPreferences, saveUiPreferences } from "./ui-preferences.js";
 
 const STORAGE_KEY = "chess-os.repertoire.v1";
 const REVIEW_STORAGE_KEY = "chess-os.fsrs.review-state.v1";
 const DEFAULT_FEN = new Chess().fen();
+const uiPreferences = readUiPreferences();
+applyUiPreferences(uiPreferences);
+const PIECE_NAMES = { k: "Re", q: "Donna", r: "Torre", b: "Alfiere", n: "Cavallo", p: "Pedone" };
 const files = "abcdefgh";
 const symbols = {
   w: { k: "♔", q: "♕", r: "♖", b: "♗", n: "♘", p: "♙" },
@@ -95,6 +100,10 @@ let studioTree = new RepertoireTree(DEFAULT_FEN);
 let studioPath = [];
 let toastTimer = null;
 let fenEditorState = null;
+let pendingBoardFocusSquare = null;
+let promotionReturnFocus = null;
+let onlineImportReturnFocus = null;
+let fenEditorReturnFocus = null;
 let fenSelectedPiece = "wP";
 let boardMarkTool = "move";
 let boardMarkColor = "G";
@@ -123,7 +132,7 @@ function persistRepertoire() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(repertoire));
     return true;
   } catch {
-    showToast("Non riesco a salvare: memoria locale non disponibile.");
+    showToast("Non riesco a salvare: memoria locale non disponibile.", { type: "error" });
     return false;
   }
 }
@@ -156,7 +165,7 @@ function persistLocalReviewState() {
     }));
     return true;
   } catch {
-    showToast("Non riesco a salvare lo storico FSRS nella memoria locale.");
+    showToast("Non riesco a salvare lo storico FSRS nella memoria locale.", { type: "error" });
     return false;
   }
 }
@@ -302,7 +311,7 @@ async function initializePersistence() {
     databaseReady = false;
     updateStorageLabel("SQLite non disponibile", "Salvataggio temporaneamente disattivato · controlla il database");
     renderAll();
-    showToast("Errore database SQLite: " + error.message);
+    showToast("Errore database SQLite: " + error.message, { type: "error" });
   }
 }
 
@@ -310,12 +319,27 @@ function activeGame() {
   return (mode === "training" || mode === "exam") && trainingGame ? trainingGame : game;
 }
 
-function showToast(message) {
+function hideToast() {
   const toast = $("#toast");
-  toast.textContent = message;
-  toast.classList.add("visible");
+  toast.classList.remove("visible");
   window.clearTimeout(toastTimer);
-  toastTimer = window.setTimeout(() => toast.classList.remove("visible"), 2600);
+  toastTimer = null;
+}
+
+function showToast(message, options = {}) {
+  const toast = $("#toast");
+  const content = $("#toast-message");
+  const type = ["success", "info", "warning", "error"].includes(options.type)
+    ? options.type
+    : "info";
+  content.textContent = String(message);
+  toast.classList.remove("success", "info", "warning", "error");
+  toast.classList.add(type, "visible");
+  toast.setAttribute("role", type === "error" ? "alert" : "status");
+  toast.setAttribute("aria-live", type === "error" ? "assertive" : "polite");
+  window.clearTimeout(toastTimer);
+  const duration = type === "error" ? 10000 : type === "warning" ? 5000 : 2800;
+  toastTimer = window.setTimeout(hideToast, duration);
 }
 
 function setDirty(value = true) {
@@ -356,7 +380,7 @@ function positionForPly(ply) {
   try {
     game.load(studioStates[ply]);
   } catch {
-    showToast("Non riesco a ripristinare questa posizione.");
+    showToast("Non riesco a ripristinare questa posizione.", { type: "error" });
     return;
   }
   studioPly = ply;
@@ -390,16 +414,12 @@ function currentLastMove() {
   return studioMoveObjects[studioPly - 1] || null;
 }
 
-function updateBoardCoordinates() {
-  const ranks = Array.from($(".rank-labels").children);
-  const rankValues = boardFlipped ? ["1", "2", "3", "4", "5", "6", "7", "8"] : ["8", "7", "6", "5", "4", "3", "2", "1"];
-  ranks.forEach((node, index) => { node.textContent = rankValues[index]; });
-  const fileNodes = Array.from($(".file-labels").children);
-  const fileValues = boardFlipped ? ["h", "g", "f", "e", "d", "c", "b", "a"] : ["a", "b", "c", "d", "e", "f", "g", "h"];
-  fileNodes.forEach((node, index) => { node.textContent = fileValues[index]; });
-}
-
 function renderBoard() {
+  const previouslyFocusedSquare = document.activeElement
+    ?.closest?.("button[data-square]")?.dataset.square || null;
+  const focusSquare = pendingBoardFocusSquare || previouslyFocusedSquare || selectedSquare
+    || (boardFlipped ? "h1" : "a8");
+  const shouldRestoreFocus = Boolean(pendingBoardFocusSquare || previouslyFocusedSquare);
   const chess = activeGame();
   const board = chess.board();
   const legalTargets = new Set(
@@ -423,6 +443,8 @@ function renderBoard() {
   }
 
   boardElement.replaceChildren();
+  boardElement.setAttribute("role", "group");
+  boardElement.setAttribute("aria-label", "Scacchiera. Usa le frecce per spostare il focus tra le case; Invio o Spazio per selezionare.");
   for (let displayRow = 0; displayRow < 8; displayRow += 1) {
     for (let displayCol = 0; displayCol < 8; displayCol += 1) {
       const rowIndex = boardFlipped ? 7 - displayRow : displayRow;
@@ -433,26 +455,55 @@ function renderBoard() {
       const isLight = (displayRow + displayCol) % 2 === 0;
       button.type = "button";
       button.dataset.square = square;
+      button.tabIndex = square === focusSquare ? 0 : -1;
       button.className = "square " + (isLight ? "light" : "dark");
+      button.setAttribute("aria-keyshortcuts", "ArrowUp ArrowDown ArrowLeft ArrowRight Enter Space");
       if (selectedSquare === square) button.classList.add("selected");
       if (lastSquares.has(square)) button.classList.add("last-move");
       if (checkedKingSquare === square) button.classList.add("in-check");
       if (legalTargets.has(square)) button.classList.add(piece ? "capture-target" : "legal-target");
 
       if (piece) {
-        const pieceSpan = document.createElement("span");
-        pieceSpan.className = "piece " + (piece.color === "w" ? "white-piece" : "black-piece");
-        pieceSpan.textContent = symbols[piece.color][piece.type];
-        button.append(pieceSpan);
-        button.setAttribute("aria-label", (piece.color === "w" ? "Bianco " : "Nero ") + piece.type + " in " + square);
+        const pieceSvg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+        pieceSvg.setAttribute("class", "piece " + (piece.color === "w" ? "white-piece" : "black-piece"));
+        pieceSvg.setAttribute("viewBox", "0 0 45 45");
+        pieceSvg.setAttribute("aria-hidden", "true");
+        pieceSvg.setAttribute("focusable", "false");
+        const use = document.createElementNS("http://www.w3.org/2000/svg", "use");
+        use.setAttribute("href", "#piece-" + piece.color + piece.type);
+        pieceSvg.append(use);
+        button.append(pieceSvg);
+        button.setAttribute("aria-label", PIECE_NAMES[piece.type] + (piece.color === "w" ? " bianco" : " nero") + " in " + square);
       } else {
-        button.setAttribute("aria-label", square);
+        button.setAttribute("aria-label", "Casa vuota " + square);
+      }
+
+      if (uiPreferences.coordinates === "inside") {
+        if (displayRow === 7) {
+          const fileCoordinate = document.createElement("span");
+          fileCoordinate.className = "board-coordinate coordinate-file";
+          fileCoordinate.textContent = square[0];
+          fileCoordinate.setAttribute("aria-hidden", "true");
+          button.append(fileCoordinate);
+        }
+        if (displayCol === 0) {
+          const rankCoordinate = document.createElement("span");
+          rankCoordinate.className = "board-coordinate coordinate-rank";
+          rankCoordinate.textContent = square[1];
+          rankCoordinate.setAttribute("aria-hidden", "true");
+          button.append(rankCoordinate);
+        }
       }
       boardElement.append(button);
     }
   }
 
-  updateBoardCoordinates();
+  pendingBoardFocusSquare = null;
+  if (shouldRestoreFocus) {
+    boardElement.querySelector('[data-square="' + focusSquare + '"]')
+      ?.focus({ preventScroll: true });
+  }
+
   renderBoardMarkings();
   $("#turn-label").textContent = (chess.turn() === "w" ? "Bianco" : "Nero") + " al tratto";
   $("#game-status").textContent = gameStatus(chess);
@@ -473,7 +524,6 @@ function renderBoard() {
   $("#redo").disabled = mode !== "studio" || studioPly >= studioSans.length;
   $("#flip-board").textContent = boardFlipped ? "Vista Bianco" : "Vista Nero";
 }
-
 function renderMoves() {
   const moves = mode === "training" ? trainingMoves : studioMoveObjects;
   const cursor = mode === "training" ? trainingIndex : studioPly;
@@ -667,7 +717,7 @@ function selectVariation(edgeId) {
     renderAll();
     showToast("Variante selezionata.");
   } catch (error) {
-    showToast("Impossibile aprire la variante: " + error.message);
+    showToast("Impossibile aprire la variante: " + error.message, { type: "error" });
   }
 }
 
@@ -976,8 +1026,9 @@ function renderFenEditorBoard() {
 }
 
 function openFenEditor() {
+  fenEditorReturnFocus = document.activeElement;
   if (mode === "training") {
-    showToast("Esci dall'allenamento per modificare la posizione.");
+    showToast("Esci dall'allenamento per modificare la posizione.", { type: "warning" });
     return;
   }
   try {
@@ -987,9 +1038,18 @@ function openFenEditor() {
     renderFenEditorBoard();
     syncFenEditorFields();
     $("#fen-editor-dialog").hidden = false;
+    $("#fen-editor-close").focus({ preventScroll: true });
   } catch (error) {
-    showToast("Impossibile aprire l'editor FEN: " + error.message);
+    showToast("Impossibile aprire l'editor FEN: " + error.message, { type: "error" });
   }
+}
+
+function closeFenEditor(restoreFocus = true) {
+  $("#fen-editor-dialog").hidden = true;
+  if (restoreFocus && fenEditorReturnFocus instanceof HTMLElement && fenEditorReturnFocus.isConnected) {
+    fenEditorReturnFocus.focus({ preventScroll: true });
+  }
+  fenEditorReturnFocus = null;
 }
 
 function loadFenEditorText() {
@@ -1025,7 +1085,7 @@ function applyFenEditorPosition() {
     selectedSquare = null;
     closePromotionChooser();
     setDirty(true);
-    $("#fen-editor-dialog").hidden = true;
+    closeFenEditor(false);
     renderAll();
     showToast("Posizione FEN applicata. Ora puoi creare la tua linea.");
   } catch (error) {
@@ -1052,7 +1112,7 @@ function loadOpeningTemplate() {
     renderAll();
     showToast(preset.rows + " linee caricate · " + preset.tree.edges.size + " mosse/rami disponibili. Salva il repertorio per conservarlo.");
   } catch (error) {
-    showToast("Impossibile caricare il repertorio: " + error.message);
+    showToast("Impossibile caricare il repertorio: " + error.message, { type: "error" });
   }
 }
 
@@ -1148,6 +1208,7 @@ async function refreshImportedGames() {
 
 function openOnlineImportDialog() {
   const dialog = $("#online-import-dialog");
+  onlineImportReturnFocus = document.activeElement;
   if (!dialog) return;
   $("#online-import-progress").textContent = persistenceMode === "sqlite"
     ? "Le partite saranno salvate solo in locale. Gli import successivi saltano automaticamente quelle già presenti."
@@ -1155,13 +1216,17 @@ function openOnlineImportDialog() {
   $("#start-online-import").disabled = persistenceMode !== "sqlite" || onlineImportBusy;
   dialog.hidden = false;
   updateOnlineImportProvider();
-  $("#online-username").focus();
+  $("#online-username").focus({ preventScroll: true });
 }
 
-function closeOnlineImportDialog() {
+function closeOnlineImportDialog(restoreFocus = true) {
   if (onlineImportBusy) return;
   $("#online-import-dialog").hidden = true;
   $("#lichess-api-token").value = "";
+  if (restoreFocus && onlineImportReturnFocus instanceof HTMLElement && onlineImportReturnFocus.isConnected) {
+    onlineImportReturnFocus.focus({ preventScroll: true });
+  }
+  onlineImportReturnFocus = null;
 }
 
 function updateOnlineImportProvider() {
@@ -1219,7 +1284,7 @@ async function startOnlineGameImport() {
     showToast(summary.imported + " partite aggiunte alla libreria.");
   } catch (error) {
     $("#online-import-progress").textContent = "Importazione non completata: " + (error?.message || String(error));
-    showToast("Importazione partite non riuscita.");
+    showToast("Importazione partite non riuscita.", { type: "error" });
     try { await refreshImportedGames(); } catch { /* Mantieni la libreria già caricata. */ }
   } finally {
     if (stopListening) stopListening();
@@ -1255,7 +1320,7 @@ async function openImportedGame(id) {
     renderAll();
     showToast("Partita caricata. Usa «Salva linea» per conservarla nel repertorio.");
   } catch (error) {
-    showToast("Non riesco ad aprire questa partita: " + (error?.message || String(error)));
+    showToast("Non riesco ad aprire questa partita: " + (error?.message || String(error)), { type: "error" });
   }
 }
 
@@ -1268,20 +1333,24 @@ async function removeImportedGame(id) {
     await refreshImportedGames();
     showToast("Partita rimossa dalla libreria importata.");
   } catch (error) {
-    showToast("Errore durante la rimozione: " + (error?.message || String(error)));
+    showToast("Errore durante la rimozione: " + (error?.message || String(error)), { type: "error" });
   }
 }
 
-function closePromotionChooser() {
+function closePromotionChooser(restoreFocus = true) {
+  const returnSquare = promotionReturnFocus?.dataset.square;
+  promotionReturnFocus = null;
   pendingPromotion = null;
   promotionDialog.hidden = true;
   promotionOptions.replaceChildren();
+  if (restoreFocus && returnSquare) pendingBoardFocusSquare = returnSquare;
 }
 
 function openPromotionChooser(from, to, legalMoves) {
   const chess = activeGame();
   pendingPromotion = { from, to, legalMoves };
   promotionOptions.replaceChildren();
+  promotionReturnFocus = boardElement.querySelector('[data-square="' + from + '"]');
   const color = chess.turn();
 
   for (const type of ["q", "r", "b", "n"]) {
@@ -1291,26 +1360,35 @@ function openPromotionChooser(from, to, legalMoves) {
     button.type = "button";
     button.className = "promotion-choice";
     button.setAttribute("aria-label", "Promuovi a " + promotionNames[type]);
-    const piece = document.createElement("span");
-    piece.className = "piece " + (color === "w" ? "white-piece" : "black-piece");
-    piece.textContent = symbols[color][type];
+    button.dataset.promotionKey = type;
+    button.title = promotionNames[type] + " · " + type.toUpperCase();
+    const piece = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    piece.setAttribute("class", "piece " + (color === "w" ? "white-piece" : "black-piece"));
+    piece.setAttribute("viewBox", "0 0 45 45");
+    piece.setAttribute("aria-hidden", "true");
+    const use = document.createElementNS("http://www.w3.org/2000/svg", "use");
+    use.setAttribute("href", "#piece-" + color + type);
+    piece.append(use);
     const label = document.createElement("small");
     label.textContent = promotionNames[type];
     button.append(piece, label);
     button.addEventListener("click", () => {
       const selectedMove = pendingPromotion?.legalMoves.find((move) => move.promotion === type);
-      closePromotionChooser();
-      if (selectedMove) commitSelectedMove(selectedMove);
+      closePromotionChooser(false);
+      if (selectedMove) {
+        pendingBoardFocusSquare = to;
+        commitSelectedMove(selectedMove);
+      }
     });
     promotionOptions.append(button);
   }
 
   promotionDialog.hidden = false;
-  const firstChoice = promotionOptions.querySelector("button");
-  firstChoice?.focus();
+  promotionOptions.querySelector("button")?.focus({ preventScroll: true });
 }
 
 function commitSelectedMove(selectedMove) {
+  pendingBoardFocusSquare = selectedMove.to;
   if (mode === "exam") {
     void recordExamMove(selectedMove);
     return;
@@ -1331,7 +1409,7 @@ function commitSelectedMove(selectedMove) {
     if (!played) {
       selectedSquare = null;
       renderBoard();
-      showToast("Mossa non legale.");
+      showToast("Mossa non legale.", { type: "error" });
       return;
     }
 
@@ -1371,7 +1449,7 @@ function commitSelectedMove(selectedMove) {
   selectedSquare = null;
   if (!played) {
     renderBoard();
-    showToast("Mossa non legale.");
+    showToast("Mossa non legale.", { type: "error" });
     return;
   }
 
@@ -1381,6 +1459,7 @@ function commitSelectedMove(selectedMove) {
 }
 
 function handleSquareClick(square) {
+  pendingBoardFocusSquare = square;
   if (mode === "exam" && examAnswered) return;
   const chess = activeGame();
   if (mode === "studio" && boardMarkTool !== "move") {
@@ -1419,7 +1498,7 @@ function handleSquareClick(square) {
   if (!choices.length) {
     selectedSquare = null;
     renderBoard();
-    showToast("Mossa non legale.");
+    showToast("Mossa non legale.", { type: "error" });
     return;
   }
 
@@ -1439,7 +1518,7 @@ function openLine(id) {
   }
   if (mode === "training" && reviewSessionId && !reviewSessionFinished) {
     void markReviewSessionFinished().catch((error) => {
-      showToast("Non riesco a chiudere la sessione: " + error.message);
+      showToast("Non riesco a chiudere la sessione: " + error.message, { type: "error" });
     });
     reviewSessionId = null;
     reviewSessionFinished = false;
@@ -1457,7 +1536,7 @@ function openLine(id) {
     closePromotionChooser();
     renderAll();
   } catch (error) {
-    showToast("PGN non leggibile: " + error.message);
+    showToast("PGN non leggibile: " + error.message, { type: "error" });
   }
 }
 
@@ -1470,7 +1549,7 @@ async function deleteLine(id) {
     await finishRepertoireExam(true);
   }
   if (!databaseReady) {
-    showToast("Database non pronto: eliminazione non eseguita.");
+    showToast("Database non pronto: eliminazione non eseguita.", { type: "error" });
     return;
   }
   const removedCardIds = new Set(studyCards
@@ -1499,18 +1578,18 @@ async function deleteLine(id) {
     renderAll();
     showToast("Linea eliminata.");
   } catch (error) {
-    showToast("Errore eliminazione: " + error.message);
+    showToast("Errore eliminazione: " + error.message, { type: "error" });
   }
 }
 
 async function saveLine() {
   if (mode !== "studio") return;
   if (!databaseReady) {
-    showToast("Database non pronto: il salvataggio è disattivato.");
+    showToast("Database non pronto: il salvataggio è disattivato.", { type: "error" });
     return;
   }
   if (!studioTree.edges.size) {
-    showToast("Aggiungi almeno una mossa prima di salvare.");
+    showToast("Aggiungi almeno una mossa prima di salvare.", { type: "warning" });
     return;
   }
 
@@ -1546,7 +1625,7 @@ async function saveLine() {
     renderAll();
     showToast("Linea salvata nel database.");
   } catch (error) {
-    showToast("Errore salvataggio SQLite: " + error.message);
+    showToast("Errore salvataggio SQLite: " + error.message, { type: "error" });
   }
 }
 
@@ -1557,11 +1636,11 @@ function startTraining() {
   }
   if (reviewSessionId && !reviewSessionFinished) {
     void markReviewSessionFinished().catch((error) => {
-      showToast("Non riesco a chiudere la sessione precedente: " + error.message);
+      showToast("Non riesco a chiudere la sessione precedente: " + error.message, { type: "error" });
     });
   }
   if (!databaseReady) {
-    showToast("Archivio non pronto: riprova tra qualche istante.");
+    showToast("Archivio non pronto: riprova tra qualche istante.", { type: "warning" });
     return;
   }
   trainingGame = new Chess(DEFAULT_FEN);
@@ -1588,7 +1667,7 @@ function startTraining() {
 async function beginDailyReviewSession() {
   if (isStartingReviewSession) return;
   if (!databaseReady || !repertoire.length) {
-    showToast("Salva almeno una linea nel repertorio prima di iniziare.");
+    showToast("Salva almeno una linea nel repertorio prima di iniziare.", { type: "warning" });
     return;
   }
   const now = new Date();
@@ -1633,7 +1712,7 @@ async function beginDailyReviewSession() {
   } catch (error) {
     isStartingReviewSession = false;
     startButton.disabled = false;
-    showToast("Non riesco ad avviare la sessione: " + error.message);
+    showToast("Non riesco ad avviare la sessione: " + error.message, { type: "error" });
     return;
   }
 
@@ -1690,7 +1769,7 @@ async function finishReviewSession() {
   try {
     await markReviewSessionFinished();
   } catch (error) {
-    showToast("Sessione conclusa, ma non riesco a salvare la chiusura: " + error.message);
+    showToast("Sessione conclusa, ma non riesco a salvare la chiusura: " + error.message, { type: "error" });
     reviewSessionFinished = true;
   }
   currentReviewCard = null;
@@ -1709,7 +1788,7 @@ async function rateCurrentCard(ratingName) {
     result = gradeFsrsCard(card.fsrs, ratingName, now);
   } catch (error) {
     isSavingReview = false;
-    showToast("Errore nello scheduling FSRS: " + error.message);
+    showToast("Errore nello scheduling FSRS: " + error.message, { type: "error" });
     return;
   }
 
@@ -1773,7 +1852,7 @@ async function rateCurrentCard(ratingName) {
     }
   } catch (error) {
     isSavingReview = false;
-    showToast("Non riesco a salvare la risposta FSRS: " + error.message);
+    showToast("Non riesco a salvare la risposta FSRS: " + error.message, { type: "error" });
     return;
   }
 
@@ -1794,7 +1873,7 @@ function showReviewAnswer() {
     reviewFeedback = "Soluzione: " + move.san + ". Valuta quanto era facile ricordarla.";
     renderAll();
   } catch (error) {
-    showToast("Impossibile mostrare la soluzione: " + error.message);
+    showToast("Impossibile mostrare la soluzione: " + error.message, { type: "error" });
   }
 }
 
@@ -2080,17 +2159,17 @@ async function saveDashboardGoals(event) {
 async function startRepertoireExam(event) {
   event.preventDefault();
   if (!databaseReady || !repertoire.length) {
-    showToast("Salva almeno un repertorio prima di avviare un esame.");
+    showToast("Salva almeno un repertorio prima di avviare un esame.", { type: "warning" });
     return;
   }
   if (examAttemptId) {
-    showToast("Concludi prima l'esame in corso.");
+    showToast("Concludi prima l'esame in corso.", { type: "warning" });
     return;
   }
   const repertoireId = $("#exam-repertoire").value;
   const line = repertoire.find((entry) => entry.id === repertoireId);
   if (!line) {
-    showToast("Seleziona un repertorio valido.");
+    showToast("Seleziona un repertorio valido.", { type: "warning" });
     return;
   }
   const side = $("#exam-side").value;
@@ -2098,13 +2177,13 @@ async function startRepertoireExam(event) {
   const threshold = Number($("#exam-pass-threshold").value);
   if (!Number.isInteger(count) || count < 1 || count > 500 ||
       !Number.isInteger(threshold) || threshold < 1 || threshold > 100) {
-    showToast("Numero di domande o soglia non validi.");
+    showToast("Numero di domande o soglia non validi.", { type: "warning" });
     return;
   }
   const availableCards = buildReviewCards([line], studyCards, new Date());
   const questions = selectExamQuestions(availableCards, { repertoireId, side, count });
   if (!questions.length) {
-    showToast("Il repertorio non contiene mosse per il lato scelto.");
+    showToast("Il repertorio non contiene mosse per il lato scelto.", { type: "warning" });
     return;
   }
 
@@ -2141,7 +2220,7 @@ async function startRepertoireExam(event) {
       if (!persistLocalReviewState()) return;
     }
   } catch (error) {
-    showToast("Non riesco ad avviare l'esame: " + error.message);
+    showToast("Non riesco ad avviare l'esame: " + error.message, { type: "error" });
     return;
   }
 
@@ -2194,7 +2273,7 @@ async function recordExamMove(selectedMove) {
   if (!played) {
     isSavingExamAnswer = false;
     renderBoard();
-    showToast("Mossa non legale.");
+    showToast("Mossa non legale.", { type: "error" });
     return;
   }
 
@@ -2207,7 +2286,7 @@ async function recordExamMove(selectedMove) {
       displayedMove = trainingGame.move(parseUci(currentExamCard.uci));
     } catch (error) {
       isSavingExamAnswer = false;
-      showToast("Non riesco a mostrare la soluzione: " + error.message);
+      showToast("Non riesco a mostrare la soluzione: " + error.message, { type: "error" });
       return;
     }
   }
@@ -2262,7 +2341,7 @@ async function recordExamMove(selectedMove) {
     trainingGame.undo();
     isSavingExamAnswer = false;
     renderAll();
-    showToast("Non riesco a registrare la risposta: " + error.message);
+    showToast("Non riesco a registrare la risposta: " + error.message, { type: "error" });
     return;
   }
 
@@ -2301,7 +2380,7 @@ async function finishRepertoireExam(aborted = false) {
       persistLocalReviewState();
     }
   } catch (error) {
-    showToast("Non riesco a salvare la chiusura dell'esame: " + error.message);
+    showToast("Non riesco a salvare la chiusura dell'esame: " + error.message, { type: "error" });
   }
   examAttemptId = null;
   examQueue = [];
@@ -2436,7 +2515,7 @@ async function refreshDatabaseBackups() {
     renderBackupList();
   } catch (error) {
     setBackupStatus("Impossibile leggere l’elenco dei backup: " + (error?.message || String(error)), true);
-    showToast("Lettura backup non riuscita.");
+    showToast("Lettura backup non riuscita.", { type: "error" });
   }
 }
 
@@ -2453,7 +2532,7 @@ async function createDatabaseBackup() {
     showToast("Backup completo creato.");
   } catch (error) {
     setBackupStatus("Creazione backup non riuscita: " + (error?.message || String(error)), true);
-    showToast("Backup non riuscito.");
+    showToast("Backup non riuscito.", { type: "error" });
   } finally {
     backupsBusy = false;
     renderBackupList();
@@ -2473,7 +2552,7 @@ async function verifyDatabaseBackup(name) {
   } catch (error) {
     verifiedBackups.delete(name);
     setBackupStatus("Backup non valido: " + (error?.message || String(error)), true);
-    showToast("Verifica del backup non riuscita.");
+    showToast("Verifica del backup non riuscita.", { type: "error" });
   } finally {
     backupsBusy = false;
     renderBackupList();
@@ -2503,7 +2582,7 @@ async function restoreDatabaseBackup(name) {
     showToast("Database ripristinato. Copia pre-ripristino conservata.");
   } catch (error) {
     setBackupStatus("Ripristino non completato: " + (error?.message || String(error)), true);
-    showToast("Ripristino non riuscito.");
+    showToast("Ripristino non riuscito.", { type: "error" });
   } finally {
     backupsBusy = false;
     renderBackupList();
@@ -2522,7 +2601,7 @@ async function deleteDatabaseBackup(name) {
     setBackupStatus("Backup eliminato: " + name);
   } catch (error) {
     setBackupStatus("Eliminazione non riuscita: " + (error?.message || String(error)), true);
-    showToast("Eliminazione backup non riuscita.");
+    showToast("Eliminazione backup non riuscita.", { type: "error" });
   } finally {
     backupsBusy = false;
     renderBackupList();
@@ -2552,7 +2631,7 @@ function showDashboard() {
 function leaveTraining() {
   if (reviewSessionId && !reviewSessionFinished) {
     void markReviewSessionFinished().catch((error) => {
-      showToast("Non riesco a chiudere la sessione: " + error.message);
+      showToast("Non riesco a chiudere la sessione: " + error.message, { type: "error" });
     });
   }
   mode = "studio";
@@ -2571,7 +2650,7 @@ function leaveTraining() {
 function importPgn() {
   const text = $("#pgn-input").value.trim();
   if (!text) {
-    showToast("Incolla prima un testo PGN.");
+    showToast("Incolla prima un testo PGN.", { type: "warning" });
     return;
   }
   try {
@@ -2586,14 +2665,14 @@ function importPgn() {
     renderAll();
     showToast("PGN importato: varianti e transposizioni acquisite.");
   } catch (error) {
-    showToast("PGN non valido: " + error.message);
+    showToast("PGN non valido: " + error.message, { type: "error" });
   }
 }
 
 function exportPgn() {
   const pgn = mode !== "studio" || !studioTree.edges.size ? "" : timelinePgn();
   if (!pgn) {
-    showToast("Non ci sono mosse da esportare.");
+    showToast("Non ci sono mosse da esportare.", { type: "warning" });
     return;
   }
   const blob = new Blob([pgn + "\n"], { type: "application/x-chess-pgn;charset=utf-8" });
@@ -2634,19 +2713,85 @@ function newPosition() {
 void initializePersistence();
 }
 
+function initializeUiPreferences() {
+  const controls = [
+    ["#ui-theme-select", "theme"],
+    ["#board-theme-select", "boardTheme"],
+    ["#board-coordinates-select", "coordinates"],
+    ["#motion-select", "motion"],
+  ];
+  for (const [selector, key] of controls) {
+    const element = $(selector);
+    if (!element) continue;
+    element.value = uiPreferences[key];
+    element.addEventListener("change", () => {
+      uiPreferences[key] = element.value;
+      if (!saveUiPreferences(uiPreferences)) {
+        showToast("Preferenza applicata, ma non riesco a salvarla nel browser.", { type: "warning" });
+      }
+      if (key === "coordinates") renderBoard();
+    });
+  }
+}
+
+function trapDialogTab(event, dialog) {
+  if (event.key !== "Tab") return false;
+  const focusable = Array.from(dialog.querySelectorAll(
+    'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+  )).filter((element) => !element.closest("[hidden]") && element.getAttribute("aria-hidden") !== "true");
+  if (!focusable.length) {
+    event.preventDefault();
+    return true;
+  }
+  const first = focusable[0];
+  const last = focusable[focusable.length - 1];
+  if (event.shiftKey && (document.activeElement === first || !dialog.contains(document.activeElement))) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && (document.activeElement === last || !dialog.contains(document.activeElement))) {
+    event.preventDefault();
+    first.focus();
+  }
+  return true;
+}
+
 async function copyFen() {
   const fen = activeGame().fen();
   try {
     await navigator.clipboard.writeText(fen);
     showToast("FEN copiata negli appunti.");
   } catch {
-    showToast("Copia FEN non disponibile in questo contesto.");
+    showToast("Copia FEN non disponibile in questo contesto.", { type: "warning" });
   }
 }
 
 boardElement.addEventListener("click", (event) => {
   const squareButton = event.target.closest("button[data-square]");
   if (squareButton) handleSquareClick(squareButton.dataset.square);
+});
+
+boardElement.addEventListener("keydown", (event) => {
+  const current = event.target.closest?.("button[data-square]");
+  if (!current) return;
+  if (event.key === "Escape") {
+    if (!selectedSquare) return;
+    event.preventDefault();
+    selectedSquare = null;
+    pendingBoardFocusSquare = current.dataset.square;
+    renderBoard();
+    return;
+  }
+  if (!["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.key)) return;
+  const nextSquare = getAdjacentSquare(current.dataset.square, event.key, boardFlipped);
+  event.preventDefault();
+  event.stopPropagation();
+  if (!nextSquare) return;
+  const next = boardElement.querySelector('[data-square="' + nextSquare + '"]');
+  if (next) {
+    current.tabIndex = -1;
+    next.tabIndex = 0;
+    next.focus({ preventScroll: true });
+  }
 });
 
 $("#open-online-import").addEventListener("click", openOnlineImportDialog);
@@ -2658,7 +2803,12 @@ $("#online-import-dialog").addEventListener("click", (event) => {
   if (event.target === $("#online-import-dialog")) closeOnlineImportDialog();
 });
 $("#nav-dashboard").addEventListener("click", showDashboard);
+$("#toast-close").addEventListener("click", hideToast);
+$("#appearance-menu").addEventListener("keydown", (event) => {
+  if (event.key === "Escape") $("#appearance-menu").open = false;
+});
 $("#nav-backups").addEventListener("click", () => { void showBackups(); });
+initializeUiPreferences();
 $("#create-backup").addEventListener("click", () => { void createDatabaseBackup(); });
 $("#refresh-backups").addEventListener("click", () => { void refreshDatabaseBackups(); });
 $("#nav-studio").addEventListener("click", () => {
@@ -2696,6 +2846,18 @@ $("#flip-board").addEventListener("click", () => {
   renderBoard();
 });
 $("#copy-fen").addEventListener("click", copyFen);
+$("#open-fen-editor").addEventListener("click", openFenEditor);
+$("#fen-editor-close").addEventListener("click", () => closeFenEditor());
+$("#fen-editor-dialog").addEventListener("click", (event) => {
+  if (event.target === $("#fen-editor-dialog")) closeFenEditor();
+});
+$("#fen-editor-load").addEventListener("click", loadFenEditorText);
+$("#fen-editor-standard").addEventListener("click", () => {
+  fenEditorState = fenToEditorState(DEFAULT_FEN);
+  renderFenEditorBoard();
+  syncFenEditorFields();
+});
+$("#fen-editor-apply").addEventListener("click", applyFenEditorPosition);
 $("#save-line").addEventListener("click", saveLine);
 $("#import-pgn").addEventListener("click", importPgn);
 $("#export-pgn").addEventListener("click", exportPgn);
@@ -2714,24 +2876,92 @@ promotionDialog.addEventListener("click", (event) => {
 titleInput.addEventListener("input", () => setDirty(true));
 
 document.addEventListener("keydown", (event) => {
-  if (event.key === "Escape" && !$("#online-import-dialog").hidden) {
-    closeOnlineImportDialog();
+  const onlineDialog = $("#online-import-dialog");
+  const fenDialog = $("#fen-editor-dialog");
+  if (!onlineDialog.hidden) {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeOnlineImportDialog();
+    } else {
+      trapDialogTab(event, onlineDialog);
+    }
     return;
   }
-  if (event.key === "Escape" && pendingPromotion) {
-    closePromotionChooser();
-    selectedSquare = null;
+  if (!fenDialog.hidden) {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeFenEditor();
+    } else {
+      trapDialogTab(event, fenDialog);
+    }
+    return;
+  }
+  if (pendingPromotion) {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closePromotionChooser();
+      selectedSquare = null;
+      renderBoard();
+      return;
+    }
+    if (event.key === "Tab") {
+      trapDialogTab(event, promotionDialog);
+      return;
+    }
+    const choice = promotionOptions.querySelector('[data-promotion-key="' + event.key.toLowerCase() + '"]');
+    if (choice && !event.ctrlKey && !event.altKey && !event.metaKey) {
+      event.preventDefault();
+      choice.click();
+    }
+    return;
+  }
+
+  if (event.key === "Escape") {
+    document.querySelectorAll(".appearance-menu[open], .more-actions[open], .repertoire-menu[open]")
+      .forEach((menu) => { menu.open = false; });
+    if (selectedSquare && boardElement.contains(document.activeElement)) {
+      event.preventDefault();
+      const focusedSquare = document.activeElement.dataset.square || selectedSquare;
+      selectedSquare = null;
+      pendingBoardFocusSquare = focusedSquare;
+      renderBoard();
+      return;
+    }
+  }
+
+  const target = event.target;
+  const editing = target instanceof HTMLElement && (
+    target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)
+  );
+  const commandKey = event.ctrlKey || event.metaKey;
+  if (commandKey && event.key.toLowerCase() === "s") {
+    event.preventDefault();
+    if (mode === "studio") void saveLine();
+    return;
+  }
+  if (commandKey && event.key.toLowerCase() === "n" && !editing) {
+    event.preventDefault();
+    if (mode === "studio") void newPosition();
+    return;
+  }
+  if (!editing && event.key.toLowerCase() === "f" && !event.ctrlKey && !event.metaKey && !event.altKey) {
+    const focusedSquare = target instanceof HTMLElement ? target.closest("button[data-square]")?.dataset.square : null;
+    boardFlipped = !boardFlipped;
+    if (focusedSquare) pendingBoardFocusSquare = focusedSquare;
     renderBoard();
     return;
   }
-  if (mode !== "studio" || pendingPromotion) return;
-  const target = event.target;
-  if (target instanceof HTMLElement && (
-    target.isContentEditable
-    || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)
-    || (target.tagName === "BUTTON" && !target.matches(".square, .san-move"))
-  )) return;
-  if (event.key === "ArrowLeft" && studioPly > 0) {
+
+  if (mode !== "studio" || editing ||
+      (target instanceof HTMLElement && target.tagName === "BUTTON" && !target.matches(".square, .san-move"))) return;
+
+  if (event.key === "Home") {
+    event.preventDefault();
+    positionForPly(0);
+  } else if (event.key === "End") {
+    event.preventDefault();
+    positionForPly(studioSans.length);
+  } else if (event.key === "ArrowLeft" && studioPly > 0) {
     event.preventDefault();
     positionForPly(studioPly - 1);
   } else if (event.key === "ArrowRight" && studioPly < studioSans.length) {
