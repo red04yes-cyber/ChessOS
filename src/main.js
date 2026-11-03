@@ -294,8 +294,12 @@ function showToast(message, options = {}) {
   container.append(item);
   while (container.children.length > 3) container.firstElementChild?.remove();
   const duration = type === "error" ? 10_000 : type === "warning" ? 5_000 : 2_800;
-  const timer = window.setTimeout(() => item.remove(), duration);
-  item.addEventListener("mouseenter", () => window.clearTimeout(timer), { once: true });
+  let timer = window.setTimeout(() => item.remove(), duration);
+  item.addEventListener("mouseenter", () => window.clearTimeout(timer));
+  item.addEventListener("mouseleave", () => {
+    window.clearTimeout(timer);
+    timer = window.setTimeout(() => item.remove(), duration);
+  });
 }
 
 function setEngineStatus(message, state = "normal") {
@@ -1227,7 +1231,9 @@ function handleSquareClick(square) {
   if (!choices.length) {
     selectedSquare = null;
     renderBoard();
-    showToast("Mossa non legale.");
+    const destination = boardElement.querySelector('[data-square="' + square + '"]');
+    destination?.classList.add("invalid-move");
+    window.setTimeout(() => destination?.classList.remove("invalid-move"), 120);
     return;
   }
 
@@ -1490,13 +1496,13 @@ async function importPgn() {
     rebuildTimeline(imported);
     mode = "studio";
     activeLineId = null;
-    titleInput.value = "PGN importato";
+    titleInput.value = "Repertorio importato";
     setDirty(true);
     closePromotionChooser();
     renderAll();
-    showToast("PGN importato: varianti e transposizioni acquisite.");
+    showToast("PGN importato: varianti e trasposizioni caricate.", { type: "success" });
   } catch (error) {
-    showToast("PGN non valido: " + error.message);
+    showToast("PGN non valido: " + error.message, { type: "error" });
   }
 }
 
@@ -1515,7 +1521,7 @@ function exportPgn() {
   anchor.click();
   anchor.remove();
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-  showToast("File PGN esportato.");
+  showToast("File PGN esportato.", { type: "success" });
 }
 
 async function newPosition() {
@@ -1532,7 +1538,7 @@ async function newPosition() {
   activeLineId = null;
   selectedSquare = null;
   closePromotionChooser();
-  titleInput.value = "Nuova linea";
+  titleInput.value = "Nuovo repertorio";
   setDirty(true);
   renderAll();
 }
