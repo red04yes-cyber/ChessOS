@@ -234,7 +234,7 @@ h1 { margin: 9px 0 5px; font-size: clamp(24px, 2.2vw, 31px); line-height: 1.1; l
 
 /* FSRS daily review */
 .review-card[hidden], #line-card[hidden], #moves-card[hidden], #variations-card[hidden], #import-card[hidden] { display: none; }
-.review-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; margin: 0 0 18px; }
+.review-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 7px; margin: 0 0 18px; }
 .review-stats > div { display: grid; gap: 5px; padding: 10px 8px; border: 1px solid #354253; border-radius: 7px; background: #202a37; text-align: center; }
 .review-stats strong { color: var(--accent-strong); font-size: 19px; font-variant-numeric: tabular-nums; }
 .review-stats small { color: #8796a8; font-size: 9px; }
@@ -252,6 +252,7 @@ h1 { margin: 9px 0 5px; font-size: clamp(24px, 2.2vw, 31px); line-height: 1.1; l
 .grade-good { border-color: #47795e; color: #9ad6b2; }
 .grade-easy { border-color: #4b7190; color: #9bc8ed; }
 @media (max-width: 850px) {
+  .review-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .review-grade-buttons { gap: 4px; }
   .review-grade-buttons .button { padding-inline: 3px; }
 }
