@@ -50,7 +50,7 @@ function resultForSide(result, color) {
 }
 
 function normalizePgnDate(value) {
-  const match = /^(\\d{4})\\.(\\d{2})\\.(\\d{2})$/.exec(String(value || "").trim());
+  const match = /^(\d{4})\.(\d{2})\.(\d{2})$/.exec(String(value || "").trim());
   if (!match) return null;
   const [, year, month, day] = match;
   const date = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day)));
