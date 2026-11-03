@@ -520,6 +520,56 @@ export function initializeChessSuite({ getCurrentTree, loadGeneratedTree, getCur
     finally { setButtonBusy(button, false); }
   }
 
+  async function analyzeImportedGame(pgn, onProgress = () => {}) {
+    const game = new Chess();
+    game.loadPgn(String(pgn || ""));
+    const history = game.history({ verbose: true });
+    if (!history.length) throw new Error("La partita non contiene mosse da analizzare.");
+    const scoreCp = (result) => result.mate === null
+      ? (result.scoreCp ?? 0)
+      : Math.sign(result.mate) * (10000 - Math.min(9000, Math.abs(result.mate) * 100));
+    const analyzed = [];
+    for (const [index, move] of history.entries()) {
+      const before = await engine.analyze(move.before, 11);
+      const after = await engine.analyze(move.after, 11);
+      const lossCp = Math.max(0, scoreCp(before) + scoreCp(after));
+      const phase = index < 20 ? "Apertura" : index < 60 ? "Mediogioco" : "Finale";
+      analyzed.push({
+        ply: index + 1,
+        moveNumber: Math.floor(index / 2) + 1,
+        color: move.color === "w" ? "white" : "black",
+        san: move.san,
+        bestSan: before.bestSan || "—",
+        pv: before.pvSan.slice(0, 5),
+        lossCp,
+        accuracy: Math.round(100 * Math.exp(-lossCp / 200)),
+        phase,
+      });
+      onProgress(index + 1, history.length);
+    }
+    const summarize = (moves) => ({
+      count: moves.length,
+      accuracy: moves.length ? Math.round(moves.reduce((total, move) => total + move.accuracy, 0) / moves.length) : null,
+      inaccuracies: moves.filter((move) => move.lossCp >= 50 && move.lossCp < 100).length,
+      mistakes: moves.filter((move) => move.lossCp >= 100 && move.lossCp < 300).length,
+      blunders: moves.filter((move) => move.lossCp >= 300).length,
+    });
+    const phases = ["Apertura", "Mediogioco", "Finale"].map((name) => ({
+      name,
+      white: summarize(analyzed.filter((move) => move.phase === name && move.color === "white")),
+      black: summarize(analyzed.filter((move) => move.phase === name && move.color === "black")),
+    }));
+    const headers = game.header();
+    return {
+      headers,
+      moves: analyzed,
+      white: summarize(analyzed.filter((move) => move.color === "white")),
+      black: summarize(analyzed.filter((move) => move.color === "black")),
+      phases,
+      coaching: analyzed.filter((move) => move.lossCp >= 50).sort((a, b) => b.lossCp - a.lossCp).slice(0, 3),
+    };
+  }
+
   async function createTacticalPuzzles() {
     if (tacticsLoading) return;
     const pgn = $("#tactics-pgn").value.trim() || importedPgn;
@@ -576,11 +626,15 @@ export function initializeChessSuite({ getCurrentTree, loadGeneratedTree, getCur
     currentPuzzle = puzzleQueue.shift() || null;
     if (!currentPuzzle) {
       tacticsGame = null;
+      const boardElement = $("#tactics-board");
+      if (boardElement) boardElement.hidden = true;
       if (tacticsBoard) tacticsBoard.render();
       message("#tactics-prompt", "Non ci sono altri candidati. Importa altre partite o ripeti l'analisi a una profondità maggiore.");
       message("#tactics-answer", "");
       return;
     }
+    const boardElement = $("#tactics-board");
+    if (boardElement) boardElement.hidden = false;
     tacticsGame = new Chess(currentPuzzle.fen);
     tacticsBoard.render();
     message("#tactics-prompt", `Tocca al ${currentPuzzle.color === "w" ? "Bianco" : "Nero"}. Trova la mossa più forte da questa posizione.`);
@@ -648,6 +702,8 @@ export function initializeChessSuite({ getCurrentTree, loadGeneratedTree, getCur
     refresh() { refreshAnnotation(); },
     refreshEndgame() { updateEndgameSummary(); },
     loadImportedPgn(pgn) { importedPgn = pgn; fillPgnFields(pgn); },
+    analyzeImportedGame,
+    async analyzePosition(fen, depth = 14, multiPv = 1) { return engine.analyze(fen, depth, multiPv); },
     getCurrentEndgameLesson() { return endgameLesson; },
     loadEndgameProgress(progress) {
       if (progress && typeof progress === "object" && !Array.isArray(progress)) {

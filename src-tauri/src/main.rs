@@ -10,6 +10,10 @@ use tauri::Manager;
 fn main() {
     tauri::Builder::default()
         .setup(|app| {
+            #[cfg(windows)]
+            app.handle().plugin(tauri_plugin_updater::Builder::new().build())?;
+            #[cfg(windows)]
+            app.handle().plugin(tauri_plugin_process::init())?;
             let database_path = app
                 .path()
                 .app_data_dir()?
@@ -43,6 +47,7 @@ fn main() {
             db::set_app_setting,
             external_games::import_online_games,
             external_games::list_imported_games,
+            external_games::list_profile_games,
             external_games::get_imported_game,
             external_games::delete_imported_game
         ])

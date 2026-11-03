@@ -1,6 +1,6 @@
 {
   "name": "chess-os",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "description": "Windows-first chess repertoire and training desktop app",
@@ -17,10 +17,12 @@
     "prebuild": "npm run prepare:engine"
   },
   "dependencies": {
-    "chess.js": "1.4.0",
     "@tauri-apps/api": "2.12.4",
-    "ts-fsrs": "5.4.2",
-    "stockfish": "19.0.1"
+    "@tauri-apps/plugin-process": "^2.3.0",
+    "@tauri-apps/plugin-updater": "^2.9.0",
+    "chess.js": "1.4.0",
+    "stockfish": "19.0.1",
+    "ts-fsrs": "5.4.2"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.0.0",

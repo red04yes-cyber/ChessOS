@@ -1,6 +1,6 @@
 # Chess OS
 
-Windows-first chess repertoire and training desktop app. This repository now contains a **fresh MVP rebuild (0.1.0)** because the old 0.7.0 source archive could not be reconstructed from the incomplete recovery fragments.
+Windows-first chess repertoire and training desktop app. The **0.2.0** release builds on the fresh 0.1.0 MVP rebuild; the incomplete historical 0.7.0 source archive was not reconstructed.
 
 ## What works in this rebuild
 

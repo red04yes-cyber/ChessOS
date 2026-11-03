@@ -117,6 +117,9 @@ fn persist_batch(database: &Database, batch: &mut Vec<ImportedGame>, counts: &mu
         ).map_err(|error| error.to_string())?;
 
         for game in batch.drain(..) {
+            let source_provider = game.provider.clone();
+            let source_username = game.source_username.clone();
+            let source_game_id = game.source_game_id.clone();
             let inserted = statement.execute(rusqlite::params![
                 game.id,
                 game.provider,
@@ -137,6 +140,11 @@ fn persist_batch(database: &Database, batch: &mut Vec<ImportedGame>, counts: &mu
             } else {
                 counts.duplicates += 1;
             }
+            transaction.execute(
+                "INSERT OR IGNORE INTO imported_game_sources(provider, source_username, source_game_id)
+                 VALUES (?1, ?2, ?3)",
+                rusqlite::params![source_provider, source_username, source_game_id],
+            ).map_err(|error| error.to_string())?;
         }
     }
     transaction.commit().map_err(|error| error.to_string())?;
@@ -370,7 +378,7 @@ fn check_http_status(status: StatusCode, provider: &str) -> Result<(), String> {
     }
     if status == StatusCode::UNAUTHORIZED || status == StatusCode::FORBIDDEN {
         return if provider == "lichess" {
-            Err("Lichess ha rifiutato il token. Verifica che sia un token API personale valido.".into())
+            Err("Account Lichess privato oppure token rifiutato. Verifica lo username o usa un token personale di sola lettura.".into())
         } else {
             Err("Il servizio non ha autorizzato la richiesta.".into())
         };
@@ -399,8 +407,8 @@ pub async fn import_online_games(
         return Err("Provider non supportato.".into());
     }
     let token = token.unwrap_or_default().trim().to_string();
-    if provider == "lichess" && (token.is_empty() || token.len() > 2048) {
-        return Err("Per Lichess inserisci un token API personale valido. Il token non viene salvato.".into());
+    if provider == "lichess" && token.len() > 2048 {
+        return Err("Il token Lichess supera la lunghezza consentita.".into());
     }
 
     let client = Client::builder()
@@ -505,10 +513,11 @@ pub async fn import_online_games(
             "https://lichess.org/api/games/user/{}?finished=true&sort=dateAsc&opening=true",
             username
         );
-        let response = client.get(&url)
-            .bearer_auth(&token)
-            .header("Accept", "application/x-chess-pgn")
-            .send().await
+        let mut request = client.get(&url).header("Accept", "application/x-chess-pgn");
+        if !token.is_empty() {
+            request = request.bearer_auth(&token);
+        }
+        let response = request.send().await
             .map_err(|error| format!("Connessione a Lichess non riuscita: {}", error))?;
         check_http_status(response.status(), "lichess")?;
 
@@ -567,8 +576,10 @@ pub fn list_imported_games(
     let connection = database.0.lock().map_err(|_| "Database non disponibile.".to_string())?;
     let limit = limit.unwrap_or(20).clamp(1, 100);
     let mut statement = connection.prepare(
-        "SELECT id, provider, source_username, source_game_id, white, black, played_at,
-                result, time_control, opening, source_url
+        "SELECT imported_games.id, imported_games.provider, imported_games.source_username,
+                imported_games.source_game_id, imported_games.white, imported_games.black,
+                imported_games.played_at, imported_games.result, imported_games.time_control,
+                imported_games.opening, imported_games.source_url
          FROM imported_games
          ORDER BY played_at DESC, imported_at DESC
          LIMIT ?1"
@@ -586,6 +597,40 @@ pub fn list_imported_games(
             time_control: row.get(8)?,
             opening: row.get(9)?,
             source_url: row.get(10)?,
+        })
+    }).map_err(|error| error.to_string())?;
+    rows.collect::<Result<Vec<_>, _>>().map_err(|error| error.to_string())
+}
+
+/// Returns every locally stored game imported from a Chess.com profile.
+/// PGNs are intentionally omitted so large archives stay cheap to transfer to the UI.
+#[tauri::command]
+pub fn list_profile_games(
+    database: State<'_, Database>,
+    provider: String,
+    username: String,
+) -> Result<Vec<ImportedGameSummary>, String> {
+    if provider != "chess_com" {
+        return Err("I report profilo sono disponibili per Chess.com.".into());
+    }
+    let username = validate_username(&username)?;
+    let connection = database.0.lock().map_err(|_| "Database non disponibile.".to_string())?;
+    let mut statement = connection.prepare(
+        "SELECT imported_games.id, imported_games.provider, imported_games.source_username,
+                imported_games.source_game_id, imported_games.white, imported_games.black,
+                imported_games.played_at, imported_games.result, imported_games.time_control,
+                imported_games.opening, imported_games.source_url
+         FROM imported_games
+         INNER JOIN imported_game_sources USING (provider, source_game_id)
+         WHERE imported_games.provider = ?1 AND imported_game_sources.source_username = ?2 COLLATE NOCASE
+         ORDER BY played_at DESC, imported_at DESC"
+    ).map_err(|error| error.to_string())?;
+    let rows = statement.query_map([provider, username], |row| {
+        Ok(ImportedGameSummary {
+            id: row.get(0)?, provider: row.get(1)?, source_username: row.get(2)?,
+            source_game_id: row.get(3)?, white: row.get(4)?, black: row.get(5)?,
+            played_at: row.get(6)?, result: row.get(7)?, time_control: row.get(8)?,
+            opening: row.get(9)?, source_url: row.get(10)?,
         })
     }).map_err(|error| error.to_string())?;
     rows.collect::<Result<Vec<_>, _>>().map_err(|error| error.to_string())
@@ -685,11 +730,22 @@ mod tests {
         assert_eq!(counts.imported, 1);
         assert_eq!(counts.duplicates, 1);
 
+        let mut same_game_from_another_profile = parse_game("lichess", "second_player", PGN_ONE.to_string()).unwrap();
+        same_game_from_another_profile.source_username = "second_player".into();
+        let mut batch = vec![same_game_from_another_profile];
+        persist_batch(&database, &mut batch, &mut counts).unwrap();
+        assert_eq!(counts.imported, 1);
+        assert_eq!(counts.duplicates, 2);
+
         let connection = database.0.lock().unwrap();
         let count: i64 = connection.query_row(
             "SELECT COUNT(*) FROM imported_games", [], |row| row.get(0)
         ).unwrap();
         assert_eq!(count, 1);
+        let profile_count: i64 = connection.query_row(
+            "SELECT COUNT(*) FROM imported_game_sources", [], |row| row.get(0)
+        ).unwrap();
+        assert_eq!(profile_count, 2);
     }
 
     #[test]

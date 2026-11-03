@@ -3,6 +3,8 @@ import { invoke, isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { classifyBoardMove } from "./board-input.js";
 import { listenForOptionalImportProgress } from "./online-import-progress.js";
+import { check } from "@tauri-apps/plugin-updater";
+import { relaunch } from "@tauri-apps/plugin-process";
 import { RepertoireTree } from "./repertoire-tree.js";
 import { initializeChessSuite } from "./chess-suite.js";
 import { initializeExtendedTraining } from "./extended-training.js";
@@ -45,6 +47,9 @@ const promotionNames = { q: "Donna", r: "Torre", b: "Alfiere", n: "Cavallo" };
 let game = new Chess();
 let mode = "studio";
 let chessSuite = null;
+let engineEnabled = localStorage.getItem("chess-os.engine.enabled") !== "false";
+let engineTimer = null;
+let engineFenPending = "";
 let extendedTraining = null;
 let selectedSquare = null;
 let boardFlipped = false;
@@ -65,6 +70,10 @@ let studyGoals = [];
 let examAttempts = [];
 let examAnswers = [];
 let importedGames = [];
+let gameAnalysisResults = [];
+let gameAnalysisBusy = false;
+let opponentReportBusy = false;
+let opponentReportGames = [];
 let onlineImportBusy = false;
 let databaseBackups = [];
 let verifiedBackups = new Set();
@@ -93,6 +102,13 @@ let reviewFeedback = "";
 let reviewLastMove = null;
 let reviewCardStartedAt = 0;
 let reviewSessionFinished = false;
+let lineTrainingActive = false;
+let lineTrainingSteps = [];
+let lineTrainingPly = 0;
+let lineTrainingSide = "both";
+let lineTurnStartedAt = 0;
+let lineTrainingThinkingMs = 0;
+let lineTrainingSummary = "";
 let isStartingReviewSession = false;
 let isSavingReview = false;
 let baseFen = DEFAULT_FEN;
@@ -426,6 +442,46 @@ function currentLastMove() {
   return studioMoveObjects[studioPly - 1] || null;
 }
 
+function schedulePositionAnalysis() {
+  const button = $("#toggle-engine");
+  const bar = $("#evaluation-bar");
+  if (button) {
+    button.setAttribute("aria-pressed", String(engineEnabled));
+    button.textContent = engineEnabled ? "Disattiva" : "Attiva";
+  }
+  if (bar) bar.classList.toggle("engine-disabled", !engineEnabled);
+  if (!engineEnabled || mode !== "studio" || !chessSuite?.analyzePosition) {
+    if (engineTimer) clearTimeout(engineTimer);
+    engineTimer = null;
+    return;
+  }
+  const fen = activeGame().fen();
+  if (fen === engineFenPending) return;
+  engineFenPending = fen;
+  if (engineTimer) clearTimeout(engineTimer);
+  engineTimer = setTimeout(async () => {
+    try {
+      const result = await chessSuite.analyzePosition(fen, 14, 1);
+      if (!engineEnabled || mode !== "studio" || activeGame().fen() !== fen) return;
+      const whiteScore = result.mate === null ? (result.scoreCp || 0) / 100 : Math.sign(result.mate) * (10 - Math.min(9, Math.abs(result.mate)));
+      const whiteView = fen.split(" ")[1] === "w" ? whiteScore : -whiteScore;
+      const capped = Math.max(-8, Math.min(8, whiteView));
+      const whitePercent = 50 + 50 * (2 / (1 + Math.exp(-0.65 * capped)) - 1);
+      $("#evaluation-bar-white").style.height = whitePercent + "%";
+      $("#engine-evaluation").textContent = result.mate === null
+        ? (whiteView > 0 ? "+" : "") + whiteView.toFixed(2)
+        : "#" + Math.abs(result.mate);
+      $("#evaluation-bar").setAttribute("aria-label", "Valutazione Stockfish " + $("#engine-evaluation").textContent);
+      $("#current-analysis").textContent = `Profondita ${result.depth} | migliore ${result.bestSan || result.bestmove || "-"} | variante ${(result.pvSan || []).join(" ") || "-"}`;
+    } catch (error) {
+      engineFenPending = "";
+      if (activeGame().fen() === fen && /busy|impegnato|occupato/i.test(error.message)) {
+        engineTimer = setTimeout(schedulePositionAnalysis, 700);
+      } else if (activeGame().fen() === fen) $("#current-analysis").textContent = "Stockfish non disponibile: " + error.message;
+    }
+  }, 300);
+}
+
 function renderBoard() {
   const previouslyFocusedSquare = document.activeElement
     ?.closest?.("button[data-square]")?.dataset.square || null;
@@ -468,6 +524,7 @@ function renderBoard() {
       button.type = "button";
       button.dataset.square = square;
       button.tabIndex = square === focusSquare ? 0 : -1;
+      button.draggable = Boolean(piece && piece.color === chess.turn());
       button.className = "square " + (isLight ? "light" : "dark");
       button.setAttribute("aria-keyshortcuts", "ArrowUp ArrowDown ArrowLeft ArrowRight Enter Space");
       if (selectedSquare === square) button.classList.add("selected");
@@ -517,15 +574,16 @@ function renderBoard() {
   }
 
   renderBoardMarkings();
+  schedulePositionAnalysis();
   $("#turn-label").textContent = (chess.turn() === "w" ? "Bianco" : "Nero") + " al tratto";
   $("#game-status").textContent = gameStatus(chess);
-  const currentCount = mode === "training" ? reviewCompleted : mode === "exam" ? examQuestionIndex + (examAnswered ? 1 : 0) : studioPly;
+  const currentCount = mode === "training" ? (lineTrainingActive ? lineTrainingPly : reviewCompleted) : mode === "exam" ? examQuestionIndex + (examAnswered ? 1 : 0) : studioPly;
   const totalCount = mode === "training" ? reviewSessionTotal : mode === "exam" ? examTotalQuestions : studioSans.length;
   $("#move-count").textContent = mode === "studio"
     ? currentCount + " / " + totalCount + " semimosse"
     : currentCount + " / " + totalCount + " domande";
   $("#line-move-count").textContent = mode === "training"
-    ? (currentReviewCard ? currentReviewCard.repertoireTitle + " · " + currentReviewCard.side : "Sessione giornaliera")
+    ? (lineTrainingActive ? "Linea completa · " + lineTrainingPly + "/" + lineTrainingSteps.length + " semimosse" : currentReviewCard ? currentReviewCard.repertoireTitle + " · " + currentReviewCard.side : "Sessione giornaliera")
     : mode === "exam"
       ? (currentExamCard ? currentExamCard.repertoireTitle + " · " + (currentExamCard.side === "white" ? "Bianco" : "Nero") : "Esame repertorio")
       : studioPly + " / " + studioSans.length + " semimosse · posizione " + (studioPly + 1);
@@ -629,30 +687,16 @@ function renderMode() {
   const exam = mode === "exam";
   const dashboard = mode === "dashboard";
   const backups = mode === "backups";
-  const study = !dashboard && !backups;
-  $("#nav-studio").classList.toggle("active", mode === "studio");
-  $("#nav-training").classList.toggle("active", training);
-  $("#nav-dashboard").classList.toggle("active", dashboard);
-  $("#nav-backups").classList.toggle("active", backups);
-  $("#mode-eyebrow").textContent = dashboard
-    ? "ATTIVITÀ / STATISTICHE"
-    : backups ? "SISTEMA / PROTEZIONE DATI"
-      : training ? "REPERTORIO / RIPASSO FSRS"
-        : exam ? "REPERTORIO / ESAME"
-          : "REPERTORIO / ANALISI";
-  $("#page-title").textContent = dashboard
-    ? "Dashboard e progressi"
-    : backups ? "Protezione dei dati"
-      : training ? "Ripasso giornaliero"
-        : exam ? "Esame del repertorio" : "Chess Studio";
-  $("#page-subtitle").textContent = dashboard
-    ? "Controlla i progressi, gli obiettivi e la preparazione dei tuoi repertori."
-    : backups ? "Crea copie complete, verifica l’integrità e ripristina i tuoi dati."
-      : training ? "Allena il richiamo delle mosse con intervalli adattivi."
-        : exam ? "Verifica quanto ricordi senza aiuti e registra il risultato."
-          : "Costruisci linee principali, varianti e transposizioni.";
-  $("#heading-actions").hidden = dashboard || exam || backups;
-  $("#study-grid").hidden = !study;
+  const review = mode === "review";
+  const endgame = mode === "endgame";
+  const boardWorkspace = ["studio", "training", "exam"].includes(mode);
+  const navModes = [["nav-studio", mode === "studio"], ["nav-training", training], ["nav-dashboard", dashboard], ["nav-backups", backups], ["nav-review", review], ["nav-endgame", endgame]];
+  for (const [id, active] of navModes) { const item = $("#" + id); item.classList.toggle("active", active); item.setAttribute("aria-current", active ? "page" : "false"); }
+  $("#mode-eyebrow").textContent = dashboard ? "ATTIVIT? / STATISTICHE" : backups ? "SISTEMA / PROTEZIONE DATI" : training ? "REPERTORIO / RIPASSO FSRS" : exam ? "REPERTORIO / ESAME" : review ? "PARTITE / ANALISI" : endgame ? "ALLENAMENTO / FINALI" : "REPERTORIO / ANALISI";
+  $("#page-title").textContent = dashboard ? "Dashboard e progressi" : backups ? "Protezione dei dati" : training ? "Ripasso giornaliero" : exam ? "Esame del repertorio" : review ? "Revisione delle partite" : endgame ? "Endgame Lab" : "Chess Studio";
+  $("#page-subtitle").textContent = dashboard ? "Controlla i progressi, gli obiettivi e la preparazione dei tuoi repertori." : backups ? "Crea copie complete, verifica l?integrit? e ripristina i tuoi dati." : training ? "Allena il richiamo delle mosse con intervalli adattivi." : exam ? "Verifica quanto ricordi senza aiuti e registra il risultato." : review ? "Analizza le tue partite, trova le debolezze e prepara le prossime mosse." : endgame ? "Studia i finali con lezioni progressive e pratica guidata." : "Costruisci linee principali, varianti e transposizioni.";
+  $("#heading-actions").hidden = !boardWorkspace || exam;
+  $("#study-grid").hidden = !boardWorkspace;
   $("#dashboard-panel").hidden = !dashboard;
   $("#backup-panel").hidden = !backups;
   $("#save-line").disabled = mode !== "studio" || !databaseReady;
@@ -660,13 +704,13 @@ function renderMode() {
   $("#board-mark-color").disabled = training;
   $("#clear-board-marks").disabled = training;
   $("#reset").textContent = training ? "Esci dal ripasso" : exam ? "Interrompi esame" : "Nuova posizione";
-  for (const selector of ["#line-card", "#moves-card", "#variations-card", "#import-card"]) {
-    $(selector).hidden = mode !== "studio";
-  }
+  for (const selector of ["#line-card", "#moves-card", "#variations-card", "#import-card"]) $(selector).hidden = mode !== "studio";
   $("#review-panel").hidden = !training;
   $("#exam-panel").hidden = !exam;
   $("#chess-lab-tools").hidden = mode !== "studio";
-  $("#flip-board").disabled = dashboard || backups;
+  $("#review-workspace").hidden = !review;
+  $("#endgame-panel").hidden = !endgame;
+  $("#flip-board").disabled = dashboard || backups || review || endgame;
 }
 
 function renderVariations() {
@@ -1147,6 +1191,7 @@ function renderAll() {
 function renderImportedGames() {
   const list = $("#imported-games-list");
   if (!list) return;
+  renderGameAnalysisChoices();
   list.replaceChildren();
 
   if (persistenceMode !== "sqlite") {
@@ -1189,6 +1234,245 @@ function renderImportedGames() {
     row.append(open, remove);
     list.append(row);
   }
+}
+
+function renderGameAnalysisChoices() {
+  const select = $("#analysis-game-select");
+  if (!select) return;
+  const selectedId = select.value;
+  select.replaceChildren(new Option("Seleziona una partita importata", ""));
+  for (const record of importedGames.slice(0, 10)) {
+    const label = [record.playedAt, (record.white || "Bianco") + " – " + (record.black || "Nero"), record.result].filter(Boolean).join(" · ");
+    select.append(new Option(label, record.id));
+  }
+  if (importedGames.some((record) => record.id === selectedId)) select.value = selectedId;
+}
+
+function playerArchiveProfile(playerName) {
+  const games = importedGames.filter((game) => game.white === playerName || game.black === playerName);
+  const totals = { games: games.length, wins: 0, draws: 0, losses: 0 };
+  for (const game of games) {
+    if (game.result === "1/2-1/2") totals.draws += 1;
+    else if ((game.white === playerName && game.result === "1-0") || (game.black === playerName && game.result === "0-1")) totals.wins += 1;
+    else if (game.result === "1-0" || game.result === "0-1") totals.losses += 1;
+  }
+  return totals;
+}
+
+function addText(parent, tag, className, text) {
+  const element = document.createElement(tag);
+  if (className) element.className = className;
+  element.textContent = text;
+  parent.append(element);
+  return element;
+}
+
+function renderGameAnalysisReports() {
+  const container = $("#game-analysis-report");
+  container.replaceChildren();
+  for (const { record, analysis } of gameAnalysisResults) {
+    const article = document.createElement("article");
+    article.className = "game-report-card";
+    const whiteName = record.white || analysis.headers.White || "Bianco";
+    const blackName = record.black || analysis.headers.Black || "Nero";
+    addText(article, "h3", "game-report-title", `${whiteName} – ${blackName} · ${record.playedAt || "data non disponibile"}`);
+    addText(article, "p", "game-report-caption", `${record.opening || analysis.headers.Opening || "Apertura non classificata"} · Risultato ${record.result || analysis.headers.Result || "*"} · Precisione stimata localmente a profondità 11`);
+
+    const metrics = document.createElement("div");
+    metrics.className = "game-report-metrics";
+    for (const [side, name, summary] of [["Bianco", whiteName, analysis.white], ["Nero", blackName, analysis.black]]) {
+      const metric = document.createElement("div");
+      metric.className = "game-report-metric";
+      addText(metric, "span", "", side + " · " + name);
+      addText(metric, "strong", "", summary.accuracy === null ? "—" : summary.accuracy + "%");
+      addText(metric, "small", "", `${summary.inaccuracies} imprecisioni · ${summary.mistakes} errori · ${summary.blunders} gravi`);
+      metrics.append(metric);
+    }
+    article.append(metrics);
+
+    addText(article, "h4", "game-report-section-title", "Fasi della partita");
+    const phaseList = document.createElement("div");
+    phaseList.className = "game-phase-list";
+    for (const phase of analysis.phases) {
+      const row = document.createElement("div");
+      row.className = "game-phase-row";
+      addText(row, "strong", "", phase.name);
+      addText(row, "span", "", `Bianco ${phase.white.accuracy ?? "—"}% · Nero ${phase.black.accuracy ?? "—"}%`);
+      phaseList.append(row);
+    }
+    article.append(phaseList);
+
+    addText(article, "h4", "game-report-section-title", "Coach · momenti da rivedere");
+    const coaching = document.createElement("ul");
+    coaching.className = "game-coaching-list";
+    if (!analysis.coaching.length) addText(coaching, "li", "", "Nessun calo significativo trovato a questa profondità.");
+    for (const move of analysis.coaching) {
+      const side = move.color === "white" ? whiteName : blackName;
+      const label = move.lossCp >= 300 ? "Errore grave" : move.lossCp >= 100 ? "Errore" : "Imprecisione";
+      addText(coaching, "li", "", `${side}, ${move.moveNumber}${move.color === "white" ? "." : "…"} ${move.san}: Stockfish preferiva ${move.bestSan}; perdita stimata ${(move.lossCp / 100).toFixed(2)}. Rivedi la variante ${move.pv.join(" ") || move.bestSan}. (${label})`);
+    }
+    article.append(coaching);
+
+    addText(article, "h4", "game-report-section-title", "Profilo negli ultimi 15 importati");
+    const profiles = document.createElement("div");
+    profiles.className = "game-player-profiles";
+    for (const name of [whiteName, blackName]) {
+      const profile = playerArchiveProfile(name);
+      addText(profiles, "p", "", `${name}: ${profile.games} partite · ${profile.wins} vittorie · ${profile.draws} patte · ${profile.losses} sconfitte`);
+    }
+    article.append(profiles);
+
+    addText(article, "h4", "game-report-section-title", "Mossa per mossa");
+    const moveTable = document.createElement("div");
+    moveTable.className = "game-move-table";
+    for (const move of analysis.moves) {
+      const row = document.createElement("div");
+      row.className = "game-move-row" + (move.lossCp >= 50 ? " flagged" : "");
+      const moveLabel = `${move.moveNumber}${move.color === "white" ? "." : "…"} ${move.san}`;
+      const label = move.lossCp >= 300 ? "Errore grave" : move.lossCp >= 100 ? "Errore" : move.lossCp >= 50 ? "Imprecisione" : "Buona";
+      addText(row, "strong", "", moveLabel);
+      addText(row, "span", "", `Migliore: ${move.bestSan}`);
+      addText(row, "span", "", `${move.lossCp} cp · ${move.accuracy}% · ${label}`);
+      moveTable.append(row);
+    }
+    article.append(moveTable);
+    container.append(article);
+  }
+  $("#print-game-analysis").disabled = gameAnalysisResults.length === 0 || gameAnalysisBusy;
+}
+
+async function runImportedGameAnalysis(records) {
+  if (gameAnalysisBusy || !records.length) return;
+  if (!chessSuite?.analyzeImportedGame) {
+    $("#game-analysis-status").textContent = "Stockfish non è pronto. Riprova tra qualche secondo.";
+    return;
+  }
+  gameAnalysisBusy = true;
+  gameAnalysisResults = [];
+  const buttons = [$("#analyze-imported-game"), $("#analyze-latest-games")];
+  buttons.forEach((button) => { button.disabled = true; });
+  $("#print-game-analysis").disabled = true;
+  $("#game-analysis-report").replaceChildren();
+  try {
+    for (const [gameIndex, summary] of records.entries()) {
+      $("#game-analysis-status").textContent = `Carico la partita ${gameIndex + 1}/${records.length}: ${summary.white} – ${summary.black}…`;
+      const record = await invoke("get_imported_game", { id: summary.id });
+      const analysis = await chessSuite.analyzeImportedGame(record.pgn, (current, total) => {
+        $("#game-analysis-status").textContent = `Partita ${gameIndex + 1}/${records.length} · analisi Stockfish ${current}/${total} semimosse…`;
+      });
+      gameAnalysisResults.push({ record, analysis });
+      renderGameAnalysisReports();
+    }
+    $("#game-analysis-status").textContent = `${gameAnalysisResults.length} ${gameAnalysisResults.length === 1 ? "partita analizzata" : "partite analizzate"}. La precisione è una stima locale e può differire da Chess.com.`;
+  } catch (error) {
+    $("#game-analysis-status").textContent = "Analisi interrotta: " + (error?.message || String(error));
+  } finally {
+    gameAnalysisBusy = false;
+    buttons.forEach((button) => { button.disabled = false; });
+    renderGameAnalysisReports();
+  }
+}
+
+function analyzeSelectedImportedGame() {
+  const record = importedGames.find((game) => game.id === $("#analysis-game-select").value);
+  if (!record) {
+    $("#game-analysis-status").textContent = "Scegli una partita tra le ultime dieci importate.";
+    return;
+  }
+  void runImportedGameAnalysis([record]);
+}
+
+function renderOpponentReport(games, username) {
+  const root = $("#opponent-profile-report");
+  root.replaceChildren();
+  const normalizedName = username.trim().toLocaleLowerCase();
+  const stats = { wins: 0, draws: 0, losses: 0, unknown: 0, white: 0, black: 0, whiteWins: 0, whiteGames: 0, blackWins: 0, blackGames: 0 };
+  const openings = new Map(), months = new Map(), controls = new Map();
+  for (const item of games) {
+    const isWhite = item.white?.toLocaleLowerCase() === normalizedName;
+    const isBlack = item.black?.toLocaleLowerCase() === normalizedName;
+    if (!isWhite && !isBlack) { stats.unknown += 1; continue; }
+    if (isWhite) { stats.white += 1; stats.whiteGames += 1; } else { stats.black += 1; stats.blackGames += 1; }
+    const won = (isWhite && item.result === "1-0") || (isBlack && item.result === "0-1");
+    const lost = (isWhite && item.result === "0-1") || (isBlack && item.result === "1-0");
+    if (won) { stats.wins += 1; if (isWhite) stats.whiteWins += 1; else stats.blackWins += 1; }
+    else if (lost) stats.losses += 1;
+    else if (item.result === "1/2-1/2") stats.draws += 1;
+    else stats.unknown += 1;
+    const opening = item.opening?.trim() || "Apertura non classificata";
+    const openingStats = openings.get(opening) || { games: 0, wins: 0, draws: 0, losses: 0 };
+    openingStats.games += 1; if (won) openingStats.wins += 1; else if (lost) openingStats.losses += 1; else if (item.result === "1/2-1/2") openingStats.draws += 1;
+    openings.set(opening, openingStats);
+    const month = (item.playedAt || "").slice(0, 7);
+    if (/^\d{4}\.\d{2}$/.test(month)) {
+      const monthStats = months.get(month) || { games: 0, wins: 0, draws: 0, losses: 0 };
+      monthStats.games += 1; if (won) monthStats.wins += 1; else if (lost) monthStats.losses += 1; else if (item.result === "1/2-1/2") monthStats.draws += 1;
+      months.set(month, monthStats);
+    }
+    const control = item.timeControl?.trim() || "Non disponibile";
+    controls.set(control, (controls.get(control) || 0) + 1);
+  }
+  const decided = stats.wins + stats.draws + stats.losses;
+  const score = decided ? Math.round((stats.wins + stats.draws / 2) / decided * 100) : null;
+  const dates = games.map((item) => item.playedAt).filter(Boolean).sort();
+  const header = document.createElement("header"); header.className = "opponent-report-header";
+  addText(header, "h3", "game-report-title", `Profilo di ${username}`);
+  addText(header, "p", "game-report-caption", `${games.length} partite · ${dates[0] || "data non disponibile"} – ${dates.at(-1) || "data non disponibile"} · archivi pubblici Chess.com`);
+  root.append(header);
+  const metrics = document.createElement("div"); metrics.className = "opponent-report-metrics";
+  for (const [label, value, hint] of [
+    ["Partite", games.length, `${stats.white} col Bianco · ${stats.black} col Nero`],
+    ["Punteggio", score === null ? "—" : `${score}%`, `${stats.wins} vittorie · ${stats.draws} patte · ${stats.losses} sconfitte`],
+    ["Col Bianco", stats.whiteGames ? `${Math.round(stats.whiteWins / stats.whiteGames * 100)}% vittorie` : "—", `${stats.whiteWins} vittorie su ${stats.whiteGames}`],
+    ["Col Nero", stats.blackGames ? `${Math.round(stats.blackWins / stats.blackGames * 100)}% vittorie` : "—", `${stats.blackWins} vittorie su ${stats.blackGames}`],
+  ]) { const card = document.createElement("div"); card.className = "opponent-report-metric"; addText(card, "span", "", label); addText(card, "strong", "", String(value)); addText(card, "small", "", hint); metrics.append(card); }
+  root.append(metrics);
+  const columns = document.createElement("div"); columns.className = "opponent-report-columns";
+  const openingCard = document.createElement("section"); openingCard.className = "opponent-report-section";
+  addText(openingCard, "h4", "game-report-section-title", "Aperture più giocate");
+  const topOpenings = [...openings.entries()].sort((a, b) => b[1].games - a[1].games).slice(0, 8);
+  if (!topOpenings.length) addText(openingCard, "p", "game-report-caption", "Nessuna apertura classificata nei PGN disponibili.");
+  for (const [name, data] of topOpenings) { const row = document.createElement("div"); row.className = "opponent-report-row"; addText(row, "strong", "", name); addText(row, "span", "", `${data.games} partite · ${data.wins}V ${data.draws}P ${data.losses}S · ${Math.round((data.wins + data.draws / 2) / data.games * 100)}% punti`); openingCard.append(row); }
+  const repeatedOpenings = [...openings.entries()].filter(([, data]) => data.games >= 3).map(([name, data]) => ({ name, games: data.games, score: Math.round((data.wins + data.draws / 2) / data.games * 100) }));
+  if (repeatedOpenings.length) {
+    const weakest = [...repeatedOpenings].sort((a, b) => a.score - b.score || b.games - a.games).slice(0, 2);
+    const strongest = [...repeatedOpenings].sort((a, b) => b.score - a.score || b.games - a.games).slice(0, 2);
+    addText(openingCard, "h4", "opponent-insight-title", "Tendenze nelle aperture ripetute");
+    addText(openingCard, "p", "opponent-insight", `Punteggio più basso: ${weakest.map((row) => `${row.name} (${row.score}%, ${row.games} partite)`).join(" · ")}.`);
+    addText(openingCard, "p", "opponent-insight", `Punteggio più alto: ${strongest.map((row) => `${row.name} (${row.score}%, ${row.games} partite)`).join(" · ")}.`);
+  }
+  const controlCard = document.createElement("section"); controlCard.className = "opponent-report-section";
+  addText(controlCard, "h4", "game-report-section-title", "Controlli di tempo");
+  for (const [name, count] of [...controls.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6)) { const row = document.createElement("div"); row.className = "opponent-report-row"; addText(row, "strong", "", name); addText(row, "span", "", `${count} partite · ${Math.round(count / Math.max(1, games.length) * 100)}%`); controlCard.append(row); }
+  columns.append(openingCard, controlCard); root.append(columns);
+  const recentMonths = [...months.entries()].sort((a, b) => a[0].localeCompare(b[0])).slice(-8);
+  if (recentMonths.length) {
+    const trend = document.createElement("section"); trend.className = "opponent-report-section"; addText(trend, "h4", "game-report-section-title", "Attività recente");
+    const maxGames = Math.max(...recentMonths.map(([, data]) => data.games));
+    for (const [month, data] of recentMonths) { const row = document.createElement("div"); row.className = "opponent-report-row opponent-month-row"; addText(row, "strong", "", month.replace(".", "-")); const bar = document.createElement("span"); bar.className = "opponent-month-bar"; bar.style.setProperty("--month-share", `${Math.max(3, data.games / maxGames * 100)}%`); bar.setAttribute("aria-label", `${data.games} partite`); row.append(bar); addText(row, "span", "", `${data.games} · ${data.wins}V ${data.draws}P ${data.losses}S`); trend.append(row); }
+    root.append(trend);
+  }
+  const coach = score === null ? "Il campione non contiene risultati sufficienti per calcolare il punteggio." : score >= 58 ? "Nel campione il punteggio dell'avversario supera la parità: prepara con cura le aperture." : score <= 42 ? "Nel campione il punteggio dell'avversario è sotto la parità: controlla comunque le singole partite." : "Nel campione i risultati sono vicini alla parità: valuta quale apertura ti mette più a tuo agio.";
+  addText(root, "p", "opponent-coach-note", `Coach · ${coach} Il report riassume i risultati registrati e non valuta la qualità delle mosse.`);
+}
+
+async function createOpponentReport(event) {
+  event.preventDefault();
+  if (opponentReportBusy) return;
+  if (persistenceMode !== "sqlite") { $("#opponent-report-status").textContent = "Apri ChessOS come app desktop per scaricare e salvare gli archivi."; return; }
+  const username = $("#opponent-username").value.trim(); if (!username) return;
+  opponentReportBusy = true;
+  const button = $("#opponent-report-run"); button.disabled = true; button.textContent = "Download in corso…"; $("#print-opponent-report").disabled = true;
+  let stopListening = null;
+  try {
+    stopListening = await listen("online-game-import-progress", (event) => { const data = event.payload || {}; if (data.provider !== "chess_com" || data.username?.toLocaleLowerCase() !== username.toLocaleLowerCase()) return; $("#opponent-report-status").textContent = `Archivio ${username} · ${data.processed || 0} elaborate · ${data.imported || 0} nuove · ${data.duplicates || 0} già presenti`; });
+    const summary = await invoke("import_online_games", { provider: "chess_com", username, token: null });
+    const games = await invoke("list_profile_games", { provider: "chess_com", username: summary.username });
+    opponentReportGames = games; renderOpponentReport(games, summary.username);
+    $("#opponent-report-status").textContent = `${games.length} partite nel profilo locale · ${summary.imported} nuove · ${summary.archives} archivi mensili controllati.`;
+    $("#print-opponent-report").disabled = games.length === 0;
+  } catch (error) { $("#opponent-report-status").textContent = "Report non completato: " + (error?.message || String(error)); }
+  finally { if (stopListening) stopListening(); opponentReportBusy = false; button.disabled = false; button.textContent = "Scarica e crea report"; }
 }
 
 async function refreshImportedGames() {
@@ -1246,7 +1530,7 @@ function updateOnlineImportProvider() {
   const isLichess = $("#online-provider").value === "lichess";
   $("#lichess-token-field").hidden = !isLichess;
   $("#online-import-progress").textContent = isLichess
-    ? "Inserisci un token API personale Lichess valido. Il token viene usato solo per questa richiesta e non viene salvato."
+    ? "Account Lichess pubblico: basta lo username. Per account privati, token di sola lettura facoltativo; non viene salvato."
     : "Inserisci lo username Chess.com. Verranno letti in sequenza tutti gli archivi mensili pubblici disponibili.";
 }
 
@@ -1264,12 +1548,6 @@ async function startOnlineGameImport() {
     $("#online-username").focus();
     return;
   }
-  if (provider === "lichess" && !token) {
-    $("#online-import-progress").textContent = "Per Lichess è necessario un token API personale valido.";
-    $("#lichess-api-token").focus();
-    return;
-  }
-
   onlineImportBusy = true;
   const button = $("#start-online-import");
   button.disabled = true;
@@ -1342,6 +1620,9 @@ async function openImportedGame(id) {
     activeLineId = null;
     mode = "studio";
     trainingGame = null;
+    lineTrainingActive = false;
+    lineTrainingSteps = [];
+    lineTrainingSummary = "";
     trainingMoves = [];
     trainingIndex = 0;
     reviewSessionId = null;
@@ -1427,6 +1708,20 @@ function commitSelectedMove(selectedMove) {
     return;
   }
   if (mode === "training") {
+    if (lineTrainingActive) {
+      if (lineTrainingSide !== "both" && lineTrainingSteps[lineTrainingPly]?.side !== lineTrainingSide) return;
+      try {
+        trainingGame.move({
+          from: selectedMove.from,
+          to: selectedMove.to,
+          ...(selectedMove.promotion ? { promotion: selectedMove.promotion } : {}),
+        });
+        playFullLineMove(selectedMove);
+      } catch (error) {
+        showToast("Mossa non valida: " + error.message, { type: "error" });
+      }
+      return;
+    }
     if (!currentReviewCard || reviewSolved || reviewRevealed) return;
     let played;
     try {
@@ -1563,6 +1858,9 @@ function openLine(id) {
     setDirty(false);
     mode = "studio";
     trainingGame = null;
+    lineTrainingActive = false;
+    lineTrainingSteps = [];
+    lineTrainingSummary = "";
     closePromotionChooser();
     renderAll();
   } catch (error) {
@@ -1618,11 +1916,6 @@ async function saveLine() {
     showToast("Database non pronto: il salvataggio è disattivato.", { type: "error" });
     return;
   }
-  if (!studioTree.edges.size) {
-    showToast("Aggiungi almeno una mossa prima di salvare.", { type: "warning" });
-    return;
-  }
-
   const pgn = timelinePgn();
   const sans = [...studioSans];
   const title = titleInput.value.trim() || "Linea senza nome";
@@ -1678,6 +1971,10 @@ function startTraining() {
   trainingIndex = 0;
   reviewQueue = [];
   currentReviewCard = null;
+  lineTrainingActive = false;
+  lineTrainingSteps = [];
+  lineTrainingPly = 0;
+  lineTrainingSummary = "";
   reviewSessionId = null;
   reviewSessionTotal = 0;
   reviewCompleted = 0;
@@ -1688,10 +1985,172 @@ function startTraining() {
   reviewFeedback = "";
   reviewLastMove = null;
   reviewSessionFinished = false;
+  lineTrainingActive = false;
+  lineTrainingSteps = [];
+  lineTrainingPly = 0;
+  lineTrainingThinkingMs = 0;
+  lineTrainingSummary = "";
   selectedSquare = null;
   mode = "training";
   closePromotionChooser();
   renderAll();
+}
+
+window.setInterval(renderLineTrainingClock, 1000);
+
+function renderLineTrainingChoices() {
+  const select = $("#line-training-repertoire");
+  if (!select) return;
+  const selectedId = select.value;
+  select.replaceChildren(new Option("Seleziona una linea…", ""));
+  for (const entry of repertoire) {
+    const option = new Option(entry.title, entry.id);
+    select.append(option);
+  }
+  if (repertoire.some((entry) => entry.id === selectedId)) select.value = selectedId;
+}
+
+function startFullLineTraining() {
+  const entry = repertoire.find((item) => item.id === $("#line-training-repertoire").value);
+  if (!entry) {
+    showToast("Scegli prima un repertorio da allenare.", { type: "warning" });
+    return;
+  }
+  let tree;
+  try { tree = RepertoireTree.fromJSON(entry.tree); }
+  catch (error) {
+    showToast("Non riesco a leggere questa linea: " + error.message, { type: "error" });
+    return;
+  }
+  const edgeIds = tree.mainlinePath();
+  if (!edgeIds.length) {
+    showToast("Questa linea non contiene ancora mosse.", { type: "warning" });
+    return;
+  }
+  lineTrainingSteps = edgeIds.map((id) => {
+    const edge = tree.getEdge(id);
+    const position = new Chess(tree.getNode(edge.from).fen);
+    return { uci: edge.uci, san: edge.san, side: position.turn() === "w" ? "white" : "black" };
+  });
+  lineTrainingSide = $("#review-side").value;
+  if (lineTrainingSide !== "both" && !lineTrainingSteps.some((step) => step.side === lineTrainingSide)) {
+    showToast("La linea non contiene mosse per il lato scelto.", { type: "warning" });
+    return;
+  }
+  const rootFen = tree.rootFen;
+  const startMode = $("#line-training-start-mode").value;
+  let startingPly = 0;
+  if (startMode === "random") {
+    const limit = Math.min(24, lineTrainingSteps.length - 1);
+    const candidates = [];
+    const position = new Chess(rootFen);
+    for (let ply = 0; ply <= limit; ply += 1) {
+      const toMove = position.turn() === "w" ? "white" : "black";
+      if (ply < lineTrainingSteps.length && (lineTrainingSide === "both" || toMove === lineTrainingSide)) candidates.push(ply);
+      if (ply < limit) position.move(parseUci(lineTrainingSteps[ply].uci));
+    }
+    if (!candidates.length) {
+      showToast("La variante non contiene posizioni compatibili con il lato scelto nelle prime 12 mosse.", { type: "warning" });
+      return;
+    }
+    startingPly = candidates[Math.floor(Math.random() * candidates.length)];
+  }
+
+  trainingGame = new Chess(rootFen);
+  trainingMoves = [];
+  for (let index = 0; index < startingPly; index += 1) {
+    const move = trainingGame.move(parseUci(lineTrainingSteps[index].uci));
+    if (!move) {
+      showToast("La variante salvata contiene una mossa non valida.", { type: "error" });
+      return;
+    }
+    trainingMoves.push(move);
+  }
+  trainingIndex = trainingMoves.length;
+  lineTrainingPly = startingPly;
+  lineTrainingActive = true;
+  lineTrainingThinkingMs = 0;
+  lineTrainingSummary = "";
+  lineTurnStartedAt = performance.now();
+  reviewQueue = [];
+  currentReviewCard = null;
+  reviewSessionId = null;
+  reviewSessionTotal = lineTrainingSteps.length;
+  reviewCompleted = 0;
+  reviewAgainCount = 0;
+  reviewSessionFinished = false;
+  reviewSolved = false;
+  reviewRevealed = false;
+  reviewFailed = false;
+  reviewLastMove = null;
+  reviewFeedback = startMode === "random"
+    ? "Partenza casuale dalla semimossa " + (startingPly + 1) + ". Ricostruisci la linea fino in fondo."
+    : "Linea avviata dalla posizione iniziale. Gioca le mosse nell’ordine corretto fino alla fine.";
+  if (lineTrainingSide !== "both") playAutomaticLineReplies();
+  boardFlipped = lineTrainingSide === "black";
+  selectedSquare = null;
+  mode = "training";
+  closePromotionChooser();
+  renderAll();
+}
+
+function playAutomaticLineReplies() {
+  while (lineTrainingPly < lineTrainingSteps.length && lineTrainingSteps[lineTrainingPly].side !== lineTrainingSide) {
+    const move = trainingGame.move(parseUci(lineTrainingSteps[lineTrainingPly].uci));
+    if (!move) break;
+    trainingMoves.push(move);
+    trainingIndex += 1;
+    lineTrainingPly += 1;
+    reviewCompleted += 1;
+  }
+}
+
+function playFullLineMove(selectedMove) {
+  const expected = lineTrainingSteps[lineTrainingPly];
+  if (!expected) return;
+  const uci = selectedMove.from + selectedMove.to + (selectedMove.promotion || "");
+  if (uci !== expected.uci) {
+    trainingGame.undo();
+    selectedSquare = null;
+    reviewFailed = true;
+    reviewFeedback = "Mossa fuori linea. Prova ancora: prenditi il tempo che ti serve.";
+    renderAll();
+    return;
+  }
+  const played = trainingGame.history({ verbose: true }).at(-1);
+  trainingMoves.push(played);
+  trainingIndex += 1;
+  lineTrainingPly += 1;
+  reviewCompleted += 1;
+  lineTrainingThinkingMs += Math.max(0, performance.now() - lineTurnStartedAt);
+  selectedSquare = null;
+  reviewFailed = false;
+  if (lineTrainingSide !== "both") playAutomaticLineReplies();
+  if (lineTrainingPly >= lineTrainingSteps.length) {
+    lineTrainingActive = false;
+    reviewSessionFinished = true;
+    const seconds = Math.round(lineTrainingThinkingMs / 1000);
+    lineTrainingSummary = "Linea completata: " + entryTitleForLineTraining() + ". Tempo totale di riflessione: " + Math.floor(seconds / 60) + ":" + String(seconds % 60).padStart(2, "0") + ".";
+    reviewFeedback = "Hai raggiunto la fine della variante.";
+  } else {
+    const seconds = Math.round((performance.now() - lineTurnStartedAt) / 1000);
+    reviewFeedback = "Mossa corretta: " + played.san + " · tempo: " + seconds + " s.";
+    lineTurnStartedAt = performance.now();
+  }
+  renderAll();
+}
+
+function entryTitleForLineTraining() {
+  return $("#line-training-repertoire")?.selectedOptions[0]?.textContent || "repertorio";
+}
+
+function renderLineTrainingClock() {
+  const timer = $("#line-training-timer");
+  if (!timer) return;
+  timer.hidden = !lineTrainingActive;
+  if (!lineTrainingActive) return;
+  const seconds = Math.floor(Math.max(0, performance.now() - lineTurnStartedAt) / 1000);
+  timer.textContent = "Tempo per pensare: " + Math.floor(seconds / 60) + ":" + String(seconds % 60).padStart(2, "0");
 }
 
 async function beginDailyReviewSession() {
@@ -1753,6 +2212,8 @@ async function beginDailyReviewSession() {
   reviewCompleted = 0;
   reviewAgainCount = 0;
   reviewSessionFinished = false;
+  lineTrainingActive = false;
+  lineTrainingSummary = "";
   reviewQueue = [...queue];
   openNextReviewCard();
 }
@@ -1910,6 +2371,7 @@ function showReviewAnswer() {
 function renderReviewPanel() {
   const now = new Date();
   const side = $("#review-side").value;
+  renderLineTrainingChoices();
   const cards = buildReviewCards(repertoire, studyCards, now);
   const todayStats = getTodayReviewStats(reviewLogs, now);
   $("#review-stat-due").textContent = String(countDueCards(cards, now, side));
@@ -1917,23 +2379,26 @@ function renderReviewPanel() {
   $("#review-stat-accuracy").textContent = todayStats.reviews ? todayStats.accuracy + "%" : "—";
   $("#review-stat-total").textContent = String(cards.length);
 
-  const hasSession = Boolean(reviewSessionId);
+  const hasSession = Boolean(reviewSessionId) || lineTrainingActive || reviewSessionFinished;
   $("#review-setup").hidden = hasSession;
-  $("#review-active").hidden = !hasSession || !currentReviewCard;
+  $("#review-active").hidden = !hasSession || (!currentReviewCard && !lineTrainingActive) || reviewSessionFinished;
   $("#review-complete").hidden = !reviewSessionFinished;
   if (currentReviewCard) {
     $("#review-card-meta").textContent =
       currentReviewCard.repertoireTitle + " · " +
       (currentReviewCard.side === "white" ? "Bianco" : "Nero") +
       " · carta " + (reviewCompleted + 1) + "/" + reviewSessionTotal;
+  } else if (lineTrainingActive) {
+    $("#review-card-meta").textContent = entryTitleForLineTraining() + " · " + (lineTrainingSide === "both" ? "Bianco e Nero" : lineTrainingSide === "white" ? "Bianco" : "Nero") + " · semimossa " + (lineTrainingPly + 1) + "/" + lineTrainingSteps.length;
   }
   $("#review-feedback").textContent = reviewFeedback || "Trova la mossa prevista in questa posizione.";
-  $("#review-show-answer").hidden = reviewSolved || reviewRevealed || !currentReviewCard;
-  $("#review-quick-again").hidden = !reviewFailed || reviewSolved || reviewRevealed;
-  $("#review-grades").hidden = !(reviewSolved || reviewRevealed);
-  $("#review-complete-summary").textContent =
+  $("#review-show-answer").hidden = lineTrainingActive || reviewSolved || reviewRevealed || !currentReviewCard;
+  $("#review-quick-again").hidden = lineTrainingActive || !reviewFailed || reviewSolved || reviewRevealed;
+  $("#review-grades").hidden = lineTrainingActive || !(reviewSolved || reviewRevealed);
+  $("#review-complete-summary").textContent = lineTrainingSummary ||
     "Sessione completata: " + reviewCompleted + " carte ripassate, " +
     reviewAgainCount + " valutate Again. " + countReviewsToday(reviewLogs, now) + " ripassi oggi.";
+  renderLineTrainingClock();
 }
 
 function renderDashboardBars(selector, points) {
@@ -2658,6 +3123,14 @@ function showDashboard() {
   renderAll();
 }
 
+async function switchWorkspace(nextMode) {
+  if (mode === "training") leaveTraining();
+  if (mode === "exam" && examAttemptId) await finishRepertoireExam(true);
+  mode = nextMode;
+  if (nextMode === "endgame") chessSuite?.refreshEndgame?.();
+  renderAll();
+}
+
 function leaveTraining() {
   if (reviewSessionId && !reviewSessionFinished) {
     void markReviewSessionFinished().catch((error) => {
@@ -2670,6 +3143,10 @@ function leaveTraining() {
   trainingIndex = 0;
   reviewQueue = [];
   currentReviewCard = null;
+  lineTrainingActive = false;
+  lineTrainingSteps = [];
+  lineTrainingPly = 0;
+  lineTrainingSummary = "";
   reviewSessionId = null;
   reviewSessionFinished = false;
   selectedSquare = null;
@@ -2748,6 +3225,10 @@ function initializeUiPreferences() {
     ["#board-theme-select", "boardTheme"],
     ["#board-coordinates-select", "coordinates"],
     ["#motion-select", "motion"],
+    ["#accent-select", "accent"],
+    ["#density-select", "density"],
+    ["#board-size-select", "boardSize"],
+    ["#sidebar-select", "sidebar"],
   ];
   for (const [selector, key] of controls) {
     const element = $(selector);
@@ -2920,10 +3401,15 @@ $("#online-import-dialog").addEventListener("click", (event) => {
   if (event.target === $("#online-import-dialog")) closeOnlineImportDialog();
 });
 $("#nav-dashboard").addEventListener("click", showDashboard);
+$("#nav-review").addEventListener("click", () => { void switchWorkspace("review"); });
+$("#nav-endgame").addEventListener("click", () => { void switchWorkspace("endgame"); });
+$("#review-import-games").addEventListener("click", openOnlineImportDialog);
+$("#toggle-engine").addEventListener("click", () => { engineEnabled = !engineEnabled; localStorage.setItem("chess-os.engine.enabled", String(engineEnabled)); engineFenPending = ""; schedulePositionAnalysis(); });
 $("#toast-close").addEventListener("click", hideToast);
 $("#appearance-menu").addEventListener("keydown", (event) => {
   if (event.key === "Escape") $("#appearance-menu").open = false;
 });
+$("#check-for-updates").addEventListener("click", () => { void installAvailableUpdate({ manual: true }); });
 $("#nav-backups").addEventListener("click", () => { void showBackups(); });
 initializeUiPreferences();
 $("#create-backup").addEventListener("click", () => { void createDatabaseBackup(); });
@@ -2944,6 +3430,29 @@ $("#dashboard-exam-form").addEventListener("submit", (event) => { void startRepe
 $("#exam-next").addEventListener("click", nextExamQuestion);
 $("#review-side").addEventListener("change", renderReviewPanel);
 $("#review-start").addEventListener("click", () => { void beginDailyReviewSession(); });
+$("#line-training-start").addEventListener("click", startFullLineTraining);
+$("#analyze-imported-game").addEventListener("click", analyzeSelectedImportedGame);
+$("#opponent-report-form").addEventListener("submit", (event) => { void createOpponentReport(event); });
+$("#print-opponent-report").addEventListener("click", () => {
+  if (!opponentReportGames.length) return;
+  document.body.classList.add("print-opponent-report");
+  window.print();
+});
+window.addEventListener("afterprint", () => document.body.classList.remove("print-opponent-report"));
+$("#analyze-latest-games").addEventListener("click", () => {
+  const records = importedGames.slice(0, 10);
+  if (!records.length) {
+    $("#game-analysis-status").textContent = "Importa prima alcune partite da Chess.com o Lichess.";
+    return;
+  }
+  void runImportedGameAnalysis(records);
+});
+$("#print-game-analysis").addEventListener("click", () => {
+  if (!gameAnalysisResults.length) return;
+  document.body.classList.add("print-game-analysis");
+  window.print();
+});
+window.addEventListener("afterprint", () => document.body.classList.remove("print-game-analysis"));
 $("#review-show-answer").addEventListener("click", showReviewAnswer);
 $("#review-quick-again").addEventListener("click", () => { void rateCurrentCard("again"); });
 document.querySelectorAll("#review-grades [data-rating]").forEach((button) => {
@@ -3057,7 +3566,7 @@ document.addEventListener("keydown", (event) => {
   }
 
   if (event.key === "Escape") {
-    document.querySelectorAll(".appearance-menu[open], .more-actions[open], .repertoire-menu[open]")
+    document.querySelectorAll(".appearance-menu[open], .more-actions[open], .repertoire-menu[open], .studio-actions-menu[open]")
       .forEach((menu) => { menu.open = false; });
     if (selectedSquare && boardElement.contains(document.activeElement)) {
       event.preventDefault();
@@ -3164,3 +3673,40 @@ $("#endgame-create-card")?.addEventListener("click", createEndgameFlashcard);
 
 renderAll();
 void initializePersistence();
+
+let updateCheckRunning = false;
+let updateCheckFailureNotified = false;
+async function installAvailableUpdate({ manual = false } = {}) {
+  if (!isTauri()) {
+    if (manual) showToast("Il controllo aggiornamenti ? disponibile nell'app desktop.", { type: "info" });
+    return;
+  }
+  if (updateCheckRunning) return;
+  updateCheckRunning = true;
+  const button = manual ? $("#check-for-updates") : null;
+  if (button) { button.disabled = true; button.textContent = "Controllo?"; }
+  try {
+    const update = await check();
+    if (!update) {
+      if (manual) showToast("ChessOS ? gi? aggiornato.", { type: "success" });
+      return;
+    }
+    showToast("Aggiornamento " + update.version + " in installazione?");
+    await update.downloadAndInstall();
+    await relaunch();
+  } catch (error) {
+    console.warn("Controllo aggiornamenti non riuscito; verr? riprovato pi? tardi.", error);
+    if (manual || !updateCheckFailureNotified) {
+      showToast("Non riesco a verificare gli aggiornamenti. Riprover? automaticamente.", { type: "warning" });
+      updateCheckFailureNotified = true;
+    }
+  } finally {
+    updateCheckRunning = false;
+    if (button) { button.disabled = false; button.textContent = "Controlla aggiornamenti"; }
+  }
+}
+
+if (isTauri()) {
+  window.setTimeout(() => void installAvailableUpdate(), 4000);
+  window.setInterval(() => void installAvailableUpdate(), 6 * 60 * 60 * 1000);
+}

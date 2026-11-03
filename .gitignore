@@ -1,7 +1,10 @@
 node_modules/
 dist/
+public/stockfish/
 src-tauri/target/
 src-tauri/gen/
+src-tauri/updater.key
+src-tauri/updater.key.pub
 *.log
 .DS_Store
 Thumbs.db

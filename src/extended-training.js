@@ -267,7 +267,7 @@ export function initializeExtendedTraining({ getCurrentTree, getCurrentMoves, ge
   }
 
   function renderOpponentReport() {
-    const target = $("#opponent-report");
+    const target = $("#opponent-pgn-report");
     if (!target) return;
     target.replaceChildren();
     if (!opponentReport) { target.append(node("p", "empty-state", "Nessuna analisi ancora.")); return; }

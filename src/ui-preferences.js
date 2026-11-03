@@ -5,6 +5,10 @@ const DEFAULT_PREFERENCES = Object.freeze({
   boardTheme: "sage",
   coordinates: "inside",
   motion: "system",
+  accent: "amber",
+  density: "compact",
+  boardSize: "medium",
+  sidebar: "full",
 });
 
 const VALID = {
@@ -12,6 +16,10 @@ const VALID = {
   boardTheme: new Set(["sage", "walnut", "slate"]),
   coordinates: new Set(["inside", "hidden"]),
   motion: new Set(["system", "reduced"]),
+  accent: new Set(["amber", "blue", "green", "rose"]),
+  density: new Set(["compact", "comfortable"]),
+  boardSize: new Set(["small", "medium", "large"]),
+  sidebar: new Set(["full", "compact"]),
 };
 
 function normalize(preferences) {
@@ -38,6 +46,10 @@ export function applyUiPreferences(preferences) {
   root.dataset.boardTheme = safe.boardTheme;
   root.dataset.coordinates = safe.coordinates;
   root.dataset.motion = safe.motion;
+  root.dataset.accent = safe.accent;
+  root.dataset.density = safe.density;
+  root.dataset.boardSize = safe.boardSize;
+  root.dataset.sidebar = safe.sidebar;
 }
 
 export function saveUiPreferences(preferences) {

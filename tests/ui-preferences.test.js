@@ -30,6 +30,10 @@ test("uses the documented default appearance preferences", () => {
     boardTheme: "sage",
     coordinates: "inside",
     motion: "system",
+    accent: "amber",
+    density: "compact",
+    boardSize: "medium",
+    sidebar: "full",
   });
 });
 
@@ -40,6 +44,10 @@ test("persists and reloads supported appearance preferences", () => {
       boardTheme: "walnut",
       coordinates: "hidden",
       motion: "reduced",
+      accent: "blue",
+      density: "comfortable",
+      boardSize: "large",
+      sidebar: "compact",
     };
     assert.equal(saveUiPreferences(preferences), true);
     assert.deepEqual(readUiPreferences(), preferences);
@@ -54,6 +62,10 @@ test("normalizes invalid stored values instead of applying arbitrary themes", ()
       boardTheme: "neon",
       coordinates: "visible",
       motion: "fast",
+      accent: "invalid",
+      density: "dense",
+      boardSize: "huge",
+      sidebar: "hidden",
     }));
     assert.deepEqual(readUiPreferences(), defaultUiPreferences());
   });
@@ -64,12 +76,16 @@ test("applies preferences to root data attributes", () => {
   const root = { dataset: {} };
   globalThis.document = { documentElement: root };
   try {
-    applyUiPreferences({ theme: "system", boardTheme: "slate", coordinates: "hidden", motion: "reduced" });
+    applyUiPreferences({ theme: "system", boardTheme: "slate", coordinates: "hidden", motion: "reduced", accent: "green", density: "comfortable", boardSize: "small", sidebar: "compact" });
     assert.deepEqual(root.dataset, {
       theme: "system",
       boardTheme: "slate",
       coordinates: "hidden",
       motion: "reduced",
+      accent: "green",
+      density: "comfortable",
+      boardSize: "small",
+      sidebar: "compact",
     });
   } finally {
     if (previousDocument === undefined) delete globalThis.document;

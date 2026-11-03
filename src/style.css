@@ -73,7 +73,7 @@ h1 { margin: 9px 0 5px; font-size: clamp(24px, 2.2vw, 31px); line-height: 1.1; l
 .turn-label { background: #273342; padding: 6px 8px; border-radius: 4px; color: #d2dae4; font-weight: 600; }
 .board-wrap { position: relative; width: min(100%, 660px); margin: 17px auto 12px; padding: 0 0 18px 19px; }
 .chessboard { width: 100%; aspect-ratio: 1; display: grid; grid-template-columns: repeat(8, 1fr); grid-template-rows: repeat(8, 1fr); border: 4px solid #2a3441; border-radius: 3px; overflow: hidden; box-shadow: 0 8px 20px #060a1080; }
-.square { border: 0; padding: 0; margin: 0; aspect-ratio: 1; display: grid; place-items: center; position: relative; cursor: pointer; }
+.square { border: 0; padding: 0; margin: 0; aspect-ratio: 1; display: grid; place-items: center; position: relative; cursor: pointer; touch-action: none; }
 .square.light { background: #d9d2bf; }
 .square.dark { background: #758a7e; }
 .square.selected { background: #e3bd61; }
@@ -240,6 +240,12 @@ h1 { margin: 9px 0 5px; font-size: clamp(24px, 2.2vw, 31px); line-height: 1.1; l
 .review-stats small { color: #8796a8; font-size: 9px; }
 .review-note { margin: 9px 0 14px; color: #8796a8; font-size: 10px; line-height: 1.5; }
 .review-start { width: 100%; }
+.line-practice-setup { display: grid; gap: 7px; margin-top: 14px; padding-top: 13px; border-top: 1px solid var(--border); }
+.line-practice-heading { color: var(--text); font-size: 11px; font-weight: 700; }
+.line-practice-setup .field-label { margin: 2px 0 -3px; }
+.line-practice-setup .text-input { width: 100%; }
+.line-practice-setup .review-start { margin-top: 2px; }
+.line-training-timer { margin: 6px 0; color: var(--accent-strong); font-variant-numeric: tabular-nums; font-size: 11px; }
 .review-card-meta { color: var(--accent-strong); font-size: 10px; font-weight: 700; letter-spacing: .04em; }
 .review-feedback { color: #d5dde7; font-size: 12px; line-height: 1.55; margin: 12px 0; }
 .review-action { width: 100%; margin-top: 4px; }
@@ -527,22 +533,22 @@ h1 { margin: 9px 0 5px; font-size: clamp(24px, 2.2vw, 31px); line-height: 1.1; l
 
 
 /* Local chess analysis suite */
-.tools-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; min-width: 0; }
-.suite-grid { margin-top: 20px; }
-.feature-card { min-width: 0; padding: 15px; }
+.tools-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: 10px; min-width: 0; }
+.suite-grid { margin-top: 14px; }
+.feature-card { min-width: 0; padding: 12px; }
 .feature-card .tool-description { color: #8e9daf; font-size: 10px; line-height: 1.55; }
 .feature-card .field-label { margin-top: 9px; }
-.feature-card .pgn-input { width: 100%; min-height: 82px; margin-top: 7px; }
-.feature-card .tool-actions { display: flex; align-items: end; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.feature-card .pgn-input { width: 100%; min-height: 56px; margin-top: 6px; resize: vertical; }
+.feature-card .tool-actions { display: flex; align-items: end; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .feature-card .tool-actions .field-label { margin: 0; }
 .feature-card .tool-actions .text-input { width: auto; min-width: 76px; max-width: 145px; }
-.tool-output { margin: 10px 0 0; color: #aab7c7; font-size: 10px; line-height: 1.55; overflow-wrap: anywhere; }
-.suite-report { display: grid; gap: 7px; max-height: 360px; overflow: auto; margin-top: 10px; }
+.tool-output { margin: 7px 0 0; color: #aab7c7; font-size: 10px; line-height: 1.5; overflow-wrap: anywhere; }
+.suite-report { display: grid; gap: 6px; max-height: 280px; overflow: auto; margin-top: 8px; }
 .suite-report-row { padding: 9px 10px; border: 1px solid #303d4d; border-radius: 6px; background: #192330; color: #aeb9c8; font-size: 10px; line-height: 1.55; }
 .suite-report-row strong { display: block; color: #e2c88e; font-size: 10px; }
 .suite-report-row p { margin: 5px 0 0; overflow-wrap: anywhere; }
 .suite-warning { color: #e7b566 !important; }
-.mini-board { width: min(100%, 340px); aspect-ratio: 1; display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); grid-template-rows: repeat(8, minmax(0, 1fr)); margin: 12px auto; overflow: hidden; border: 4px solid #2b3542; border-radius: 5px; box-shadow: 0 8px 20px #060a1080; background: #758a7e; }
+.mini-board { width: min(100%, 240px); aspect-ratio: 1; display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); grid-template-rows: repeat(8, minmax(0, 1fr)); margin: 9px 0 0; overflow: hidden; border: 3px solid #2b3542; border-radius: 5px; box-shadow: none; background: #758a7e; }
 .mini-square { min-width: 0; min-height: 0; border: 0; margin: 0; padding: 0; display: grid; place-items: center; font-family: "Segoe UI Symbol", "Noto Sans Symbols 2", "DejaVu Sans", serif; font-size: clamp(19px, 3vw, 35px); line-height: 1; cursor: pointer; user-select: none; }
 .mini-square.light { background: #d9d2bf; }
 .mini-square.dark { background: #758a7e; }
@@ -551,10 +557,126 @@ h1 { margin: 9px 0 5px; font-size: clamp(24px, 2.2vw, 31px); line-height: 1.1; l
 .mini-square.black-piece { color: #202a27; text-shadow: 0 1px 1px #fff7; }
 .mini-square:focus-visible { outline: 3px solid #f6cb6c; outline-offset: -4px; z-index: 1; }
 #current-analysis, #opening-report, #tactics-answer, #tactics-status { overflow-wrap: anywhere; }
-#tactics-tool .mini-board { width: min(100%, 320px); }
+#tactics-tool .mini-board { width: min(100%, 240px); }
+#tactics-board[hidden] { display: none !important; }
+#chess-lab-tools .feature-card { height: auto; align-self: start; }
+#chess-lab-tools .feature-card { border-radius: 7px; box-shadow: none; background: var(--surface-1); }
+#chess-lab-tools .card-heading { margin-bottom: 7px; }
+#chess-lab-tools .tool-description { margin-top: 5px; margin-bottom: 7px; }
+#engine-analysis-tool .tool-output { min-height: 1.5em; }
+.game-analysis-card { grid-column: 1 / -1; }
+.opponent-report-card { grid-column: 1 / -1; }
+.opponent-report-toolbar { display:flex; align-items:center; flex-wrap:wrap; gap:8px; }
+.opponent-report-toolbar .text-input { width:min(240px, 100%); }
+.opponent-report { display:grid; gap:12px; margin-top:12px; }
+.opponent-report-header h3 { margin-bottom:3px; }
+.opponent-report-metrics { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:8px; }
+.opponent-report-metric { display:grid; gap:3px; padding:10px 12px; border:1px solid #303d4d; border-radius:7px; background:#192330; }
+.opponent-report-metric span,.opponent-report-metric small { color:#91a0b2; font-size:10px; }
+.opponent-report-metric strong { color:#e7c16e; font-size:20px; }
+.opponent-report-columns { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
+.opponent-report-section { min-width:0; padding:10px 12px; border:1px solid #303d4d; border-radius:7px; background:#19212c; }
+.opponent-report-row { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:8px; align-items:center; padding:7px 0; border-top:1px solid #2a3542; font-size:10px; }
+.opponent-report-row strong { color:#dce3ec; font-weight:600; }
+.opponent-report-row > span { color:#98a7b8; text-align:right; }
+.opponent-month-row { grid-template-columns:90px minmax(60px,1fr) auto; }
+.opponent-month-bar { display:block; height:6px; width:var(--month-share); min-width:3px; border-radius:8px; background:#e7b64c; }
+.opponent-coach-note { margin:0; padding:10px 12px; border-left:3px solid #e7b64c; background:#1a2530; color:#c1ccd8; font-size:11px; line-height:1.5; }
+.opponent-insight-title { margin:12px 0 4px; color:var(--text); font-size:10px; }
+.opponent-insight { margin:4px 0; color:var(--muted); font-size:10px; line-height:1.5; }
+@media (max-width:760px) { .opponent-report-metrics { grid-template-columns:repeat(2,minmax(0,1fr)); } .opponent-report-columns { grid-template-columns:1fr; } }
+.game-analysis-toolbar { display: grid; grid-template-columns: minmax(220px, 1fr) auto auto auto; align-items: end; gap: 8px; margin-top: 10px; }
+.game-analysis-toolbar .field-label { margin: 0; }
+.game-analysis-toolbar .text-input { width: 100%; }
+.game-analysis-report { display: grid; gap: 10px; margin-top: 10px; }
+.game-report-card { padding: 12px; border: 1px solid #354252; border-radius: 6px; background: var(--surface-2); }
+.game-report-title { margin: 0; color: var(--text); font-size: 13px; }
+.game-report-caption { margin: 5px 0 10px; color: var(--muted); font-size: 10px; }
+.game-report-metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.game-report-metric { display: grid; gap: 4px; padding: 9px; border: 1px solid var(--border); border-radius: 5px; }
+.game-report-metric span { color: var(--muted); font-size: 10px; }
+.game-report-metric strong { color: var(--accent-strong); font-size: 20px; }
+.game-report-metric small { color: var(--muted); font-size: 9px; }
+.game-report-section-title { margin: 13px 0 6px; color: var(--text); font-size: 11px; }
+.game-phase-list { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.game-phase-row { display: grid; gap: 4px; padding: 7px; background: var(--surface-1); border-radius: 4px; font-size: 10px; }
+.game-phase-row span, .game-player-profiles { color: var(--muted); font-size: 9px; }
+.game-player-profiles p { margin: 4px 0; }
+.game-coaching-list { margin: 0; padding-left: 18px; color: var(--muted); font-size: 10px; line-height: 1.55; }
+.game-coaching-list li + li { margin-top: 4px; }
+.game-move-table { display: grid; max-height: 300px; overflow: auto; border: 1px solid var(--border); border-radius: 5px; }
+.game-move-row { display: grid; grid-template-columns: 100px minmax(110px, .7fr) minmax(180px, 1fr); gap: 8px; align-items: center; padding: 5px 8px; color: var(--muted); font-size: 9px; }
+.game-move-row:nth-child(odd) { background: var(--surface-1); }
+.game-move-row.flagged { color: #e9ba72; }
+.game-move-row strong { color: var(--text); }
+#game-analysis-status { min-height: 1.5em; }
 #chess-lab-tools[hidden] { display: none !important; }
 @media (max-width: 850px) {
   .tools-grid { grid-template-columns: 1fr; }
+  .game-analysis-toolbar { grid-template-columns: 1fr 1fr; }
+  .game-analysis-toolbar .field-label { grid-column: 1 / -1; }
+  .game-move-row { grid-template-columns: 75px 1fr; }
+  .game-move-row span:last-child { grid-column: 2; }
+}
+@media print {
+  body.print-game-analysis { background: #fff !important; color: #111 !important; }
+  body.print-game-analysis .topbar,
+  body.print-game-analysis .sidebar,
+  body.print-game-analysis .page-heading,
+  body.print-game-analysis #study-grid,
+  body.print-game-analysis #dashboard-panel,
+  body.print-game-analysis #backup-panel,
+  body.print-game-analysis .workspace-footer,
+  body.print-game-analysis #game-analysis-tool > .card-heading,
+  body.print-game-analysis #game-analysis-tool > .tool-description,
+  body.print-game-analysis #game-analysis-tool > .game-analysis-toolbar,
+  body.print-game-analysis #game-analysis-tool > #game-analysis-status { display: none !important; }
+  body.print-game-analysis .app-shell,
+  body.print-game-analysis .workspace,
+  body.print-game-analysis #chess-lab-tools { display: block !important; width: 100%; margin: 0; padding: 0; overflow: visible; }
+  body.print-game-analysis #game-analysis-tool { display: block !important; grid-column: auto; padding: 0; border: 0; background: #fff; color: #111; }
+  body.print-game-analysis .game-analysis-report { display: block; }
+  body.print-game-analysis .game-report-card { break-inside: avoid; margin: 0 0 16px; border-color: #bbb; background: #fff; color: #111; }
+  body.print-game-analysis .game-report-title,
+  body.print-game-analysis .game-report-metric strong,
+  body.print-game-analysis .game-report-section-title,
+  body.print-game-analysis .game-move-row strong { color: #111; }
+  body.print-game-analysis .game-report-caption,
+  body.print-game-analysis .game-report-metric span,
+  body.print-game-analysis .game-report-metric small,
+  body.print-game-analysis .game-phase-row span,
+  body.print-game-analysis .game-coaching-list,
+  body.print-game-analysis .game-player-profiles,
+  body.print-game-analysis .game-move-row { color: #333; }
+  body.print-game-analysis .game-move-table { max-height: none; overflow: visible; }
+  body.print-opponent-report { background:#fff !important; color:#111 !important; }
+  body.print-opponent-report .topbar,
+  body.print-opponent-report .sidebar,
+  body.print-opponent-report .page-heading,
+  body.print-opponent-report #study-grid,
+  body.print-opponent-report #dashboard-panel,
+  body.print-opponent-report #backup-panel,
+  body.print-opponent-report .workspace-footer,
+  body.print-opponent-report #opponent-report-tool > .card-heading,
+  body.print-opponent-report #opponent-report-tool > .tool-description,
+  body.print-opponent-report #opponent-report-tool > .opponent-report-toolbar,
+  body.print-opponent-report #opponent-report-tool > #opponent-report-status { display:none !important; }
+  body.print-opponent-report .app-shell,
+  body.print-opponent-report .workspace,
+  body.print-opponent-report #chess-lab-tools { display:block !important; width:100%; margin:0; padding:0; overflow:visible; }
+  body.print-opponent-report #opponent-report-tool { display:block !important; grid-column:auto; padding:0; border:0; background:#fff; color:#111; }
+  body.print-opponent-report #opponent-report-tool > .tool-description:last-child { display:block !important; color:#555; }
+  body.print-opponent-report .opponent-report-section,
+  body.print-opponent-report .opponent-report-metric { break-inside:avoid; background:#fff; border-color:#bbb; }
+  body.print-opponent-report .opponent-report-metric strong,
+  body.print-opponent-report .opponent-report-row strong,
+  body.print-opponent-report .game-report-title,
+  body.print-opponent-report .game-report-section-title { color:#111; }
+  body.print-opponent-report .game-report-caption,
+  body.print-opponent-report .opponent-report-metric span,
+  body.print-opponent-report .opponent-report-metric small,
+  body.print-opponent-report .opponent-report-row > span,
+  body.print-opponent-report .opponent-coach-note { color:#333; }
 }
 
 
@@ -970,4 +1092,219 @@ body.blindfold-active .board-panel,body.blindfold-active .moves-card,body.blindf
  .endgame-workbench .mini-board { margin-inline:auto; }
  .endgame-progress-row { align-items:flex-start; flex-direction:column; }
  .endgame-progress-row .tool-description { text-align:left; }
+}
+
+/* Compact workspaces and live Studio evaluation */
+.board-engine-toolbar { display:flex; align-items:center; gap:8px; min-height:30px; margin:8px 0 -8px; color:#aab6c5; font-size:10px; font-weight:700; }
+.engine-live-dot { width:7px; height:7px; border-radius:50%; background:#75bd8d; box-shadow:0 0 8px #75bd8d66; }
+.engine-evaluation { color:var(--accent-strong); font-variant-numeric:tabular-nums; min-width:42px; }
+.board-engine-toolbar .button { margin-left:auto; }
+.board-with-evaluation { display:grid; grid-template-columns:18px minmax(0,1fr); gap:8px; align-items:stretch; width:min(100%,678px); margin:17px auto 12px; }
+.board-with-evaluation .board-wrap { width:100%; margin:0; padding:0 0 18px; }
+.evaluation-bar { position:relative; min-height:100%; margin-bottom:18px; overflow:hidden; border:1px solid #414a54; border-radius:3px; background:#333c45; }
+.evaluation-bar span { position:absolute; inset:auto 0 0; height:50%; background:#e8e5dc; transition:height .25s ease; }
+.evaluation-bar.engine-disabled { opacity:.3; }
+.studio-tool-accordion { overflow:hidden; }
+.studio-tool-accordion > summary { cursor:pointer; list-style:none; margin:0; min-height:32px; }
+.studio-tool-accordion > summary::-webkit-details-marker { display:none; }
+.studio-tool-accordion > summary::after { content:"+"; margin-left:auto; color:var(--accent-strong); font-size:15px; }
+.studio-tool-accordion[open] > summary::after { content:"?"; }
+.studio-tool-accordion:not([open]) { padding-bottom:8px; }
+.studio-tool-accordion[open] > summary { margin-bottom:12px; }
+.workspace-section-heading { grid-column:1 / -1; display:flex; align-items:center; justify-content:space-between; gap:14px; padding:3px 2px 7px; }
+.workspace-section-heading h2 { margin:4px 0; color:var(--text); font-size:20px; }
+.workspace-section-heading p { margin:0; color:var(--muted); font-size:11px; }
+.review-workspace .feature-card, .endgame-workspace .feature-card { min-width:0; }
+#review-workspace[hidden], #endgame-panel[hidden] { display:none !important; }
+@media(max-width:640px) {
+  .board-with-evaluation { grid-template-columns:14px minmax(0,1fr); gap:6px; }
+  .workspace-section-heading { align-items:flex-start; flex-direction:column; }
+}
+
+.engine-analysis-caption { display:block; min-height:15px; margin-top:7px; color:var(--muted); font-size:9px; line-height:1.4; overflow-wrap:anywhere; }
+
+
+/* Minimal, preference-driven ChessOS workspace */
+:root[data-accent="amber"] { --accent:#d9a94e; --accent-strong:#f0c66f; }
+:root[data-accent="blue"] { --accent:#5796d8; --accent-strong:#83baff; }
+:root[data-accent="green"] { --accent:#50a987; --accent-strong:#7bd0aa; }
+:root[data-accent="rose"] { --accent:#c77d91; --accent-strong:#efa7b6; }
+:root[data-theme="light"][data-accent="amber"] { --accent:#95620d; --accent-strong:#805306; }
+:root[data-theme="light"][data-accent="blue"] { --accent:#2866a8; --accent-strong:#20588e; }
+:root[data-theme="light"][data-accent="green"] { --accent:#237455; --accent-strong:#1c6147; }
+:root[data-theme="light"][data-accent="rose"] { --accent:#a24861; --accent-strong:#8c3850; }
+@media(prefers-color-scheme:light) {
+  :root[data-theme="system"][data-accent="amber"] { --accent:#95620d; --accent-strong:#805306; }
+  :root[data-theme="system"][data-accent="blue"] { --accent:#2866a8; --accent-strong:#20588e; }
+  :root[data-theme="system"][data-accent="green"] { --accent:#237455; --accent-strong:#1c6147; }
+  :root[data-theme="system"][data-accent="rose"] { --accent:#a24861; --accent-strong:#8c3850; }
+}
+:root[data-board-size="small"] { --board-size:min(500px,calc(100dvh - 345px),calc(100vw - 475px)); }
+:root[data-board-size="medium"] { --board-size:min(620px,calc(100dvh - 345px),calc(100vw - 475px)); }
+:root[data-board-size="large"] { --board-size:min(760px,calc(100dvh - 345px),calc(100vw - 475px)); }
+:root[data-sidebar="compact"] .app-shell { grid-template-columns:76px minmax(0,1fr); }
+:root[data-sidebar="compact"] .sidebar { padding-inline:10px; }
+:root[data-sidebar="compact"] .sidebar > .section-kicker,
+:root[data-sidebar="compact"] .sidebar-heading,
+:root[data-sidebar="compact"] .repertoire-list,
+:root[data-sidebar="compact"] .imported-games-list,
+:root[data-sidebar="compact"] .sidebar-note { display:none; }
+:root[data-sidebar="compact"] .primary-nav { margin-top:8px; }
+:root[data-sidebar="compact"] .nav-item { justify-content:center; gap:0; padding:13px 4px; font-size:0; }
+:root[data-sidebar="compact"] .nav-item span { width:auto; font-size:17px; }
+:root[data-density="compact"] .workspace { padding:20px clamp(18px,2.3vw,34px) 14px; }
+:root[data-density="compact"] .page-heading { margin-bottom:15px; }
+:root[data-density="compact"] .study-grid,:root[data-density="compact"] .tools-grid { gap:12px; }
+:root[data-density="compact"] .board-panel { padding:12px; }
+:root[data-density="compact"] .detail-card { padding:12px; }
+:root[data-density="compact"] .card-heading { margin-bottom:9px; }
+:root[data-density="comfortable"] .workspace { padding:34px clamp(28px,4vw,58px) 24px; }
+:root[data-density="comfortable"] .page-heading { margin-bottom:27px; }
+:root[data-density="comfortable"] .study-grid,:root[data-density="comfortable"] .tools-grid { gap:20px; }
+:root[data-density="comfortable"] .board-panel { padding:19px; }
+:root[data-density="comfortable"] .detail-card { padding:19px; }
+:root[data-density="comfortable"] .card-heading { margin-bottom:15px; }
+:root[data-density="compact"] .app-shell { grid-template-columns:220px minmax(0,1fr); }
+:root[data-density="compact"][data-sidebar="compact"] .app-shell { grid-template-columns:76px minmax(0,1fr); }
+.board-with-evaluation { max-width:calc(var(--board-size) + 28px); }
+body { min-width:0; background:var(--bg); }
+.topbar { height:60px; padding-inline:clamp(16px,2.4vw,34px); box-shadow:none; }
+.app-shell { min-height:calc(100vh - 60px); }
+.sidebar { padding-top:22px; }
+.workspace { padding-top:27px; }
+.board-panel,.detail-card,.dashboard-card,.dashboard-kpi { box-shadow:none; border-radius:10px; background:var(--surface-1); }
+.card-heading { letter-spacing:.09em; color:var(--muted); }
+.tool-description,.page-heading p { font-size:11px; line-height:1.6; }
+.field-label,.appearance-panel label { font-size:11px; }
+.tool-output { font-size:11px; line-height:1.55; }
+.nav-item { min-height:40px; }
+.button { border-radius:7px; }
+.text-input,.pgn-input { border-radius:7px; }
+.appearance-panel { width:272px; max-height:min(76vh,620px); overflow:auto; padding:15px; gap:9px; }
+.appearance-divider { height:1px; margin:4px 0; background:var(--border); }
+.board-size { transition:width .2s ease; }
+@media(max-width:760px) {
+  .app-shell { display:block; }
+  .sidebar { display:block; padding:8px 10px; border-right:0; border-bottom:1px solid var(--border); }
+  .sidebar > .section-kicker,.sidebar-heading,.repertoire-list,.imported-games-list,.sidebar-note { display:none; }
+  .primary-nav { display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); gap:4px; margin:0; }
+  .nav-item { justify-content:center; gap:0; padding:12px 3px; font-size:0; }
+  .nav-item span { width:auto; font-size:16px; }
+  .workspace { padding:18px 12px; }
+  .page-heading { align-items:flex-start; flex-direction:column; }
+  .heading-actions { flex-wrap:wrap; }
+  :root[data-board-size="small"] { --board-size:min(68vw,calc(100dvh - 345px)); }
+  :root[data-board-size="medium"] { --board-size:min(82vw,calc(100dvh - 345px)); }
+  :root[data-board-size="large"] { --board-size:min(92vw,calc(100dvh - 345px)); }
+}
+
+.heading-actions { flex-wrap:wrap; justify-content:flex-end; gap:6px; }
+.studio-actions-menu { position:relative; z-index:20; }
+.studio-actions-menu > summary { display:grid; place-items:center; min-height:35px; padding:0 12px; border:1px solid var(--border); border-radius:7px; background:var(--surface-2); color:var(--text); font-size:11px; font-weight:650; list-style:none; cursor:pointer; }
+.studio-actions-menu > summary::-webkit-details-marker { display:none; }
+.studio-actions-menu > summary:hover,.studio-actions-menu[open] > summary { border-color:var(--accent); }
+.studio-actions-popover { position:absolute; top:calc(100% + 7px); right:0; display:grid; gap:5px; min-width:190px; padding:8px; border:1px solid var(--border); border-radius:9px; background:var(--surface-1); box-shadow:0 12px 30px #0004; }
+.studio-actions-popover .button { width:100%; text-align:left; }
+.appearance-section-title { margin:2px 0 0; color:var(--text); font-size:11px; font-weight:750; letter-spacing:.02em; }
+.appearance-menu > summary { border-color:transparent; background:transparent; }
+.appearance-menu > summary:hover,.appearance-menu[open] > summary { background:var(--surface-2); border-color:var(--border); }
+.topbar { border-bottom-color:color-mix(in srgb,var(--border) 70%,transparent); }
+.sidebar { border-right-color:color-mix(in srgb,var(--border) 70%,transparent); }
+.nav-item.active { border-color:transparent; background:color-mix(in srgb,var(--accent) 10%,var(--surface-2)); box-shadow:none; color:var(--text); }
+.nav-item.active span { color:var(--accent-strong); }
+.board-panel { border-color:transparent; }
+.detail-card,.dashboard-card { border-color:color-mix(in srgb,var(--border) 78%,transparent); }
+@media(max-width:900px) { .heading-actions { justify-content:flex-start; } }
+
+/* Focused review dashboard */
+.review-toolbar { grid-column:1 / -1; display:flex; align-items:center; justify-content:space-between; gap:16px; margin:0 0 1px; padding:0 2px 4px; }
+.review-toolbar > div { display:grid; gap:4px; }
+.review-toolbar .section-kicker { margin:0; }
+.review-toolbar-note { color:var(--muted); font-size:11px; }
+#review-workspace { align-content:start; gap:12px; }
+#review-workspace .game-analysis-card { grid-column:1 / -1; padding:16px 18px; }
+#game-analysis-tool > .tool-description { max-width:900px; }
+#game-analysis-tool .game-analysis-toolbar { grid-template-columns:minmax(190px,1fr) auto auto auto; margin-top:8px; }
+#game-analysis-status { min-height:0; }
+#review-workspace > #tactics-tool { min-width:0; padding:0 14px; overflow:hidden; }
+#tactics-tool > summary { display:flex; min-height:46px; align-items:center; margin:0; list-style:none; cursor:pointer; }
+#tactics-tool > summary::-webkit-details-marker { display:none; }
+#tactics-tool > summary::after { content:"+"; margin-left:auto; color:var(--accent-strong); font-size:16px; }
+#tactics-tool[open] > summary::after { content:"?"; }
+#tactics-tool[open] { padding-bottom:14px; }
+#tactics-tool[open] > summary { margin-bottom:8px; }
+#heatmap-tool { padding:14px 16px; }
+#heatmap-tool .card-heading { margin-bottom:6px; }
+#heatmap-tool > .tool-description { margin:0; font-size:10px; }
+#heatmap-list { max-height:120px; }
+.review-opponent-tools { grid-column:1 / -1; overflow:hidden; border:1px solid var(--border); border-radius:10px; background:var(--surface-1); }
+.review-opponent-tools > summary { display:flex; align-items:center; gap:10px; min-height:52px; padding:8px 14px; color:var(--text); font-size:11px; font-weight:700; list-style:none; cursor:pointer; }
+.review-opponent-tools > summary::-webkit-details-marker { display:none; }
+.review-opponent-tools > summary .card-icon { flex:0 0 auto; }
+.review-opponent-tools > summary small { color:var(--muted); font-size:10px; font-weight:500; }
+.review-opponent-tools > summary b { margin-left:auto; color:var(--accent-strong); font-size:16px; }
+.review-opponent-tools[open] > summary { border-bottom:1px solid var(--border); }
+.review-opponent-tools[open] > summary b { transform:rotate(45deg); }
+.review-opponent-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; padding:12px; }
+.review-opponent-grid .feature-card { box-shadow:none; }
+
+/* Endgame Lab as a visual learning destination */
+#endgame-panel { display:block; }
+#endgame-lab { position:relative; grid-column:1 / -1; overflow:hidden; padding:22px; border-color:color-mix(in srgb,var(--accent) 34%,var(--border)); background:radial-gradient(ellipse at 100% 0%,color-mix(in srgb,var(--accent) 14%,transparent),transparent 34%),var(--surface-1); }
+#endgame-lab::before { content:""; position:absolute; inset:0 auto 0 0; width:3px; background:linear-gradient(var(--accent-strong),color-mix(in srgb,var(--accent) 10%,transparent)); }
+#endgame-lab > .card-heading { position:relative; gap:12px; margin-bottom:8px; color:var(--text); font-size:11px; letter-spacing:.14em; }
+#endgame-lab > .card-heading .card-icon { width:38px; height:38px; border:1px solid color-mix(in srgb,var(--accent) 30%,var(--border)); background:color-mix(in srgb,var(--accent) 12%,var(--surface-2)); font-size:20px; }
+#endgame-lab > .tool-description:first-of-type { max-width:850px; margin:0 0 8px 50px; }
+#endgame-summary { display:table; margin:0 0 17px 50px; padding:6px 9px; border:1px solid color-mix(in srgb,var(--accent) 28%,var(--border)); border-radius:999px; background:color-mix(in srgb,var(--accent) 8%,var(--surface-1)); color:var(--accent-strong); font-size:10px; font-weight:700; }
+.endgame-columns { display:grid; grid-template-columns:minmax(0,.92fr) minmax(0,1.08fr); align-items:start; gap:18px; }
+.endgame-curriculum,.endgame-practice { min-width:0; }
+.endgame-selectors { grid-template-columns:1fr; gap:9px; margin:0 0 10px; }
+.endgame-selectors .field-label { margin-bottom:5px; }
+.endgame-lesson { gap:8px; min-height:126px; padding:15px; border:1px solid var(--border); border-left:3px solid var(--accent); border-radius:9px; background:var(--surface-2); font-size:11px; line-height:1.65; }
+.endgame-lesson p:first-child,.endgame-lesson strong { color:var(--text); font-size:12px; }
+.endgame-progress-row { flex-wrap:wrap; margin:10px 0 0; padding-top:9px; border-top:1px solid var(--border); }
+.endgame-progress-row > .tool-output { margin:0; }
+.endgame-progress-row .tool-actions { margin:0; }
+.endgame-practice { padding:15px; border:1px solid var(--border); border-radius:10px; background:color-mix(in srgb,var(--surface-2) 70%,var(--surface-1)); }
+.endgame-practice > .field-label { margin-bottom:6px; }
+.endgame-practice > .text-input { margin-bottom:10px; }
+.endgame-practice .tool-actions { display:flex; align-items:center; flex-wrap:wrap; gap:7px; margin-top:8px; }
+.endgame-practice .tool-actions .field-label { margin:0 2px 0 0; }
+.endgame-practice .tool-actions select { width:auto; min-width:100px; padding:8px 9px; }
+.endgame-workbench { grid-template-columns:minmax(170px,240px) minmax(0,1fr); gap:12px; margin-top:12px; }
+.endgame-workbench .mini-board { width:min(100%,240px); margin:0; }
+.endgame-feedback { gap:6px; }
+.endgame-feedback p { padding:9px; font-size:10px; }
+.endgame-footnote { margin:12px 0 0; opacity:.78; font-size:10px; }
+@media(max-width:900px) {
+  .endgame-columns { grid-template-columns:1fr; }
+  .review-opponent-grid { grid-template-columns:1fr; }
+}
+@media(max-width:640px) {
+  .review-toolbar { align-items:flex-start; flex-direction:column; }
+  .review-toolbar .button { align-self:flex-start; }
+  #game-analysis-tool .game-analysis-toolbar { grid-template-columns:1fr 1fr; }
+  .review-opponent-tools > summary { flex-wrap:wrap; }
+  .review-opponent-tools > summary small { flex-basis:calc(100% - 48px); margin-left:40px; }
+}
+@media print {
+  body.print-game-analysis #review-workspace[hidden],body.print-opponent-report #review-workspace[hidden] { display:block !important; }
+  body.print-game-analysis #review-workspace,body.print-opponent-report #review-workspace { display:block !important; width:100%; margin:0; padding:0; overflow:visible; }
+  body.print-opponent-report .review-opponent-tools { display:block !important; }
+  body.print-opponent-report .review-opponent-tools:not([open]) > :not(summary) { display:block !important; }
+  body.print-opponent-report .review-opponent-tools > summary { display:none !important; }
+  body.print-game-analysis #game-analysis-tool,body.print-opponent-report #opponent-report-tool { display:block !important; }
+}
+
+#game-analysis-tool .game-analysis-toolbar { grid-template-columns:minmax(220px,1fr) auto auto auto; align-items:end; }
+.analysis-game-picker { min-width:0; }
+.analysis-game-picker .field-label { margin:0 0 5px; }
+@media(max-width:640px) {
+  #game-analysis-tool .game-analysis-toolbar { grid-template-columns:1fr 1fr; }
+  .analysis-game-picker { grid-column:1 / -1; }
+  .endgame-workbench { grid-template-columns:minmax(0,1fr); }
+  .endgame-workbench .mini-board { margin-inline:auto; }
+}
+@media print {
+  body.print-game-analysis #game-analysis-tool > .game-analysis-toolbar { display:none !important; }
 }

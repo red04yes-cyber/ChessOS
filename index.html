@@ -44,9 +44,22 @@
                 <option value="system">Segui il sistema</option>
                 <option value="reduced">Ridotte</option>
               </select>
+              <div class="appearance-divider"></div><p class="appearance-section-title">Personalizzazione</p>
+              <label for="accent-select">Colore di evidenza</label>
+              <select id="accent-select" class="text-input">
+                <option value="amber">Ambra</option><option value="blue">Blu</option><option value="green">Verde</option><option value="rose">Rosa</option>
+              </select>
+              <label for="density-select">Densita interfaccia</label>
+              <select id="density-select" class="text-input"><option value="compact">Compatta</option><option value="comfortable">Aria e spazio</option></select>
+              <label for="board-size-select">Dimensione scacchiera</label>
+              <select id="board-size-select" class="text-input"><option value="small">Piccola</option><option value="medium">Media</option><option value="large">Grande</option></select>
+              <label for="sidebar-select">Barra laterale</label>
+              <select id="sidebar-select" class="text-input"><option value="full">Completa</option><option value="compact">Solo icone</option></select>
+              <div class="appearance-divider"></div>
+              <button class="button small ghost update-check-button" id="check-for-updates" type="button">Controlla aggiornamenti</button>
             </div>
           </details>
-          <span class="version">DESKTOP 0.1.0</span>
+          <span class="version">DESKTOP 0.2.0</span>
         </div>
       </header>
 
@@ -56,6 +69,8 @@
           <nav class="primary-nav" aria-label="Navigazione principale">
             <button class="nav-item" id="nav-dashboard" type="button" aria-current="false"><span aria-hidden="true">◫</span> Dashboard</button>
             <button class="nav-item active" id="nav-studio" type="button" aria-current="page"><span aria-hidden="true">▦</span> Studio</button>
+            <button class="nav-item" id="nav-review" type="button" aria-current="false"><span aria-hidden="true">&#8635;</span> Revisione</button>
+            <button class="nav-item" id="nav-endgame" type="button" aria-current="false"><span aria-hidden="true">&#9816;</span> Endgame Lab</button>
             <button class="nav-item" id="nav-training" type="button" aria-current="false"><span aria-hidden="true">♟</span> Allenamento</button>
             <button class="nav-item" id="nav-backups" type="button" aria-current="false"><span aria-hidden="true">◈</span> Protezione dati</button>
           </nav>
@@ -88,10 +103,12 @@
               <button class="button ghost" id="undo" aria-label="Vai alla mossa precedente">← Indietro</button>
               <button class="button ghost" id="redo" aria-label="Vai alla mossa successiva" disabled>Avanti →</button>
               <button class="button ghost" id="flip-board">Vista Nero</button>
-              <button class="button ghost" id="copy-fen">Copia FEN</button>
-              <button class="button ghost" id="open-fen-editor">Editor FEN</button>
-              <button class="button ghost" id="reset">Nuova posizione</button>
-              <button class="button ghost" id="open-online-import">Importa partite online</button>
+              <details class="studio-actions-menu"><summary>Altro</summary><div class="studio-actions-popover">
+                <button class="button ghost" id="copy-fen" type="button">Copia FEN</button>
+                <button class="button ghost" id="open-fen-editor" type="button">Editor FEN</button>
+                <button class="button ghost" id="reset" type="button">Nuova posizione</button>
+                <button class="button ghost" id="open-online-import" type="button">Importa partite online</button>
+              </div></details>
               <button class="button primary" id="save-line">Salva linea <span>＋</span></button>
             </div>
           </div>
@@ -119,14 +136,16 @@
                 <button type="button" class="button small ghost" id="clear-board-marks">Cancella segni</button>
                 <span class="board-tool-help" id="board-tool-help">Per una freccia, seleziona la casa iniziale e quella finale.</span>
               </div>
-              <div class="board-wrap">
+              <div class="board-engine-toolbar"><span class="engine-live-dot"></span><span>Stockfish</span><span id="engine-evaluation" class="engine-evaluation" aria-live="polite">?</span><button class="button small ghost" id="toggle-engine" type="button" aria-pressed="true">Disattiva</button></div>
+              <div class="board-with-evaluation"><div class="evaluation-bar" id="evaluation-bar" role="img" aria-label="Valutazione Stockfish"><span id="evaluation-bar-white"></span></div><div class="board-wrap">
                 <div id="chessboard" class="chessboard" role="group" aria-label="Scacchiera. Le case sono raggiungibili con le frecce della tastiera."></div>
                 <svg id="board-markings" class="board-markings" viewBox="0 0 800 800" preserveAspectRatio="none" aria-hidden="true"></svg>
-              </div>
+              </div></div>
               <div class="board-footer">
                 <span id="game-status">Partita pronta</span>
                 <span id="move-count">0 mosse</span>
               </div>
+              <small id="current-analysis" class="engine-analysis-caption" aria-live="polite">Stockfish analizza automaticamente la posizione dello Studio.</small>
             </section>
 
             <aside class="details-panel">
@@ -221,9 +240,21 @@
                   </select>
                   <p class="review-note">La sessione comprende tutte le carte scadute e fino a 20 nuove carte al giorno.</p>
                   <button id="review-start" class="button primary review-start">Avvia sessione giornaliera</button>
+                  <div class="line-practice-setup">
+                    <div class="line-practice-heading">Allena una linea completa</div>
+                    <label class="field-label" for="line-training-repertoire">Repertorio</label>
+                    <select id="line-training-repertoire" class="text-input"><option value="">Seleziona una linea…</option></select>
+                    <label class="field-label" for="line-training-start-mode">Posizione iniziale</label>
+                    <select id="line-training-start-mode" class="text-input">
+                      <option value="start">Dall’inizio, fino alla fine</option>
+                      <option value="random">Casuale entro le prime 12 mosse</option>
+                    </select>
+                    <button id="line-training-start" class="button ghost review-start" type="button">Allena la linea</button>
+                  </div>
                 </div>
                 <div id="review-active" hidden>
                   <div id="review-card-meta" class="review-card-meta"></div>
+                  <p id="line-training-timer" class="line-training-timer" role="timer" aria-live="off" hidden>Tempo per pensare: 00:00</p>
                   <p id="review-feedback" class="review-feedback">Trova la mossa del repertorio.</p>
                   <button id="review-show-answer" class="button ghost review-action">Mostra soluzione</button>
                   <button id="review-quick-again" class="button ghost review-action" data-rating="again" hidden>Non la ricordavo · Again</button>
@@ -386,19 +417,13 @@
           </section>
 
           <section id="chess-lab-tools" class="tools-grid suite-grid">
-            <section class="detail-card feature-card" id="engine-analysis-tool">
-              <div class="card-heading"><span class="card-icon">⚙</span><span>STOCKFISH 19 · ANALISI LOCALE</span></div>
-              <p class="tool-description">Analizza la posizione corrente dello Studio direttamente sul dispositivo. Mostra valutazione, profondità, migliore mossa e variante principale.</p>
-              <button class="button small primary" id="analyze-current" type="button">Analizza posizione dello Studio</button>
-              <div id="current-analysis" class="tool-output" aria-live="polite">Pronto per analizzare la posizione corrente.</div>
-              <small class="tool-description">Il motore viene caricato localmente come WebAssembly. La prima analisi può richiedere qualche secondo.</small>
-            </section>
 
-            <section class="detail-card feature-card" id="opening-explorer-tool">
-              <div class="card-heading"><span class="card-icon">⌘</span><span>OPENING EXPLORER · GAP FINDER</span></div>
+
+            <details class="detail-card feature-card studio-tool-accordion" id="opening-explorer-tool">
+              <summary class="card-heading"><span class="card-icon">⌘</span><span>OPENING EXPLORER · GAP FINDER</span></summary>
               <p class="tool-description">Confronta le mosse delle partite importate o di un PGN incollato con il repertorio attivo. Le percentuali sono calcolate sul campione caricato, non su statistiche globali.</p>
               <label class="field-label" for="opening-pgn">Partite PGN (precompilate dalla libreria importata)</label>
-              <textarea id="opening-pgn" class="pgn-input" rows="4" placeholder="Importa partite da Chess.com / Lichess oppure incolla una raccolta PGN…"></textarea>
+              <textarea id="opening-pgn" class="pgn-input" rows="2" placeholder="Importa partite da Chess.com / Lichess oppure incolla una raccolta PGN…"></textarea>
               <div class="tool-actions">
                 <label class="field-label" for="opening-max-ply">Semimosse iniziali</label>
                 <input id="opening-max-ply" class="text-input" type="number" min="4" max="60" value="24" />
@@ -408,13 +433,13 @@
               </div>
               <div id="opening-summary" class="tool-output" aria-live="polite">Seleziona una raccolta PGN e avvia l'esplorazione.</div>
               <div id="opening-report" class="suite-report"></div>
-            </section>
+            </details>
 
-            <section class="detail-card feature-card" id="repertoire-generator-tool">
-              <div class="card-heading"><span class="card-icon">⑂</span><span>GENERA REPERTORIO DALLE PARTITE</span></div>
+            <details class="detail-card feature-card studio-tool-accordion" id="repertoire-generator-tool">
+              <summary class="card-heading"><span class="card-icon">⑂</span><span>GENERA REPERTORIO DALLE PARTITE</span></summary>
               <p class="tool-description">Costruisce un albero di varianti dalle partite caricate, annota la frequenza di ogni mossa e lo apre nello Studio. Il repertorio esistente non viene sovrascritto: salva il nuovo albero con il nome che preferisci.</p>
               <label class="field-label" for="generator-pgn">Partite PGN</label>
-              <textarea id="generator-pgn" class="pgn-input" rows="3" placeholder="Usa la libreria importata o incolla partite PGN…"></textarea>
+              <textarea id="generator-pgn" class="pgn-input" rows="2" placeholder="Usa la libreria importata o incolla partite PGN…"></textarea>
               <div class="tool-actions">
                 <label class="field-label" for="generator-side">Colore del repertorio</label>
                 <select id="generator-side" class="text-input"><option value="white">Bianco</option><option value="black">Nero</option></select>
@@ -425,23 +450,10 @@
                 <button class="button small primary" id="generator-build" type="button">Genera e apri nello Studio</button>
               </div>
               <p id="generator-status" class="tool-output" aria-live="polite"></p>
-            </section>
+            </details>
 
-            <section class="detail-card feature-card" id="tactics-tool">
-              <div class="card-heading"><span class="card-icon">✧</span><span>TACTICS TRAINER · ESERCIZI DALLE TUE PARTITE</span></div>
-              <p class="tool-description">Stockfish cerca posizioni in cui una mossa giocata perde una possibilità tattica e crea esercizi sulla migliore risposta. I candidati sono indicativi e puoi verificarli sulla scacchiera.</p>
-              <label class="field-label" for="tactics-pgn">Partite PGN da analizzare</label>
-              <textarea id="tactics-pgn" class="pgn-input" rows="3" placeholder="Usa la libreria importata o incolla partite PGN…"></textarea>
-              <div class="tool-actions">
-                <button class="button small primary" id="tactics-create" type="button">Genera esercizi tattici</button>
-                <button class="button small ghost" id="tactics-next" type="button">Salta esercizio</button>
-              </div>
-              <div id="tactics-prompt" class="tool-output" aria-live="polite">Importa partite o incolla un PGN per generare esercizi.</div>
-              <div id="tactics-board" class="mini-board" aria-label="Scacchiera Tactics Trainer"></div>
-              <p id="tactics-answer" class="tool-output" aria-live="polite"></p>
-              <p id="tactics-status" class="tool-description" aria-live="polite"></p>
-            </section>
-              
+
+
 <section class="detail-card feature-card" id="flashcards-tool">
               <div class="card-heading"><span class="card-icon">✦</span><span>FLASHCARD AUTOMATICHE · FSRS</span></div>
               <p class="tool-description">Incolla una partita PGN: Chess OS confronta le mosse con il repertorio e crea carte per le deviazioni nelle posizioni conosciute.</p>
@@ -462,22 +474,9 @@
               </div>
             </section>
 
-<section class="detail-card feature-card" id="heatmap-tool">
-              <div class="card-heading"><span class="card-icon">▥</span><span>HEATMAP DELLE DEBOLEZZE</span></div>
-              <p class="tool-description">La mappa usa le carte e la cronologia dei ripassi: le posizioni senza dati restano non valutate, non vengono considerate automaticamente conosciute.</p>
-              <div id="heatmap-summary" class="tool-output"></div>
-              <div id="heatmap-list" class="heatmap-list"></div>
-            </section>
 
-<section class="detail-card feature-card" id="opponent-tool">
-              <div class="card-heading"><span class="card-icon">⌖</span><span>PREPARAZIONE AVVERSARIO</span></div>
-              <p class="tool-description">Importa una o più partite PGN. Il report conta le aperture, la prima mossa del colore scelto e i risultati presenti nei PGN.</p>
-              <label class="field-label" for="opponent-side">Colore giocato dall'avversario</label>
-              <select id="opponent-side" class="text-input"><option value="black">Nero</option><option value="white">Bianco</option></select>
-              <textarea id="opponent-pgn" class="pgn-input" rows="5" placeholder='Incolla uno o più PGN, ciascuno con intestazione [Event "..."].'></textarea>
-              <div class="tool-actions"><button class="button small primary" id="analyze-opponent">Analizza partite</button></div>
-              <div id="opponent-report" class="tool-output" aria-live="polite"></div>
-            </section>
+
+
 
 <section class="detail-card feature-card transposition-tool" id="transpositions-tool">
               <div class="card-heading"><span class="card-icon">⇄</span><span>TRASPOSIZIONI</span></div>
@@ -486,16 +485,78 @@
               <div id="transposition-list" class="transposition-list"></div>
             </section>
 
+
+
+
+          </section>
+
+          <section id="review-workspace" class="tools-grid suite-grid review-workspace" hidden aria-label="Revisione partite">
+            <div class="review-toolbar"><div><span class="section-kicker">ANALISI E PREPARAZIONE</span><span class="review-toolbar-note">Le tue partite, i tuoi errori, il prossimo piano di studio.</span></div><button class="button small primary" id="review-import-games" type="button">Importa partite</button></div>
+<section class="detail-card feature-card game-analysis-card" id="game-analysis-tool">
+              <div class="card-heading"><span class="card-icon">⌕</span><span>ANALISI PARTITE · STOCKFISH</span></div>
+              <p class="tool-description">Scegli una delle ultime dieci partite importate. L’analisi locale confronta ogni mossa con Stockfish e prepara precisione stimata, fasi di gioco, errori e suggerimenti per entrambi i giocatori.</p>
+              <div class="game-analysis-toolbar">
+                <div class="analysis-game-picker"><label class="field-label" for="analysis-game-select">Partita</label><select id="analysis-game-select" class="text-input"><option value="">Importa o seleziona una partita</option></select></div>
+                <button class="button small primary" id="analyze-imported-game" type="button">Analizza partita</button>
+                <button class="button small ghost" id="analyze-latest-games" type="button">Analizza ultime 10</button>
+                <button class="button small ghost" id="print-game-analysis" type="button" disabled>Esporta PDF</button>
+              </div>
+              <p id="game-analysis-status" class="tool-output" role="status" aria-live="polite">Le analisi vengono calcolate sul dispositivo e non partono automaticamente.</p>
+              <div id="game-analysis-report" class="game-analysis-report"></div>
+            </section>
+<details class="detail-card feature-card" id="tactics-tool">
+              <summary class="card-heading"><span class="card-icon">✧</span><span>TACTICS TRAINER · ESERCIZI DALLE TUE PARTITE</span></summary>
+              <p class="tool-description">Stockfish cerca posizioni in cui una mossa giocata perde una possibilità tattica e crea esercizi sulla migliore risposta. I candidati sono indicativi e puoi verificarli sulla scacchiera.</p>
+              <label class="field-label" for="tactics-pgn">Partite PGN da analizzare</label>
+              <textarea id="tactics-pgn" class="pgn-input" rows="2" placeholder="Usa la libreria importata o incolla partite PGN…"></textarea>
+              <div class="tool-actions">
+                <button class="button small primary" id="tactics-create" type="button">Genera esercizi tattici</button>
+                <button class="button small ghost" id="tactics-next" type="button">Salta esercizio</button>
+              </div>
+              <div id="tactics-prompt" class="tool-output" aria-live="polite">Importa partite o incolla un PGN per generare esercizi.</div>
+              <div id="tactics-board" class="mini-board" aria-label="Scacchiera Tactics Trainer" hidden></div>
+              <p id="tactics-answer" class="tool-output" aria-live="polite"></p>
+              <p id="tactics-status" class="tool-description" aria-live="polite"></p>
+            </details><section class="detail-card feature-card" id="heatmap-tool">
+              <div class="card-heading"><span class="card-icon">▥</span><span>HEATMAP DELLE DEBOLEZZE</span></div>
+              <p class="tool-description">La mappa usa le carte e la cronologia dei ripassi: le posizioni senza dati restano non valutate, non vengono considerate automaticamente conosciute.</p>
+              <div id="heatmap-summary" class="tool-output"></div>
+              <div id="heatmap-list" class="heatmap-list"></div>
+            </section>          <details class="review-opponent-tools"><summary><span class="card-icon">&#9816;</span><span>PREPARAZIONE AVVERSARI</span><small>Report PGN e profili Chess.com</small><b aria-hidden="true">+</b></summary><div class="review-opponent-grid"><section class="detail-card feature-card" id="opponent-tool">
+              <div class="card-heading"><span class="card-icon">⌖</span><span>PREPARAZIONE AVVERSARIO</span></div>
+              <p class="tool-description">Importa una o più partite PGN. Il report conta le aperture, la prima mossa del colore scelto e i risultati presenti nei PGN.</p>
+              <label class="field-label" for="opponent-side">Colore giocato dall'avversario</label>
+              <select id="opponent-side" class="text-input"><option value="black">Nero</option><option value="white">Bianco</option></select>
+              <textarea id="opponent-pgn" class="pgn-input" rows="5" placeholder='Incolla uno o più PGN, ciascuno con intestazione [Event "..."].'></textarea>
+              <div class="tool-actions"><button class="button small primary" id="analyze-opponent">Analizza partite</button></div>
+              <div id="opponent-pgn-report" class="tool-output" aria-live="polite"></div>
+            </section><section class="detail-card feature-card opponent-report-card" id="opponent-report-tool">
+              <div class="card-heading"><span class="card-icon">♟</span><span>REPORT AVVERSARIO · CHESS.COM</span></div>
+              <p class="tool-description">Scarica gli archivi pubblici mensili e crea un riepilogo locale di risultati, aperture e andamento nel tempo. L'analisi usa tutte le partite importate per questo profilo.</p>
+              <form id="opponent-report-form" class="opponent-report-toolbar">
+                <label class="field-label" for="opponent-username">Username Chess.com</label>
+                <input id="opponent-username" class="text-input" type="text" maxlength="50" autocomplete="off" placeholder="es. Hikaru" required />
+                <button class="button small primary" id="opponent-report-run" type="submit">Scarica e crea report</button>
+                <button class="button small ghost" id="print-opponent-report" type="button" disabled>Esporta PDF</button>
+              </form>
+              <p id="opponent-report-status" class="tool-output" role="status" aria-live="polite">Le partite vengono richieste in sequenza a Chess.com e salvate solo in locale.</p>
+              <div id="opponent-profile-report" class="opponent-report"></div>
+              <small class="tool-description">ChessOS è un progetto indipendente e non è affiliato a Chess.com. I dati dipendono dagli archivi pubblici disponibili.</small>
+            </section></div></details>
+</section>
+          <section id="endgame-panel" class="tools-grid suite-grid endgame-workspace" hidden aria-label="Endgame Lab">
+
 <section class="detail-card feature-card endgame-lab" id="endgame-lab">
               <div class="card-heading"><span class="card-icon">♔</span><span>ENDGAME LAB · PROGRAMMA COMPLETO</span></div>
               <p class="tool-description">Percorso strutturato dai finali elementari agli studi avanzati: re e pedoni, torri, alfieri, cavalli, donne, matti fondamentali, fortezze, promozioni e tecnica pratica. Ogni lezione include obiettivo, metodo, errore tipico e posizione di studio.</p>
               <div id="endgame-summary" class="tool-output"></div>
-              <div class="endgame-selectors">
+              <div class="endgame-columns"><div class="endgame-curriculum"><div class="endgame-selectors">
                 <div><label class="field-label" for="endgame-category">Capitolo</label><select id="endgame-category" class="text-input"></select></div>
                 <div><label class="field-label" for="endgame-topic">Lezione</label><select id="endgame-topic" class="text-input"></select></div>
               </div>
               <div id="endgame-lesson" class="endgame-lesson"></div>
               <div class="endgame-progress-row"><span id="endgame-progress" class="tool-output">Non ancora completato</span><div class="tool-actions"><button class="button small ghost" id="endgame-create-card">Crea flashcard FSRS</button><button class="button small ghost" id="endgame-mastered">Segna come appreso</button></div></div>
+              </div><div class="endgame-practice">
               <label class="field-label" for="endgame-fen">FEN della posizione (puoi incollare qualsiasi finale)</label>
               <input id="endgame-fen" class="text-input" spellcheck="false"/>
               <div class="tool-actions">
@@ -520,10 +581,9 @@
                   <p id="endgame-tablebase-result" class="tool-output" aria-live="polite"></p>
                 </div>
               </div>
-              <p class="tool-description">Copertura didattica: i concetti classici e avanzati sono organizzati in capitoli. La verifica teorica esatta è disponibile tramite Syzygy per posizioni standard fino a sette pezzi; per posizioni più grandi si usa Stockfish.</p>
-            </section>
-          </section>
-
+              </div></div>
+              <p class="tool-description endgame-footnote">Copertura didattica: i concetti classici e avanzati sono organizzati in capitoli. La verifica teorica esatta è disponibile tramite Syzygy per posizioni standard fino a sette pezzi; per posizioni più grandi si usa Stockfish.</p>
+            </section>          </section>
           <div class="workspace-footer"><span>CHESS OS <b>·</b> I tuoi dati restano sul dispositivo</span><span>LEGAL MOVES <i>ON</i></span></div>
         </section>
       </main>
@@ -582,11 +642,11 @@
           <label class="field-label" for="online-username">Username</label>
           <input id="online-username" class="text-input" maxlength="50" autocomplete="off" placeholder="Il tuo username" />
           <div id="lichess-token-field" hidden>
-            <label class="field-label" for="lichess-api-token">Token API Lichess</label>
+            <label class="field-label" for="lichess-api-token">Token API Lichess (facoltativo)</label>
             <input id="lichess-api-token" class="text-input" type="password" autocomplete="off" placeholder="Token con permesso games:read" />
-            <small class="online-import-help">Crea un <a href="https://lichess.org/account/oauth/token" target="_blank" rel="noreferrer">token API personale Lichess</a>. ChessOS lo usa solo per questa richiesta e non lo salva.</small>
+            <small class="online-import-help">Per account privati puoi creare un <a href="https://lichess.org/account/oauth/token" target="_blank" rel="noreferrer">token Lichess di sola lettura</a>. Viene usato solo per questa richiesta e non viene salvato.</small>
           </div>
-          <div id="online-import-progress" class="online-import-progress" role="status" aria-live="polite">Chess.com usa gli archivi pubblici. Su Lichess serve un token API di sola lettura.</div>
+          <div id="online-import-progress" class="online-import-progress" role="status" aria-live="polite">Importa gli archivi pubblici usando lo username. Per un account Lichess privato puoi aggiungere un token facoltativo.</div>
           <div class="import-actions online-import-actions">
             <button class="button ghost" id="cancel-online-import" type="button">Chiudi</button>
             <button class="button primary" id="start-online-import" type="button">Importa tutte le partite</button>

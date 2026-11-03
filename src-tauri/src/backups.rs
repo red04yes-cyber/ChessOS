@@ -8,7 +8,7 @@ use tauri::{AppHandle, Manager, State};
 
 use crate::db::Database;
 
-const REQUIRED_SCHEMA_VERSION: i64 = 5;
+const REQUIRED_SCHEMA_VERSION: i64 = 6;
 const BACKUP_PREFIX: &str = "chessos-backup-";
 const PRE_RESTORE_PREFIX: &str = "chessos-pre-restore-";
 
@@ -116,13 +116,13 @@ fn verify_database(connection: &Connection) -> Result<i64, String> {
                  'schema_migrations', 'repertoires', 'repertoire_positions',
                  'repertoire_moves', 'app_settings', 'study_cards',
                  'training_sessions', 'review_logs', 'study_goals',
-                 'exam_attempts', 'exam_answers', 'imported_games'
+                 'exam_attempts', 'exam_answers', 'imported_games', 'imported_game_sources'
              )",
             [],
             |row| row.get::<_, i64>(0),
         )
         .map_err(|error| error.to_string())?;
-    if expected_tables != 12 {
+    if expected_tables != 13 {
         return Err("Il database non contiene tutte le tabelle richieste da ChessOS.".into());
     }
 

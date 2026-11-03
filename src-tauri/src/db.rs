@@ -314,6 +314,33 @@ pub fn migrate(connection: &mut Connection) -> rusqlite::Result<()> {
         )?;
         transaction.commit()?;
     }
+    let version_after_v5: i64 = connection.query_row(
+        "SELECT COALESCE(MAX(version), 0) FROM schema_migrations",
+        [],
+        |row| row.get(0),
+    )?;
+    if version_after_v5 < 6 {
+        let transaction = connection.transaction()?;
+        transaction.execute_batch(
+            "CREATE TABLE imported_game_sources (
+                provider TEXT NOT NULL CHECK (provider IN ('chess_com', 'lichess')),
+                source_username TEXT NOT NULL,
+                source_game_id TEXT NOT NULL,
+                PRIMARY KEY (provider, source_username, source_game_id),
+                FOREIGN KEY (provider, source_game_id)
+                    REFERENCES imported_games(provider, source_game_id) ON DELETE CASCADE
+            );
+            INSERT OR IGNORE INTO imported_game_sources(provider, source_username, source_game_id)
+                SELECT provider, source_username, source_game_id FROM imported_games;
+            CREATE INDEX idx_imported_game_sources_profile
+                ON imported_game_sources(provider, source_username, source_game_id);"
+        )?;
+        transaction.execute(
+            "INSERT INTO schema_migrations (version, applied_at) VALUES (6, ?1)",
+            params![now_timestamp()],
+        )?;
+        transaction.commit()?;
+    }
     Ok(())
 }
 
@@ -1254,7 +1281,7 @@ mod tests {
         let version: i64 = connection.query_row(
             "SELECT MAX(version) FROM schema_migrations", [], |row| row.get(0)
         ).unwrap();
-        assert_eq!(version, 5);
+        assert_eq!(version, 6);
     }
 
     #[test]
