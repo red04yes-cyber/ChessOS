@@ -107,7 +107,7 @@ Le modifiche sono state apportate tramite il repository GitHub. Non ho accesso a
 - Fase 1 — token, superfici, tipografia, componenti base: implementata.
 - Fase 2 — topbar, sidebar e nuova struttura di lavoro: implementata; verifica visiva manuale ancora necessaria.
 - Fase 3 — SVG, coordinate interne, temi, drag e FLIP: implementata nel codice; prove reali di input e rendering ancora necessarie.
-- Fase 4 — preferenze e scorciatoie principali: parziale; dialog personalizzati, toast tipizzati e focus trap completi non ancora implementati.
-- Fase 5 — notazione, varianti, ricerca e menu repertori: parziale; notazione e varianti sono ridisegnate, la ricerca e i menu per repertorio non sono ancora implementati.
-- Fase 6 — esperienza di allenamento: non ridisegnata integralmente; FSRS ed esami esistenti sono conservati.
-- Fase 7 — documentazione e verifiche: documento presente; controlli automatici e manuali ancora da completare.
+- Fase 4 — preferenze, scorciatoie, dialog di promozione con focus trap, conferme accessibili e toast tipizzati: implementata nei flussi principali; il focus trap completo dei dialog di importazione online resta da verificare.
+- Fase 5 — notazione, varianti, ricerca e menu repertori: implementata per lista ricercabile, menu di eliminazione, meta con date relative, notazione scorrevole e continuazioni nella stessa card; restano da verificare gli stati a lista lunga.
+- Fase 6 — esperienza di allenamento: parziale; il pannello FSRS conserva la logica esistente e ora mostra avanzamento e contatori. Non sono stati cambiati scheduling, sessioni, suggerimenti o scoring.
+- Fase 7 — documentazione e verifiche: design system e checklist presenti; controlli CI e prove manuali Windows ancora da completare.
