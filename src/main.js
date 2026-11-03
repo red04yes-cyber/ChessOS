@@ -1,9 +1,20 @@
 import { Chess } from "chess.js";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { RepertoireTree } from "./repertoire-tree.js";
+import {
+  buildReviewCards,
+  countDueCards,
+  countReviewsToday,
+  gradeFsrsCard,
+  getTodayReviewStats,
+  NEW_CARDS_PER_DAY,
+  parseUci,
+  selectDailyCards,
+} from "./fsrs-review.js";
 import "./style.css";
 
 const STORAGE_KEY = "chess-os.repertoire.v1";
+const REVIEW_STORAGE_KEY = "chess-os.fsrs.review-state.v1";
 const DEFAULT_FEN = new Chess().fen();
 const files = "abcdefgh";
 const symbols = {
@@ -26,6 +37,24 @@ let trainingGame = null;
 let trainingMoves = [];
 let trainingIndex = 0;
 let trainingStartFen = DEFAULT_FEN;
+let studyCards = [];
+let reviewLogs = [];
+let reviewSessions = [];
+let reviewQueue = [];
+let currentReviewCard = null;
+let reviewSessionId = null;
+let reviewSessionTotal = 0;
+let reviewCompleted = 0;
+let reviewAgainCount = 0;
+let reviewSolved = false;
+let reviewRevealed = false;
+let reviewFailed = false;
+let reviewFeedback = "";
+let reviewLastMove = null;
+let reviewCardStartedAt = 0;
+let reviewSessionFinished = false;
+let isStartingReviewSession = false;
+let isSavingReview = false;
 let baseFen = DEFAULT_FEN;
 let studioStates = [DEFAULT_FEN];
 let studioSans = [];
@@ -63,6 +92,55 @@ function persistRepertoire() {
   }
 }
 
+function readReviewState() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(REVIEW_STORAGE_KEY) || "{}");
+    return {
+      cards: Array.isArray(parsed.cards) ? parsed.cards : [],
+      logs: Array.isArray(parsed.logs) ? parsed.logs : [],
+      sessions: Array.isArray(parsed.sessions) ? parsed.sessions : [],
+    };
+  } catch {
+    return { cards: [], logs: [], sessions: [] };
+  }
+}
+
+function persistLocalReviewState() {
+  try {
+    localStorage.setItem(REVIEW_STORAGE_KEY, JSON.stringify({
+      cards: studyCards,
+      logs: reviewLogs,
+      sessions: reviewSessions,
+    }));
+    return true;
+  } catch {
+    showToast("Non riesco a salvare lo storico FSRS nella memoria locale.");
+    return false;
+  }
+}
+
+async function loadStudyData() {
+  if (persistenceMode === "sqlite") {
+    const [storedCards, storedLogs, storedSessions] = await Promise.all([
+      invoke("list_study_cards"),
+      invoke("list_review_logs"),
+      invoke("list_training_sessions"),
+    ]);
+    studyCards = storedCards.map((record) => {
+      let fsrs;
+      try { fsrs = JSON.parse(record.fsrsJson); } catch { fsrs = null; }
+      return { ...record, fsrs };
+    }).filter((record) => record.fsrs && typeof record.fsrs === "object");
+    reviewLogs = storedLogs;
+    reviewSessions = storedSessions;
+  } else {
+    const saved = readReviewState();
+    studyCards = saved.cards;
+    reviewLogs = saved.logs;
+    reviewSessions = saved.sessions;
+  }
+}
+
 function updateStorageLabel(title, description) {
   const titleElement = $("#storage-title");
   const descriptionElement = $("#storage-description");
@@ -85,6 +163,7 @@ function repertoirePayload(entry, tree) {
 async function initializePersistence() {
   if (persistenceMode !== "sqlite") {
     updateStorageLabel("Anteprima browser", "In questa modalità i dati sono salvati nella memoria del browser.");
+    await loadStudyData();
     renderAll();
     return;
   }
@@ -117,6 +196,7 @@ async function initializePersistence() {
 
     records = await invoke("list_repertoires");
     repertoire = records;
+    await loadStudyData();
     databaseReady = true;
     if (migrationErrors.length === 0) {
       try { localStorage.removeItem(STORAGE_KEY); } catch { /* Non bloccare l'avvio per storage non disponibile. */ }
@@ -151,6 +231,11 @@ function setDirty(value = true) {
   const indicator = $("#saved-indicator");
   indicator.textContent = dirty ? "MODIFICHE NON SALVATE" : "SALVATA";
   indicator.classList.toggle("unsaved", dirty);
+}
+
+function confirmDiscardChanges(action) {
+  if (!dirty) return true;
+  return window.confirm("Ci sono modifiche non salvate. Vuoi eliminarle e " + action + "?");
 }
 
 function gameStatus(chess) {
@@ -207,7 +292,7 @@ function appendStudioMove(move) {
 }
 
 function currentLastMove() {
-  if (mode === "training") return trainingMoves[trainingIndex - 1] || null;
+  if (mode === "training") return reviewLastMove;
   return studioMoveObjects[studioPly - 1] || null;
 }
 
@@ -276,11 +361,13 @@ function renderBoard() {
   updateBoardCoordinates();
   $("#turn-label").textContent = (chess.turn() === "w" ? "Bianco" : "Nero") + " al tratto";
   $("#game-status").textContent = gameStatus(chess);
-  const currentCount = mode === "training" ? trainingIndex : studioPly;
-  const totalCount = mode === "training" ? trainingMoves.length : studioSans.length;
-  $("#move-count").textContent = currentCount + " / " + totalCount + " semimosse";
+  const currentCount = mode === "training" ? reviewCompleted : studioPly;
+  const totalCount = mode === "training" ? reviewSessionTotal : studioSans.length;
+  $("#move-count").textContent = mode === "training"
+    ? currentCount + " / " + totalCount + " carte"
+    : currentCount + " / " + totalCount + " semimosse";
   $("#line-move-count").textContent = mode === "training"
-    ? trainingIndex + " / " + trainingMoves.length + " mosse eseguite"
+    ? (currentReviewCard ? currentReviewCard.repertoireTitle + " · " + currentReviewCard.side : "Sessione giornaliera")
     : studioPly + " / " + studioSans.length + " semimosse · posizione " + (studioPly + 1);
   $("#board-label").textContent = mode === "training" ? "MODALITÀ ALLENAMENTO" : "PARTITA / ANALISI";
   $("#undo").disabled = mode === "training" || studioPly === 0;
@@ -378,16 +465,17 @@ function renderMode() {
   const training = mode === "training";
   $("#nav-studio").classList.toggle("active", !training);
   $("#nav-training").classList.toggle("active", training);
-  $("#mode-eyebrow").textContent = training ? "REPERTORIO / RIPASSO" : "REPERTORIO / ANALISI";
-  $("#page-title").textContent = training ? "Allenamento" : "Chess Studio";
+  $("#mode-eyebrow").textContent = training ? "REPERTORIO / RIPASSO FSRS" : "REPERTORIO / ANALISI";
+  $("#page-title").textContent = training ? "Ripasso giornaliero" : "Chess Studio";
   $("#page-subtitle").textContent = training
-    ? "Ripeti la linea e trova le mosse nell’ordine corretto."
-    : "Costruisci le tue linee, una mossa alla volta.";
+    ? "Allena il richiamo delle mosse con intervalli adattivi."
+    : "Costruisci linee principali, varianti e transposizioni.";
   $("#save-line").disabled = training || !databaseReady;
   $("#reset").textContent = training ? "Esci dal ripasso" : "Nuova posizione";
-  $("#page-subtitle").textContent = training
-    ? "Ripeti la linea selezionata e trova le mosse nell’ordine corretto."
-    : "Costruisci linee principali, varianti e transposizioni.";
+  for (const selector of ["#line-card", "#moves-card", "#variations-card", "#import-card"]) {
+    $(selector).hidden = training;
+  }
+  $("#review-panel").hidden = !training;
   $("#flip-board").disabled = false;
 }
 
@@ -461,6 +549,7 @@ function renderAll() {
   renderVariations();
   renderRepertoire();
   renderMode();
+  renderReviewPanel();
 }
 
 function closePromotionChooser() {
@@ -503,8 +592,7 @@ function openPromotionChooser(from, to, legalMoves) {
 
 function commitSelectedMove(selectedMove) {
   if (mode === "training") {
-    const expected = trainingMoves[trainingIndex];
-    if (!expected) return;
+    if (!currentReviewCard || reviewSolved || reviewRevealed) return;
     let played;
     try {
       played = trainingGame.move({
@@ -523,21 +611,21 @@ function commitSelectedMove(selectedMove) {
       return;
     }
 
-    const correct = played.from === expected.from
-      && played.to === expected.to
-      && (played.promotion || undefined) === (expected.promotion || undefined);
-    if (!correct) {
+    const playedUci = played.from + played.to + (played.promotion || "");
+    if (playedUci !== currentReviewCard.uci) {
       trainingGame.undo();
       selectedSquare = null;
-      renderBoard();
-      showToast("Non è la mossa della linea. Riprova.");
+      reviewFailed = true;
+      reviewFeedback = "Non è la mossa prevista. Puoi riprovare oppure valutare Again.";
+      renderAll();
       return;
     }
 
-    trainingIndex += 1;
+    reviewSolved = true;
+    reviewLastMove = played;
+    reviewFeedback = "Mossa corretta: " + played.san + ". Scegli una valutazione.";
     selectedSquare = null;
     renderAll();
-    showToast(trainingIndex === trainingMoves.length ? "Linea completata. Ottimo lavoro!" : "Mossa corretta.");
     return;
   }
 
@@ -617,7 +705,14 @@ function handleSquareClick(square) {
 
 function openLine(id) {
   const line = repertoire.find((item) => item.id === id);
-  if (!line) return;
+  if (!line || !confirmDiscardChanges("aprire un'altra linea")) return;
+  if (mode === "training" && reviewSessionId && !reviewSessionFinished) {
+    void markReviewSessionFinished().catch((error) => {
+      showToast("Non riesco a chiudere la sessione: " + error.message);
+    });
+    reviewSessionId = null;
+    reviewSessionFinished = false;
+  }
   try {
     const loaded = line.tree ? RepertoireTree.fromJSON(line.tree) : RepertoireTree.fromPgn(line.pgn);
     rebuildTimeline(loaded);
@@ -709,31 +804,388 @@ async function saveLine() {
 }
 
 function startTraining() {
-  trainingMoves = studioMoveObjects.map((move) => ({
-    from: move.from,
-    to: move.to,
-    san: move.san,
-    ...(move.promotion ? { promotion: move.promotion } : {}),
-  }));
-  if (!trainingMoves.length) {
-    showToast("Seleziona una linea con almeno una mossa per allenarti.");
+  if (reviewSessionId && !reviewSessionFinished) {
+    void markReviewSessionFinished().catch((error) => {
+      showToast("Non riesco a chiudere la sessione precedente: " + error.message);
+    });
+  }
+  if (!databaseReady) {
+    showToast("Archivio non pronto: riprova tra qualche istante.");
     return;
   }
-  trainingStartFen = baseFen;
-  trainingGame = new Chess(trainingStartFen);
+  trainingGame = new Chess(DEFAULT_FEN);
+  trainingMoves = [];
   trainingIndex = 0;
+  reviewQueue = [];
+  currentReviewCard = null;
+  reviewSessionId = null;
+  reviewSessionTotal = 0;
+  reviewCompleted = 0;
+  reviewAgainCount = 0;
+  reviewSolved = false;
+  reviewRevealed = false;
+  reviewFailed = false;
+  reviewFeedback = "";
+  reviewLastMove = null;
+  reviewSessionFinished = false;
   selectedSquare = null;
   mode = "training";
   closePromotionChooser();
   renderAll();
-  showToast("Ripasso avviato: trova la prima mossa.");
+}
+
+async function beginDailyReviewSession() {
+  if (isStartingReviewSession) return;
+  if (!databaseReady || !repertoire.length) {
+    showToast("Salva almeno una linea nel repertorio prima di iniziare.");
+    return;
+  }
+  const now = new Date();
+  const side = $("#review-side").value;
+  const cards = buildReviewCards(repertoire, studyCards, now);
+  const todayStats = getTodayReviewStats(reviewLogs, now);
+  const remainingNewCards = Math.max(0, NEW_CARDS_PER_DAY - todayStats.newCardsReviewed);
+  const queue = selectDailyCards(cards, now, side, remainingNewCards);
+  if (!queue.length) {
+    showToast(remainingNewCards === 0
+      ? "Limite giornaliero di nuove carte raggiunto; torna domani."
+      : "Nessuna carta in scadenza per il lato selezionato.");
+    renderReviewPanel();
+    return;
+  }
+
+  isStartingReviewSession = true;
+  const startButton = $("#review-start");
+  startButton.disabled = true;
+  const id = globalThis.crypto?.randomUUID?.() ?? "session-" + Date.now();
+  try {
+    if (persistenceMode === "sqlite") {
+      await invoke("start_training_session", {
+        input: { id, startedAt: now.toISOString(), side },
+      });
+    }
+    reviewSessions.unshift({
+      id,
+      startedAt: now.toISOString(),
+      finishedAt: null,
+      side,
+      cardsReviewed: 0,
+      correctCount: 0,
+      againCount: 0,
+    });
+    if (persistenceMode === "browser" && !persistLocalReviewState()) {
+      reviewSessions = reviewSessions.filter((session) => session.id !== id);
+      isStartingReviewSession = false;
+      startButton.disabled = false;
+      return;
+    }
+  } catch (error) {
+    isStartingReviewSession = false;
+    startButton.disabled = false;
+    showToast("Non riesco ad avviare la sessione: " + error.message);
+    return;
+  }
+
+  isStartingReviewSession = false;
+  startButton.disabled = false;
+  reviewSessionId = id;
+  reviewSessionTotal = queue.length;
+  reviewCompleted = 0;
+  reviewAgainCount = 0;
+  reviewSessionFinished = false;
+  reviewQueue = [...queue];
+  openNextReviewCard();
+}
+
+function openNextReviewCard() {
+  currentReviewCard = reviewQueue.shift() || null;
+  selectedSquare = null;
+  reviewSolved = false;
+  reviewRevealed = false;
+  reviewFailed = false;
+  reviewFeedback = "";
+  reviewLastMove = null;
+  trainingIndex = 0;
+  trainingMoves = [];
+  if (!currentReviewCard) {
+    void finishReviewSession();
+    return;
+  }
+  trainingStartFen = currentReviewCard.fen;
+  trainingGame = new Chess(trainingStartFen);
+  boardFlipped = currentReviewCard.side === "black";
+  reviewCardStartedAt = performance.now();
+  closePromotionChooser();
+  renderAll();
+}
+
+async function markReviewSessionFinished() {
+  const sessionId = reviewSessionId;
+  if (!sessionId || reviewSessionFinished) return;
+  const finishedAt = new Date().toISOString();
+  if (persistenceMode === "sqlite") {
+    await invoke("finish_training_session", {
+      input: { id: sessionId, finishedAt },
+    });
+  }
+  reviewSessions = reviewSessions.map((session) => (
+    session.id === sessionId ? { ...session, finishedAt } : session
+  ));
+  if (persistenceMode === "browser" && !persistLocalReviewState()) {
+    throw new Error("Storico sessioni non salvato nella memoria locale.");
+  }
+  if (reviewSessionId === sessionId) reviewSessionFinished = true;
+}
+
+async function finishReviewSession() {
+  try {
+    await markReviewSessionFinished();
+  } catch (error) {
+    showToast("Sessione conclusa, ma non riesco a salvare la chiusura: " + error.message);
+    reviewSessionFinished = true;
+  }
+  currentReviewCard = null;
+  trainingGame = new Chess(DEFAULT_FEN);
+  reviewFeedback = "Sessione completata: " + reviewCompleted + " carte ripassate, " + reviewAgainCount + " valutate Again.";
+  renderAll();
+}
+
+async function rateCurrentCard(ratingName) {
+  if (isSavingReview || !currentReviewCard || (!reviewSolved && !reviewRevealed && ratingName !== "again")) return;
+  isSavingReview = true;
+  const now = new Date();
+  const card = currentReviewCard;
+  let result;
+  try {
+    result = gradeFsrsCard(card.fsrs, ratingName, now);
+  } catch (error) {
+    isSavingReview = false;
+    showToast("Errore nello scheduling FSRS: " + error.message);
+    return;
+  }
+
+  const updatedCard = {
+    ...card,
+    fsrs: result.card,
+    dueAt: result.dueAt,
+    stability: result.card.stability,
+    difficulty: result.card.difficulty,
+    reps: result.card.reps,
+    lapses: result.card.lapses,
+    state: result.state,
+    updatedAt: now.toISOString(),
+  };
+  const reviewLog = {
+    id: globalThis.crypto?.randomUUID?.() ?? "review-" + Date.now(),
+    cardId: card.id,
+    sessionId: reviewSessionId,
+    rating: result.log.rating,
+    reviewedAt: now.toISOString(),
+    elapsedMs: Math.max(0, Math.round(performance.now() - reviewCardStartedAt)),
+    scheduledDays: result.scheduledDays,
+    stateJson: JSON.stringify({ ...result.log, recalled: reviewSolved }),
+  };
+
+  try {
+    if (persistenceMode === "sqlite") {
+      await invoke("record_study_review", {
+        input: {
+          card: {
+            id: updatedCard.id,
+            repertoireId: updatedCard.repertoireId,
+            edgeId: updatedCard.edgeId,
+            side: updatedCard.side,
+            dueAt: updatedCard.dueAt,
+            stability: updatedCard.stability,
+            difficulty: updatedCard.difficulty,
+            reps: updatedCard.reps,
+            lapses: updatedCard.lapses,
+            state: updatedCard.state,
+            fsrsJson: JSON.stringify(updatedCard.fsrs),
+            createdAt: updatedCard.createdAt,
+            updatedAt: updatedCard.updatedAt,
+          },
+          reviewLog,
+        },
+      });
+    } else {
+      studyCards = studyCards.filter((entry) => entry.id !== updatedCard.id).concat(updatedCard);
+      reviewLogs = [reviewLog, ...reviewLogs];
+    }
+    const session = reviewSessions.find((entry) => entry.id === reviewSessionId);
+    if (session) {
+      session.cardsReviewed = (session.cardsReviewed || 0) + 1;
+      session.correctCount = (session.correctCount || 0) + (reviewSolved ? 1 : 0);
+      session.againCount = (session.againCount || 0) + (result.log.rating === 1 ? 1 : 0);
+    }
+    if (persistenceMode === "browser" && !persistLocalReviewState()) {
+      isSavingReview = false;
+      return;
+    }
+  } catch (error) {
+    isSavingReview = false;
+    showToast("Non riesco a salvare la risposta FSRS: " + error.message);
+    return;
+  }
+
+  isSavingReview = false;
+  studyCards = studyCards.filter((entry) => entry.id !== updatedCard.id).concat(updatedCard);
+  reviewLogs = [reviewLog, ...reviewLogs.filter((entry) => entry.id !== reviewLog.id)];
+  reviewCompleted += 1;
+  if (ratingName === "again") reviewAgainCount += 1;
+  openNextReviewCard();
+}
+
+function showReviewAnswer() {
+  if (!currentReviewCard || reviewSolved || reviewRevealed) return;
+  try {
+    const move = trainingGame.move(parseUci(currentReviewCard.uci));
+    reviewLastMove = move;
+    reviewRevealed = true;
+    reviewFeedback = "Soluzione: " + move.san + ". Valuta quanto era facile ricordarla.";
+    renderAll();
+  } catch (error) {
+    showToast("Impossibile mostrare la soluzione: " + error.message);
+  }
+}
+
+function formatHistoryDate(value) {
+  if (!value) return "Data non disponibile";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Data non valida";
+  return new Intl.DateTimeFormat("it-IT", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(date);
+}
+
+function historyRow(titleText, detailText, statusText, statusClass = "") {
+  const row = document.createElement("div");
+  row.className = "review-history-row";
+  const copy = document.createElement("div");
+  copy.className = "review-history-copy";
+  const title = document.createElement("strong");
+  title.textContent = titleText;
+  const detail = document.createElement("small");
+  detail.textContent = detailText;
+  copy.append(title, detail);
+  row.append(copy);
+  if (statusText) {
+    const status = document.createElement("span");
+    status.className = "review-history-status" + (statusClass ? " " + statusClass : "");
+    status.textContent = statusText;
+    row.append(status);
+  }
+  return row;
+}
+
+function renderReviewHistory(cards) {
+  const sessionsList = $("#review-history-sessions");
+  const reviewsList = $("#review-history-reviews");
+  sessionsList.replaceChildren();
+  reviewsList.replaceChildren();
+
+  const sessions = [...reviewSessions].sort((a, b) => (
+    new Date(b.startedAt || 0) - new Date(a.startedAt || 0)
+  ));
+  if (!sessions.length) {
+    const empty = document.createElement("p");
+    empty.className = "review-history-empty";
+    empty.textContent = "Le sessioni completate appariranno qui.";
+    sessionsList.append(empty);
+  } else {
+    for (const session of sessions.slice(0, 8)) {
+      const count = Number(session.cardsReviewed || 0);
+      const correct = Number(session.correctCount || 0);
+      const accuracy = count ? Math.round((correct / count) * 100) : 0;
+      const side = session.side === "white" ? "Bianco" : session.side === "black" ? "Nero" : "Entrambi";
+      const status = session.finishedAt
+        ? "Completata"
+        : session.id === reviewSessionId ? "In corso" : "Interrotta";
+      const detail = formatHistoryDate(session.startedAt) + " · " + side + " · " +
+        count + " carte · " + accuracy + "% richiamo corretto" +
+        (session.finishedAt ? " · fine " + formatHistoryDate(session.finishedAt) : "");
+      sessionsList.append(historyRow("Sessione di ripasso", detail, status,
+        status === "Interrotta" ? "interrupted" : status === "In corso" ? "active" : "complete"));
+    }
+  }
+
+  const cardsById = new Map(cards.map((card) => [card.id, card]));
+  const ratingNames = { 1: "Again", 2: "Hard", 3: "Good", 4: "Easy" };
+  if (!reviewLogs.length) {
+    const empty = document.createElement("p");
+    empty.className = "review-history-empty";
+    empty.textContent = "Non hai ancora registrato valutazioni.";
+    reviewsList.append(empty);
+  } else {
+    for (const log of reviewLogs.slice(0, 15)) {
+      const card = cardsById.get(log.cardId || log.card_id);
+      const moveLabel = card
+        ? card.repertoireTitle + " · " + card.san + " · " + (card.side === "white" ? "Bianco" : "Nero")
+        : "Carta del repertorio";
+      const detail = formatHistoryDate(log.reviewedAt || log.reviewed_at) +
+        (Number.isFinite(Number(log.elapsedMs ?? log.elapsed_ms))
+          ? " · " + (Number(log.elapsedMs ?? log.elapsed_ms) / 1000).toFixed(1) + " s"
+          : "");
+      let recalled = false;
+      try {
+        const metadata = JSON.parse(log.stateJson || log.state_json || "{}");
+        recalled = metadata.recalled === true;
+      } catch {
+        recalled = false;
+      }
+      const result = recalled ? "Richiamo corretto" : "Richiamo mancato";
+      const rating = ratingNames[Number(log.rating)] || "Valutazione";
+      reviewsList.append(historyRow(moveLabel, detail + " · " + result, rating,
+        rating === "Again" ? "interrupted" : "complete"));
+    }
+  }
+}
+
+function renderReviewPanel() {
+  const now = new Date();
+  const side = $("#review-side").value;
+  const cards = buildReviewCards(repertoire, studyCards, now);
+  renderReviewHistory(cards);
+  const todayStats = getTodayReviewStats(reviewLogs, now);
+  $("#review-stat-due").textContent = String(countDueCards(cards, now, side));
+  $("#review-stat-today").textContent = String(todayStats.reviews);
+  $("#review-stat-accuracy").textContent = todayStats.reviews ? todayStats.accuracy + "%" : "—";
+  $("#review-stat-total").textContent = String(cards.length);
+
+  const hasSession = Boolean(reviewSessionId);
+  $("#review-setup").hidden = hasSession;
+  $("#review-active").hidden = !hasSession || !currentReviewCard;
+  $("#review-complete").hidden = !reviewSessionFinished;
+  if (currentReviewCard) {
+    $("#review-card-meta").textContent =
+      currentReviewCard.repertoireTitle + " · " +
+      (currentReviewCard.side === "white" ? "Bianco" : "Nero") +
+      " · carta " + (reviewCompleted + 1) + "/" + reviewSessionTotal;
+  }
+  $("#review-feedback").textContent = reviewFeedback || "Trova la mossa prevista in questa posizione.";
+  $("#review-show-answer").hidden = reviewSolved || reviewRevealed || !currentReviewCard;
+  $("#review-quick-again").hidden = !reviewFailed || reviewSolved || reviewRevealed;
+  $("#review-grades").hidden = !(reviewSolved || reviewRevealed);
+  $("#review-complete-summary").textContent =
+    "Sessione completata: " + reviewCompleted + " carte ripassate, " +
+    reviewAgainCount + " valutate Again. " + countReviewsToday(reviewLogs, now) + " ripassi oggi.";
 }
 
 function leaveTraining() {
+  if (reviewSessionId && !reviewSessionFinished) {
+    void markReviewSessionFinished().catch((error) => {
+      showToast("Non riesco a chiudere la sessione: " + error.message);
+    });
+  }
   mode = "studio";
   trainingGame = null;
   trainingMoves = [];
   trainingIndex = 0;
+  reviewQueue = [];
+  currentReviewCard = null;
+  reviewSessionId = null;
+  reviewSessionFinished = false;
   selectedSquare = null;
   closePromotionChooser();
   renderAll();
@@ -747,6 +1199,7 @@ function importPgn() {
   }
   try {
     const imported = RepertoireTree.fromPgn(text);
+    if (!confirmDiscardChanges("importare questo PGN")) return;
     rebuildTimeline(imported);
     mode = "studio";
     activeLineId = null;
@@ -774,7 +1227,7 @@ function exportPgn() {
   document.body.append(anchor);
   anchor.click();
   anchor.remove();
-  URL.revokeObjectURL(url);
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
   showToast("File PGN esportato.");
 }
 
@@ -783,6 +1236,7 @@ function newPosition() {
     leaveTraining();
     return;
   }
+  if (!confirmDiscardChanges("iniziare una nuova linea")) return;
   baseFen = DEFAULT_FEN;
   studioTree = new RepertoireTree(DEFAULT_FEN);
   syncStudioPath([]);
@@ -793,7 +1247,6 @@ function newPosition() {
   titleInput.value = "Nuova linea";
   setDirty(true);
   renderAll();
-void initializePersistence();
 }
 
 async function copyFen() {
@@ -815,6 +1268,14 @@ $("#nav-studio").addEventListener("click", () => {
   if (mode === "training") leaveTraining();
 });
 $("#nav-training").addEventListener("click", () => startTraining());
+$("#review-side").addEventListener("change", renderReviewPanel);
+$("#review-start").addEventListener("click", () => { void beginDailyReviewSession(); });
+$("#review-show-answer").addEventListener("click", showReviewAnswer);
+$("#review-quick-again").addEventListener("click", () => { void rateCurrentCard("again"); });
+document.querySelectorAll("#review-grades [data-rating]").forEach((button) => {
+  button.addEventListener("click", () => { void rateCurrentCard(button.dataset.rating); });
+});
+$("#review-exit").addEventListener("click", leaveTraining);
 $("#new-line").addEventListener("click", newPosition);
 $("#reset").addEventListener("click", newPosition);
 $("#undo").addEventListener("click", () => {
@@ -854,7 +1315,11 @@ document.addEventListener("keydown", (event) => {
   }
   if (mode !== "studio" || pendingPromotion) return;
   const target = event.target;
-  if (target instanceof HTMLElement && (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT", "BUTTON"].includes(target.tagName))) return;
+  if (target instanceof HTMLElement && (
+    target.isContentEditable
+    || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)
+    || (target.tagName === "BUTTON" && !target.matches(".square, .san-move"))
+  )) return;
   if (event.key === "ArrowLeft" && studioPly > 0) {
     event.preventDefault();
     positionForPly(studioPly - 1);
