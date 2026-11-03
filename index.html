@@ -219,6 +219,35 @@
             </section>
 
             <aside class="details-panel" aria-label="Linea e strumenti">
+              <section class="detail-card training-session-card" id="training-session-card" hidden>
+                <div class="card-heading"><span class="card-icon" aria-hidden="true">◎</span><span id="training-session-heading">Sessione</span></div>
+                <div class="training-empty" id="training-empty" hidden>
+                  <h2>Non c'è ancora nulla da ripassare</h2>
+                  <p>Apri un repertorio con almeno una mossa oppure torna allo Studio per crearne uno.</p>
+                  <button class="button primary" id="training-empty-exit" type="button">Torna allo Studio</button>
+                </div>
+                <div id="training-session-content">
+                  <div class="training-progress-meta"><span id="training-progress-label">Mossa 0 di 0</span><span>Errori: <b id="training-errors">0</b></span></div>
+                  <div class="training-progress" id="training-progressbar" role="progressbar" aria-label="Avanzamento allenamento" aria-valuemin="0" aria-valuemax="0" aria-valuenow="0"><span id="training-progress-fill"></span></div>
+                  <div class="training-stats">
+                    <div><strong id="training-moves-correct">0</strong><span>Mosse corrette</span></div>
+                    <div><strong id="training-hints">0</strong><span>Suggerimenti</span></div>
+                    <div><strong id="training-elapsed">00:00</strong><span>Tempo</span></div>
+                  </div>
+                  <div class="training-status" id="training-status" role="status" aria-live="polite">Trova la prima mossa della linea.</div>
+                  <p class="training-hint-text" id="training-hint-text" aria-live="polite"></p>
+                  <div class="card-heading training-history-heading">MOSSE GIOCATE</div>
+                  <div class="move-list training-move-history" id="training-move-history"></div>
+                  <div class="training-actions">
+                    <button class="button ghost" id="training-hint" type="button" title="Suggerimento (H)">Suggerimento</button>
+                    <button class="button ghost" id="training-reveal" type="button">Mostra la mossa</button>
+                    <button class="button ghost" id="training-restart" type="button">Ricomincia</button>
+                    <button class="button primary" id="training-exit" type="button">Esci dall'allenamento</button>
+                  </div>
+                  <div class="training-summary" id="training-summary" hidden></div>
+                </div>
+              </section>
+
               <section class="detail-card line-card">
                 <div class="card-heading"><span class="card-icon" aria-hidden="true">⌘</span><span>REPERTORIO ATTIVO</span></div>
                 <div class="line-meta"><span id="line-move-count">Ancora nessuna mossa</span><span class="saved-indicator" id="saved-indicator">NON SALVATA</span></div>
