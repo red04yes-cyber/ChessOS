@@ -383,7 +383,7 @@ function renderMode() {
   $("#page-subtitle").textContent = training
     ? "Ripeti la linea e trova le mosse nell’ordine corretto."
     : "Costruisci le tue linee, una mossa alla volta.";
-  $("#save-line").disabled = training;
+  $("#save-line").disabled = training || !databaseReady;
   $("#reset").textContent = training ? "Esci dal ripasso" : "Nuova posizione";
   $("#page-subtitle").textContent = training
     ? "Ripeti la linea selezionata e trova le mosse nell’ordine corretto."
