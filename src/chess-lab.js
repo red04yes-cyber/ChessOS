@@ -694,13 +694,11 @@ export function initChessLab(options) {
       // I nomi utente sono una preferenza locale, non un requisito per la sincronizzazione.
     }
     $("#lab-sync-accounts").disabled = true;
-    let downloaded = 0;
     let saved = 0;
     let skipped = 0;
     let failures = 0;
     const importBatch = async (pgn, label) => {
       const result = await importCollection(pgn, label);
-      downloaded += result.total || 0;
       saved += result.saved || 0;
       skipped += result.skipped || 0;
       failures += (result.errors || []).length;
@@ -715,7 +713,6 @@ export function initChessLab(options) {
               setStatus("#lab-import-status", "Chess.com: archivio " + progress.current + " / " + progress.total + " (" + progress.label + ")…");
             }
           });
-        downloaded += result.games % 100;
       }
       if (lichess) {
         setStatus("#lab-import-status", "Sincronizzazione dell'export completo Lichess…");
@@ -724,7 +721,6 @@ export function initChessLab(options) {
           (progress) => {
             setStatus("#lab-import-status", "Lichess: " + progress.count + " partite scaricate…");
           });
-        downloaded += result.games % 100;
       }
       setStatus("#lab-import-status", "Sincronizzazione terminata: " + saved + " nuove partite aggiunte, " + skipped + " doppioni saltati, " + failures + " errori di importazione.");
     } catch (error) {
