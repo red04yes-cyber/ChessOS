@@ -28,7 +28,6 @@ Windows-first chess repertoire and training desktop app. This repository now con
 This is **not** the recovered 0.7.0 application and is not yet feature-complete against the original roadmap. The following are not implemented in this rebuild:
 
 - FSRS scheduling and review history
-- SQLite database backup/export and restore UI
 - Stockfish analysis / evaluation
 - Dashboard, analytics, goals and exams
 - Cloud sync, account system and remote backups
