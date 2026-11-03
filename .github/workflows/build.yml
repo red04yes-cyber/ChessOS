@@ -81,24 +81,15 @@ jobs:
         run: |
           set -euo pipefail
           cargo fmt --manifest-path src-tauri/Cargo.toml
-          python3 - <<'PY'
-          from pathlib import Path
-          path = Path(".github/workflows/build.yml")
-          source = path.read_text(encoding="utf-8")
-          start = source.index("  bootstrap-maintenance:")
-          end = source.index("  verify:", start)
-          path.write_text(source[:start] + source[end:], encoding="utf-8")
-          PY
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add package-lock.json src-tauri/Cargo.lock src-tauri/build.rs src-tauri/src/*.rs .github/workflows/build.yml
+          git add package-lock.json src-tauri/Cargo.lock src-tauri/build.rs src-tauri/src/*.rs
           if git diff --cached --quiet; then
             echo "No bootstrap changes to commit."
             exit 0
           fi
           git commit -m "chore: lock dependencies and format Rust sources"
           git push origin "HEAD:${PR_BRANCH}"
-          gh api --method POST "repos/${GITHUB_REPOSITORY}/actions/workflows/build.yml/dispatches" -f ref="${PR_BRANCH}"
 
   verify:
     name: Frontend tests and production build
