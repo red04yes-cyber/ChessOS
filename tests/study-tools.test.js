@@ -42,6 +42,7 @@ test("creates and schedules error cards with FSRS review ratings", () => {
   const reviewed = gradeStudyCard(card, "good", now);
   assert.equal(reviewed.reviewCount, 1);
   assert.equal(reviewed.lastRating, "good");
+  assert.equal(reviewed.reviewHistory.length, 1);
   assert.ok(reviewed.schedulerCard.due instanceof Date);
   assert.equal(reviewed.schedulerCard.reps, 1);
 });
@@ -73,6 +74,7 @@ test("opponent analysis counts openings, first moves and game results", () => {
   assert.equal(report.results.wins, 1);
   assert.equal(report.results.draws, 1);
   assert.equal(report.firstMoves[0].label, "c5");
+  assert.equal(report.moveSequences[0].label, "c5 d6");
   assert.equal(report.openings.length, 2);
 });
 
