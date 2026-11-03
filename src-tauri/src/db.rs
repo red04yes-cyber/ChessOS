@@ -25,6 +25,8 @@ pub struct MoveEdge {
     pub uci: String,
     pub san: String,
     #[serde(default)]
+    pub order: usize,
+    #[serde(default)]
     pub nags: Vec<String>,
     #[serde(default)]
     pub comment: String,
@@ -353,7 +355,7 @@ fn load_one(connection: &Connection, id: &str) -> Result<Option<RepertoireRecord
     drop(nodes_statement);
 
     let mut edges_statement = connection.prepare(
-        "SELECT edge_id, from_position_id, to_position_id, uci, san, nags_json, comment
+        "SELECT edge_id, from_position_id, to_position_id, uci, san, nags_json, comment, sort_order
          FROM repertoire_moves WHERE repertoire_id = ?1 ORDER BY sort_order, edge_id"
     ).map_err(|error| error.to_string())?;
     let edges = edges_statement.query_map(params![id], |row| {
@@ -361,7 +363,7 @@ fn load_one(connection: &Connection, id: &str) -> Result<Option<RepertoireRecord
         let nags = serde_json::from_str(&nags_json).unwrap_or_default();
         Ok(MoveEdge {
             id: row.get(0)?, from: row.get(1)?, to: row.get(2)?,
-            uci: row.get(3)?, san: row.get(4)?, nags, comment: row.get(6)?
+            uci: row.get(3)?, san: row.get(4)?, nags, comment: row.get(6)?, order: row.get(7)?
         })
     }).map_err(|error| error.to_string())?
       .collect::<Result<Vec<_>, _>>().map_err(|error| error.to_string())?;
@@ -446,7 +448,7 @@ mod tests {
                 ],
                 edges: vec![MoveEdge {
                     id: "root|e2e4".into(), from: root_id, to: child_id,
-                    uci: "e2e4".into(), san: "e4".into(), nags: vec![], comment: "".into(),
+                    uci: "e2e4".into(), san: "e4".into(), order: 0, nags: vec![], comment: "".into(),
                 }],
             },
             created_at: Some("100".into()),
