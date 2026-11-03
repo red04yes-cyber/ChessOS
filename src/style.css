@@ -501,8 +501,8 @@ h1 { margin: 9px 0 5px; font-size: clamp(24px, 2.2vw, 31px); line-height: 1.1; l
 
 /* Blindfold must not leak the active position or move list through the main Studio. */
 body.blindfold-active .board-panel,
-body.blindfold-active #moves-card,
-body.blindfold-active #variations-card,
+body.blindfold-active .moves-card,
+body.blindfold-active .variations-card,
 body.blindfold-active #undo,
 body.blindfold-active #redo,
 body.blindfold-active #copy-fen {
