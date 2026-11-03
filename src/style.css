@@ -474,3 +474,24 @@ h1 { margin: 9px 0 5px; font-size: clamp(24px, 2.2vw, 31px); line-height: 1.1; l
   .imported-games-list { max-height: 170px; }
   .online-import-card { padding: 18px; }
 }
+
+
+/* Reliable board dragging for mouse, pen and touch input */
+.chessboard .square {
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.chessboard .square.dragging {
+  opacity: .45;
+  cursor: grabbing;
+}
+.chessboard .square.drop-target {
+  outline: 3px solid var(--accent-strong);
+  outline-offset: -4px;
+  z-index: 2;
+}
+.chessboard .piece {
+  pointer-events: none;
+  -webkit-user-drag: none;
+}
