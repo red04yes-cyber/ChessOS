@@ -87,6 +87,13 @@ jobs:
           if (-not (Test-Path "docs/releases/$env:GITHUB_REF_NAME.md")) {
             throw "Release notes file docs/releases/$env:GITHUB_REF_NAME.md is missing."
           }
+          $expectedVersion = $env:GITHUB_REF_NAME.Substring(1)
+          $packageVersion = (Get-Content -Raw "package.json" | ConvertFrom-Json).version
+          $tauriVersion = (Get-Content -Raw "src-tauri/tauri.conf.json" | ConvertFrom-Json).version
+          $cargoVersion = [regex]::Match((Get-Content -Raw "src-tauri/Cargo.toml"), '(?m)^version\s*=\s*"([^"]+)"').Groups[1].Value
+          if ($packageVersion -ne $expectedVersion -or $tauriVersion -ne $expectedVersion -or $cargoVersion -ne $expectedVersion) {
+            throw "Release tag $expectedVersion must match package.json ($packageVersion), tauri.conf.json ($tauriVersion) and Cargo.toml ($cargoVersion)."
+          }
           npm run tauri:build -- --config src-tauri/tauri.release.conf.json
       - name: Generate installer and updater SHA-256 checksums
         shell: pwsh
