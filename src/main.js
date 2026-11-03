@@ -1,10 +1,12 @@
 import { Chess } from "chess.js";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { RepertoireTree } from "./repertoire-tree.js";
+import { parsePgnCollection, normalizeTags } from "./pgn-import.js";
 import "./style.css";
 
 const STORAGE_KEY = "chess-os.repertoire.v1";
 const DEFAULT_FEN = new Chess().fen();
+const DEFAULT_LINE_COLOR = "#d7a64b";
 const files = "abcdefgh";
 const symbols = {
   w: { k: "♔", q: "♕", r: "♖", b: "♗", n: "♘", p: "♙" },
@@ -63,6 +65,16 @@ function persistRepertoire() {
   }
 }
 
+function newRepertoireId() {
+  return globalThis.crypto?.randomUUID?.() ?? "line-" + Date.now() + "-" + Math.random().toString(36).slice(2, 8);
+}
+
+function currentLineTags() { return normalizeTags($("#line-tags")?.value || ""); }
+function currentLineColor() {
+  const value = $("#line-color")?.value || DEFAULT_LINE_COLOR;
+  return /^#[0-9a-f]{6}$/i.test(value) ? value : DEFAULT_LINE_COLOR;
+}
+
 function updateStorageLabel(title, description) {
   const titleElement = $("#storage-title");
   const descriptionElement = $("#storage-description");
@@ -79,6 +91,8 @@ function repertoirePayload(entry, tree) {
     createdAt: entry.createdAt || null,
     updatedAt: entry.updatedAt || null,
     tree: tree.toJSON(),
+    tags: Array.isArray(entry.tags) ? entry.tags : [],
+    color: /^#[0-9a-f]{6}$/i.test(entry.color || "") ? entry.color : DEFAULT_LINE_COLOR,
   };
 }
 
@@ -333,19 +347,36 @@ function renderMoves() {
 function renderRepertoire() {
   const list = $("#repertoire-list");
   list.replaceChildren();
-
-  if (!repertoire.length) {
+  const search = ($("#repertoire-search")?.value || "").trim().toLocaleLowerCase();
+  const tagFilter = $("#repertoire-tag-filter")?.value || "";
+  const filter = $("#repertoire-tag-filter");
+  if (filter) {
+    const selected = tagFilter;
+    const tags = [...new Set(repertoire.flatMap((line) => Array.isArray(line.tags) ? line.tags : []))]
+      .filter(Boolean).sort((a, b) => a.localeCompare(b, "it"));
+    filter.replaceChildren(new Option("Tutte le etichette", ""));
+    for (const tag of tags) filter.add(new Option(tag, tag));
+    filter.value = tags.includes(selected) ? selected : "";
+  }
+  const visibleLines = repertoire.filter((line) => {
+    const haystack = [line.title || "", ...(Array.isArray(line.tags) ? line.tags : [])].join(" ").toLocaleLowerCase();
+    return (!search || haystack.includes(search)) && (!tagFilter || (Array.isArray(line.tags) && line.tags.includes(tagFilter)));
+  });
+  if (!visibleLines.length) {
     const empty = document.createElement("div");
     empty.className = "repertoire-empty";
-    empty.textContent = "Nessuna linea salvata. Crea una linea e premi “Salva linea”.";
+    empty.textContent = repertoire.length
+      ? "Nessuna linea corrisponde alla ricerca o ai filtri."
+      : "Nessuna linea salvata. Crea una linea e premi “Salva linea”.";
     list.append(empty);
     return;
   }
 
-  for (const line of repertoire) {
+  for (const line of visibleLines) {
     const row = document.createElement("div");
     row.className = "repertoire-entry";
     if (line.id === activeLineId) row.classList.add("current");
+    row.style.setProperty("--line-color", /^#[0-9a-f]{6}$/i.test(line.color || "") ? line.color : DEFAULT_LINE_COLOR);
 
     const open = document.createElement("button");
     open.type = "button";
@@ -359,6 +390,11 @@ function renderRepertoire() {
       : (Array.isArray(line.sans) ? line.sans.length : 0);
     meta.textContent = count + " " + (count === 1 ? "arco" : "archi") + (line.nodeCount ? " · " + line.nodeCount + " posizioni" : "");
     open.append(name, meta);
+    if (Array.isArray(line.tags) && line.tags.length) {
+      const chips = document.createElement("span"); chips.className = "repertoire-tags";
+      for (const tag of line.tags.slice(0, 3)) { const chip = document.createElement("small"); chip.className = "repertoire-tag"; chip.textContent = tag; chips.append(chip); }
+      open.append(chips);
+    }
     open.addEventListener("click", () => openLine(line.id));
 
     const remove = document.createElement("button");
@@ -369,8 +405,11 @@ function renderRepertoire() {
     remove.setAttribute("aria-label", "Elimina " + (line.title || "linea"));
     remove.addEventListener("click", () => deleteLine(line.id));
 
-    row.append(open, remove);
-    list.append(row);
+    const actions = document.createElement("div"); actions.className = "repertoire-actions";
+    const duplicate = document.createElement("button"); duplicate.type = "button"; duplicate.className = "duplicate-line"; duplicate.textContent = "⧉";
+    duplicate.title = "Duplica linea"; duplicate.setAttribute("aria-label", "Duplica " + (line.title || "linea"));
+    duplicate.addEventListener("click", () => duplicateLine(line.id));
+    actions.append(duplicate, remove); row.append(open, actions); list.append(row);
   }
 }
 
@@ -623,6 +662,8 @@ function openLine(id) {
     rebuildTimeline(loaded);
     activeLineId = line.id;
     titleInput.value = line.title || "Linea senza nome";
+    $("#line-tags").value = Array.isArray(line.tags) ? line.tags.join(", ") : "";
+    $("#line-color").value = /^#[0-9a-f]{6}$/i.test(line.color || "") ? line.color : DEFAULT_LINE_COLOR;
     setDirty(false);
     mode = "studio";
     trainingGame = null;
@@ -631,6 +672,30 @@ function openLine(id) {
   } catch (error) {
     showToast("PGN non leggibile: " + error.message);
   }
+}
+
+async function persistEntry(entry, tree) {
+  if (!databaseReady) throw new Error("Database non pronto.");
+  if (persistenceMode === "sqlite") return invoke("save_repertoire", { input: repertoirePayload(entry, tree) });
+  const next = [entry, ...repertoire.filter((item) => item.id !== entry.id)];
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+  return entry;
+}
+
+async function duplicateLine(id) {
+  const line = repertoire.find((item) => item.id === id);
+  if (!line) return;
+  try {
+    const tree = line.tree ? RepertoireTree.fromJSON(line.tree) : RepertoireTree.fromPgn(line.pgn);
+    const now = new Date().toISOString();
+    const copy = { ...line, id: newRepertoireId(), title: (line.title || "Linea senza nome") + " (copia)",
+      tags: Array.isArray(line.tags) ? [...line.tags] : [],
+      color: /^#[0-9a-f]{6}$/i.test(line.color || "") ? line.color : DEFAULT_LINE_COLOR,
+      createdAt: now, updatedAt: now, tree: tree.toJSON() };
+    const saved = await persistEntry(copy, tree);
+    repertoire = [saved, ...repertoire.filter((item) => item.id !== saved.id)];
+    renderAll(); showToast("Linea duplicata.");
+  } catch (error) { showToast("Errore duplicazione: " + error.message); }
 }
 
 async function deleteLine(id) {
@@ -675,7 +740,7 @@ async function saveLine() {
   const pgn = timelinePgn();
   const sans = [...studioSans];
   const title = titleInput.value.trim() || "Linea senza nome";
-  const id = activeLineId || (globalThis.crypto?.randomUUID?.() ?? "line-" + Date.now());
+  const id = activeLineId || newRepertoireId();
   const previous = repertoire.find((item) => item.id === id);
   const entry = {
     id,
@@ -687,19 +752,15 @@ async function saveLine() {
     createdAt: previous?.createdAt || new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     tree: studioTree.toJSON(),
+    tags: currentLineTags(),
+    color: currentLineColor(),
   };
-
   try {
-    if (persistenceMode === "sqlite") {
-      const saved = await invoke("save_repertoire", { input: repertoirePayload(entry, studioTree) });
-      const next = repertoire.filter((item) => item.id !== id);
-      repertoire = [saved, ...next];
-    } else {
-      const next = repertoire.filter((item) => item.id !== id);
-      repertoire = [entry, ...next];
-      if (!persistRepertoire()) return;
-    }
+    const saved = await persistEntry(entry, studioTree);
+    repertoire = [saved, ...repertoire.filter((item) => item.id !== id)];
     activeLineId = id;
+    $("#line-tags").value = entry.tags.join(", ");
+    $("#line-color").value = entry.color;
     setDirty(false);
     renderAll();
     showToast("Linea salvata nel database.");
@@ -739,25 +800,39 @@ function leaveTraining() {
   renderAll();
 }
 
-function importPgn() {
-  const text = $("#pgn-input").value.trim();
-  if (!text) {
-    showToast("Incolla prima un testo PGN.");
-    return;
+function renderImportReport(imported, failures, total) {
+  const report = $("#import-report"); if (!report) return;
+  report.replaceChildren(); report.hidden = false;
+  const heading = document.createElement("strong"); heading.textContent = imported + " di " + total + " partite importate"; report.append(heading);
+  if (failures.length) {
+    const list = document.createElement("ul");
+    for (const failure of failures) { const item = document.createElement("li"); item.textContent = "Partita " + failure.index + ": " + failure.message; list.append(item); }
+    report.append(list);
+  } else { const note = document.createElement("small"); note.textContent = "Tutte le partite sono state importate correttamente."; report.append(note); }
+}
+
+async function importPgn() {
+  const source = $("#pgn-input").value.trim();
+  if (!source) { showToast("Incolla prima un testo PGN."); return; }
+  const parsed = parsePgnCollection(source);
+  const failures = [...parsed.errors]; const savedEntries = [];
+  for (const [offset, item] of parsed.games.entries()) {
+    const now = new Date().toISOString();
+    const entry = { id: newRepertoireId(), title: item.title,
+      pgn: item.tree.toPgn({ Event: item.title }),
+      sans: item.tree.mainlinePath().map((edgeId) => item.tree.getEdge(edgeId).san),
+      edgeCount: item.tree.edges.size, nodeCount: item.tree.nodes.size,
+      createdAt: now, updatedAt: now, tree: item.tree.toJSON(), tags: [], color: DEFAULT_LINE_COLOR };
+    try {
+      const saved = await persistEntry(entry, item.tree);
+      repertoire = [saved, ...repertoire.filter((line) => line.id !== saved.id)]; savedEntries.push(saved);
+    } catch (error) { failures.push({ index: item.index || offset + 1, message: "salvataggio non riuscito: " + error.message }); }
   }
-  try {
-    const imported = RepertoireTree.fromPgn(text);
-    rebuildTimeline(imported);
-    mode = "studio";
-    activeLineId = null;
-    titleInput.value = "PGN importato";
-    setDirty(true);
-    closePromotionChooser();
-    renderAll();
-    showToast("PGN importato: varianti e transposizioni acquisite.");
-  } catch (error) {
-    showToast("PGN non valido: " + error.message);
-  }
+  if (savedEntries.length) { openLine(savedEntries[0].id); renderAll(); }
+  renderImportReport(savedEntries.length, failures, parsed.total);
+  showToast(failures.length
+    ? "Importazione completata con avvisi: " + savedEntries.length + " partite salvate."
+    : "Importate " + savedEntries.length + " partite nel repertorio.");
 }
 
 function exportPgn() {
@@ -791,9 +866,10 @@ function newPosition() {
   selectedSquare = null;
   closePromotionChooser();
   titleInput.value = "Nuova linea";
+  $("#line-tags").value = "";
+  $("#line-color").value = DEFAULT_LINE_COLOR;
   setDirty(true);
   renderAll();
-void initializePersistence();
 }
 
 async function copyFen() {
@@ -829,7 +905,7 @@ $("#flip-board").addEventListener("click", () => {
 });
 $("#copy-fen").addEventListener("click", copyFen);
 $("#save-line").addEventListener("click", saveLine);
-$("#import-pgn").addEventListener("click", importPgn);
+$("#import-pgn").addEventListener("click", () => { void importPgn(); });
 $("#export-pgn").addEventListener("click", exportPgn);
 $("#promotion-cancel").addEventListener("click", () => {
   closePromotionChooser();
@@ -844,6 +920,10 @@ promotionDialog.addEventListener("click", (event) => {
   }
 });
 titleInput.addEventListener("input", () => setDirty(true));
+$("#line-tags").addEventListener("input", () => setDirty(true));
+$("#line-color").addEventListener("input", () => setDirty(true));
+$("#repertoire-search").addEventListener("input", renderRepertoire);
+$("#repertoire-tag-filter").addEventListener("change", renderRepertoire);
 
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && pendingPromotion) {

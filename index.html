@@ -27,6 +27,10 @@
             <span>IL MIO REPERTORIO</span>
             <button class="icon-button" id="new-line" title="Nuova partita">＋</button>
           </div>
+          <div class="repertoire-filters">
+            <input id="repertoire-search" class="text-input" type="search" placeholder="Cerca linee o tag…" aria-label="Cerca repertori" />
+            <select id="repertoire-tag-filter" class="text-input" aria-label="Filtra per etichetta"><option value="">Tutte le etichette</option></select>
+          </div>
           <div id="repertoire-list" class="repertoire-list"></div>
           <div class="sidebar-note">
             <span class="note-icon">◈</span>
@@ -73,7 +77,11 @@
                 <div class="card-heading"><span class="card-icon">⌘</span><span>LINEA ATTIVA</span></div>
                 <label class="field-label" for="line-title">Nome del repertorio</label>
                 <input id="line-title" class="text-input" maxlength="70" value="Nuova linea" />
-                <div class="line-meta"><span id="line-move-count">Ancora nessuna mossa</span><span class="saved-indicator" id="saved-indicator">NON SALVATA</span></div>
+                <label class="field-label metadata-label" for="line-tags">Tag (separati da virgola)</label>
+                <input id="line-tags" class="text-input" maxlength="240" placeholder="es. Siciliana, Apertura, Nero" />
+                <label class="field-label metadata-label" for="line-color">Colore della linea</label>
+                <input id="line-color" class="color-input" type="color" value="#d7a64b" aria-label="Colore personalizzato della linea" />
+                <div class="line-meta><span id="line-move-count">Ancora nessuna mossa</span><span class="saved-indicator" id="saved-indicator">NON SALVATA</span></div>
               </section>
 
               <section class="detail-card moves-card">
@@ -95,6 +103,7 @@
                   <button class="button small ghost" id="import-pgn">Carica PGN</button>
                   <button class="button small ghost" id="export-pgn">Esporta PGN ↓</button>
                 </div>
+                <div id="import-report" class="import-report" role="status" aria-live="polite" hidden></div>
               </section>
             </aside>
           </div>
