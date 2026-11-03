@@ -1018,6 +1018,24 @@
 /* === Feature panels === */
 @layer features {
   .moves-card .card-heading { flex: 0 0 auto; }
+  .moves-card #variations-card {
+    flex: 0 0 auto;
+    margin-top: 12px;
+    padding: 12px 0 0;
+    border: 0;
+    border-top: 1px solid var(--border-subtle);
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+  .moves-card #variations-card .card-heading {
+    min-height: 22px;
+    margin-bottom: 8px;
+    color: var(--text-2);
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .line-format-label { margin-left: auto; color: var(--text-3); font-size: 12px; font-weight: 500; }
   .move-list { display: grid; align-content: start; gap: 2px; padding-right: 3px; }
   .move-row {
     min-height: 32px;
