@@ -479,26 +479,26 @@ pub fn replace_study_cards(
     }
     let mut normalized = Vec::with_capacity(cards.len());
     for card in cards {
-        let id = card.get("id").and_then(|value| value.as_str()).unwrap_or("");
+        let id = card.get("id").and_then(|value| value.as_str()).unwrap_or("").to_string();
         if id.trim().is_empty() || id.len() > 160 {
             return Err("ID flashcard non valido.".into());
         }
         let scheduler = card.get("schedulerCard").ok_or_else(|| "Stato FSRS mancante nella flashcard.".to_string())?;
         let due_at = scheduler.get("due").and_then(|value| value.as_str())
-            .ok_or_else(|| "Scadenza FSRS non valida.".to_string())?;
+            .ok_or_else(|| "Scadenza FSRS non valida.".to_string())?.to_string();
         if due_at.len() > 64 {
             return Err("Scadenza FSRS troppo lunga.".into());
         }
         let created_at = card.get("createdAt").and_then(|value| value.as_str())
-            .unwrap_or_else(|| due_at);
+            .map(str::to_string).unwrap_or_else(|| due_at.clone());
         let updated_at = card.get("lastReviewedAt").and_then(|value| value.as_str())
-            .unwrap_or(created_at);
+            .map(str::to_string).unwrap_or_else(|| created_at.clone());
         let review_history = card.get("reviewHistory").and_then(|value| value.as_array())
             .cloned().unwrap_or_default();
         if review_history.len() > 100_000 {
             return Err("Cronologia flashcard troppo grande.".into());
         }
-        normalized.push((id.to_string(), card, due_at.to_string(), created_at.to_string(), updated_at.to_string(), review_history));
+        normalized.push((id, card, due_at, created_at, updated_at, review_history));
     }
 
     let mut connection = database.0.lock().map_err(|_| "Database non disponibile.".to_string())?;
