@@ -825,7 +825,10 @@
     right: 22px;
     bottom: 22px;
     width: min(380px, calc(100vw - 32px));
-    padding: 12px 15px;
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 12px 12px 12px 15px;
     border: 1px solid var(--border-strong);
     border-left: 3px solid var(--info);
     border-radius: var(--radius-md);
@@ -833,6 +836,7 @@
     color: var(--text-1);
     box-shadow: var(--shadow-2);
     font-size: 13px;
+    line-height: 1.45;
     opacity: 0;
     transform: translateY(8px);
     pointer-events: none;
@@ -840,8 +844,26 @@
   }
   .toast.visible { opacity: 1; transform: translateY(0); }
   .toast.success { border-left-color: var(--success); }
+  .toast.info { border-left-color: var(--info); }
   .toast.warning { border-left-color: var(--warning); }
   .toast.error { border-left-color: var(--danger); }
+  .toast-message { min-width: 0; flex: 1; overflow-wrap: anywhere; }
+  .toast-close {
+    width: 28px;
+    height: 28px;
+    flex: 0 0 28px;
+    display: grid;
+    place-items: center;
+    padding: 0;
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--text-2);
+    font-size: 18px;
+    line-height: 1;
+    cursor: pointer;
+  }
+  .toast-close:hover { background: var(--surface-3); color: var(--text-1); }
 }
 
 /* === Scacchiera === */
