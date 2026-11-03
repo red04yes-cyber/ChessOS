@@ -57,6 +57,7 @@ export function createErrorFlashcard({ fen, expectedSan, actualSan, source = "ga
     reviewCount: 0,
     lapses: 0,
     lastRating: null,
+    reviewHistory: [],
   };
 }
 
@@ -95,12 +96,13 @@ export function createMistakeFlashcards(tree, pgn, existingCards = [], now = new
       const nodeIds = tree.nodesByPosition?.get(key) || [];
       if (!nodeIds.length) continue;
       const actualUci = move.from + move.to + (move.promotion || "");
-      const candidate = nodeIds
+      const candidates = nodeIds
         .map((id) => tree.getNode(id))
         .filter(Boolean)
         .map((node) => ({ node, edges: tree.getOutgoing(node.id) }))
-        .find(({ edges }) => edges.length > 0 && !edges.some((edge) => edge.uci === actualUci));
-      if (!candidate) continue;
+        .filter(({ edges }) => edges.length > 0);
+      if (!candidates.length || candidates.some(({ edges }) => edges.some((edge) => edge.uci === actualUci))) continue;
+      const candidate = candidates[0];
 
       const expected = candidate.edges.map((edge) => edge.san);
       const fingerprint = key + "|" + expected.join(",");
@@ -141,6 +143,18 @@ export function gradeStudyCard(card, grade, now = new Date()) {
     lastRating: String(grade).toLowerCase(),
     lastReviewedAt: now.toISOString(),
     lastScheduledDays: result.log.scheduled_days,
+    reviewHistory: [
+      ...(card.reviewHistory || []),
+      {
+        rating: String(grade).toLowerCase(),
+        reviewedAt: now.toISOString(),
+        scheduledDays: result.log.scheduled_days,
+        dueAt: result.card.due.toISOString(),
+        stability: result.card.stability,
+        difficulty: result.card.difficulty,
+        state: result.card.state,
+      },
+    ],
   };
 }
 
