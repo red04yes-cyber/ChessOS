@@ -343,6 +343,17 @@ export function initializeChessSuite({ getCurrentTree, loadGeneratedTree, getCur
     } catch (error) { message("#endgame-status", error.message); }
     finally { setButtonBusy(button, false); }
   }
+  function markEndgameMastered() {
+    const progress = endgameCards[endgameLesson.id] || { attempts: 0, completed: false, mastered: false };
+    progress.completed = true;
+    progress.mastered = true;
+    progress.masteredAt = new Date().toISOString();
+    endgameCards[endgameLesson.id] = progress;
+    saveEndgameProgress();
+    renderEndgameLesson();
+    message("#endgame-status", "Lezione segnata come appresa. Puoi ripeterla e rimuovere la spunta in seguito.");
+  }
+
   async function probeEndgameTablebase() {
     const button = $("#endgame-tablebase");
     const fen = endgameGame.fen();
@@ -595,6 +606,7 @@ export function initializeChessSuite({ getCurrentTree, loadGeneratedTree, getCur
     $("#endgame-analyze")?.addEventListener("click", analyzeEndgame);
     $("#endgame-engine-move")?.addEventListener("click", engineEndgameMove);
     $("#endgame-tablebase")?.addEventListener("click", probeEndgameTablebase);
+    $("#endgame-mastered")?.addEventListener("click", markEndgameMastered);
     $("#sparring-start")?.addEventListener("click", startSparring);
     $("#account-import")?.addEventListener("click", importAccountGames);
     $("#opening-analyze")?.addEventListener("click", analyzeOpenings);
