@@ -360,8 +360,9 @@ export class RepertoireTree {
     const root = tree.getNode(tree.rootId);
     if (!root || root.fen !== rootFen) throw new Error("Nodo radice non valido.");
 
-    const orderedEdges = [...data.edges].sort((a, b) => (a.order || 0) - (b.order || 0));
-    for (const source of orderedEdges) {
+    // Preserve the serialized edge order: it records each node's preferred variation order.
+    // Sorting globally by per-node order interleaves unrelated branches and changes Map order.
+    for (const source of data.edges) {
       if (!source || typeof source.id !== "string" || tree.edges.has(source.id)) {
         throw new Error("Arco del repertorio non valido.");
       }
