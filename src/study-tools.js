@@ -249,9 +249,9 @@ export function analyzeOpponentPgn(pgn, side = "black") {
       moveSequences.set(sequence, (moveSequences.get(sequence) || 0) + 1);
     }
 
+    const movetextResult = source.trim().split(/\s+/).at(-1);
     const result = headerValue(source, "Result")
-      || source.match(/(?:1-0|0-1|1\/2-1\/2|\\*)\\s*$/)?.[0]?.trim()
-      || "";
+      || (["1-0", "0-1", "1/2-1/2"].includes(movetextResult) ? movetextResult : "");
     if (result === "1/2-1/2") results.draws += 1;
     else if (result === "1-0" || result === "0-1") {
       const whiteWon = result === "1-0";
