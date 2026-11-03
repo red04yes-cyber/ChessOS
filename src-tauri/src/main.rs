@@ -9,11 +9,9 @@ use tauri::Manager;
 fn main() {
     tauri::Builder::default()
         .setup(|app| {
-            let database_path = app
-                .path()
-                .app_data_dir()?
-                .join("chess-os.sqlite3");
-            let connection = db::open_database(&database_path).map_err(|error| std::io::Error::other(error.to_string()))?;
+            let database_path = app.path().app_data_dir()?.join("chess-os.sqlite3");
+            let connection = db::open_database(&database_path)
+                .map_err(|error| std::io::Error::other(error.to_string()))?;
             app.manage(db::Database(Mutex::new(connection)));
             Ok(())
         })
