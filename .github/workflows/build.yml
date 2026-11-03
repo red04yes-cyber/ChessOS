@@ -7,6 +7,12 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      release_confirmation:
+        description: "Per pubblicare il tag selezionato, digita esattamente PUBBLICA seguito dal tag (es. PUBBLICA v0.2.0)."
+        required: false
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -189,7 +195,11 @@ jobs:
     name: Publish tagged GitHub Release
     runs-on: ubuntu-latest
     needs: [verify, dependency-audit, browser-e2e, windows-installer]
-    if: startsWith(github.ref, 'refs/tags/v')
+    environment: release
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      startsWith(github.ref, 'refs/tags/v') &&
+      inputs.release_confirmation == format('PUBBLICA {0}', github.ref_name)
     permissions:
       actions: read
       contents: write
