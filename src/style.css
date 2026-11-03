@@ -315,3 +315,53 @@ h1 { margin: 9px 0 5px; font-size: clamp(24px, 2.2vw, 31px); line-height: 1.1; l
   color: #758396;
   font-size: 10px;
 }
+
+/* Opening catalogue and FEN editor */
+.board-tools { display:flex; flex-wrap:wrap; align-items:center; gap:7px; margin:10px 0 2px; color:#8f9cad; font-size:10px; }
+.board-tools label { font-size:9px; font-weight:700; }
+.board-tool-select { border:1px solid #3a4656; border-radius:5px; background:#121923; color:#e6edf5; padding:6px 8px; font:inherit; }
+.board-tool-help { color:#7d8ca0; font-size:9px; flex:1 1 150px; }
+.board-markings { position:absolute; z-index:3; pointer-events:none; top:0; left:19px; width:calc(100% - 19px); height:calc(100% - 18px); overflow:visible; }
+.opening-recognition-row { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; }
+.opening-recognition-row strong { color:#e3eaf2; font-size:12px; line-height:1.5; }
+.eco-code { flex:0 0 auto; border:1px solid #8a6934; border-radius:5px; padding:4px 7px; background:#3b3020; color:#f0c66e; font-size:10px; font-weight:800; letter-spacing:.08em; }
+.opening-recognition-card small, .opening-source-note { display:block; color:#8796a8; font-size:9px; line-height:1.55; margin-top:7px; }
+.opening-template-card .text-input { margin-bottom:4px; }
+.opening-template-card #load-opening-template { margin-top:10px; }
+.annotation-card > small { display:block; margin:-5px 0 12px; color:#9aabba; font-size:9px; }
+.annotation-input { min-height:70px; margin-bottom:10px; }
+.annotation-card .text-input { margin-bottom:10px; }
+.annotation-card #save-move-annotation { margin-top:2px; }
+.fen-editor-dialog[hidden] { display:none; }
+.fen-editor-dialog { position:fixed; inset:0; z-index:40; display:grid; place-items:center; padding:18px; background:#070b10dd; backdrop-filter:blur(6px); }
+.fen-editor-card { width:min(1100px,100%); max-height:calc(100vh - 36px); overflow:auto; padding:22px; border:1px solid #465568; border-radius:13px; background:#17202c; box-shadow:0 24px 80px #000b; }
+.fen-editor-heading { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; margin-bottom:18px; }
+.fen-editor-heading h2 { margin:0; font-size:20px; color:#e8edf4; }
+.fen-editor-heading p { margin:6px 0 0; color:#94a2b3; font-size:11px; line-height:1.5; }
+.fen-editor-layout { display:grid; grid-template-columns:minmax(280px,1.1fr) minmax(280px,.9fr); gap:22px; align-items:start; }
+.fen-editor-board { width:min(100%,520px); aspect-ratio:1; display:grid; grid-template-columns:repeat(8,minmax(0,1fr)); grid-template-rows:repeat(8,minmax(0,1fr)); margin:0 auto 12px; overflow:hidden; border:4px solid #2b3746; border-radius:5px; }
+.fen-editor-square { min-width:0; border:0; padding:0; display:grid; place-items:center; font-family:"Segoe UI Symbol","Noto Sans Symbols 2","DejaVu Sans",serif; font-size:clamp(20px,3vw,44px); line-height:1; cursor:pointer; }
+.fen-editor-square.light { background:#d9d2bf; }
+.fen-editor-square.dark { background:#758a7e; }
+.fen-editor-square:hover { box-shadow:inset 0 0 0 4px #e3b957; }
+.fen-piece-palette { display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); gap:5px; width:min(100%,520px); margin:0 auto; }
+.fen-piece-choice { min-width:0; min-height:42px; padding:3px; display:grid; place-items:center; border:1px solid #3c495b; border-radius:6px; background:#202b39; color:#ecf1f6; font-family:"Segoe UI Symbol","DejaVu Sans",serif; font-size:27px; cursor:pointer; }
+.fen-piece-choice:hover,.fen-piece-choice.selected { border-color:#e1b45b; background:#403723; }
+.fen-editor-settings { display:grid; gap:8px; min-width:0; }
+.fen-editor-settings .field-label { margin:4px 0 0; }
+.fen-castling { display:grid; grid-template-columns:1fr 1fr; gap:8px; padding:9px; border:1px solid #354253; border-radius:6px; background:#121923; }
+.fen-castling label { color:#b9c4d1; display:flex; align-items:center; gap:6px; font-size:10px; }
+.fen-castling input { accent-color:#d7a64b; }
+.fen-counter-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+.fen-editor-actions { display:flex; gap:8px; }
+.fen-editor-status { min-height:32px; padding:8px 10px; border:1px solid #354253; border-radius:6px; color:#a9b4c2; font-size:10px; line-height:1.4; }
+.fen-editor-status.valid { border-color:#365d4b; color:#8fd0a7; background:#172a24; }
+.fen-editor-status.invalid { border-color:#774643; color:#f0a29b; background:#2b1c20; }
+.fen-editor-settings > #fen-editor-apply { justify-self:start; }
+.fen-editor-card input:focus-visible,.fen-editor-card button:focus-visible,.fen-editor-card select:focus-visible { outline:2px solid #e1b45b; outline-offset:2px; }
+@media (max-width:850px) {
+  .fen-editor-dialog { padding:8px; }
+  .fen-editor-card { max-height:calc(100vh - 16px); padding:14px; }
+  .fen-editor-layout { grid-template-columns:1fr; }
+  .fen-editor-square { font-size:clamp(22px,7vw,38px); }
+}

@@ -1,6 +1,9 @@
 import { Chess } from "chess.js";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { RepertoireTree } from "./repertoire-tree.js";
+import { fenToEditorState, editorStateToFen } from "./fen-editor.js";
+import { createOpeningPreset, getOpeningFamilyCount, identifyOpeningFromFens } from "./opening-catalog.js";
+import { encodeBoardMarks, emptyBoardMarks, nagsToSymbols, normalizeNag, parseBoardMarks, stripBoardMarkTags, toggleArrowMark, toggleSquareMark } from "./board-annotations.js";
 import {
   buildReviewCards,
   countDueCards,
@@ -63,6 +66,11 @@ let studioPly = 0;
 let studioTree = new RepertoireTree(DEFAULT_FEN);
 let studioPath = [];
 let toastTimer = null;
+let fenEditorState = null;
+let fenSelectedPiece = "wP";
+let boardMarkTool = "move";
+let boardMarkColor = "G";
+let boardMarkAnchor = null;
 
 const $ = (selector) => document.querySelector(selector);
 const boardElement = $("#chessboard");
@@ -259,6 +267,7 @@ function syncStudioPath(path, cursor = path.length) {
 }
 
 function positionForPly(ply) {
+  boardMarkAnchor = null;
   if (!Number.isInteger(ply) || ply < 0 || ply >= studioStates.length) return;
   try {
     game.load(studioStates[ply]);
@@ -359,6 +368,7 @@ function renderBoard() {
   }
 
   updateBoardCoordinates();
+  renderBoardMarkings();
   $("#turn-label").textContent = (chess.turn() === "w" ? "Bianco" : "Nero") + " al tratto";
   $("#game-status").textContent = gameStatus(chess);
   const currentCount = mode === "training" ? reviewCompleted : studioPly;
@@ -401,7 +411,9 @@ function renderMoves() {
       const san = document.createElement("button");
       san.type = "button";
       san.className = "san-move";
-      san.textContent = moves[moveIndex].san;
+      const moveEdge = mode === "studio" ? studioTree.getEdge(studioPath[moveIndex]) : null;
+      san.textContent = moves[moveIndex].san + (moveEdge ? nagsToSymbols(moveEdge.nags) : "");
+      if (moveEdge?.comment) san.title = stripBoardMarkTags(moveEdge.comment);
       san.disabled = mode === "training";
       if (moveIndex < cursor) san.classList.add("played");
       if (moveIndex === cursor - 1) san.classList.add("current-move");
@@ -471,6 +483,9 @@ function renderMode() {
     ? "Allena il richiamo delle mosse con intervalli adattivi."
     : "Costruisci linee principali, varianti e transposizioni.";
   $("#save-line").disabled = training || !databaseReady;
+  $("#board-mark-tool").disabled = training;
+  $("#board-mark-color").disabled = training;
+  $("#clear-board-marks").disabled = training;
   $("#reset").textContent = training ? "Esci dal ripasso" : "Nuova posizione";
   for (const selector of ["#line-card", "#moves-card", "#variations-card", "#import-card"]) {
     $(selector).hidden = training;
@@ -543,12 +558,399 @@ function selectVariation(edgeId) {
   }
 }
 
+
+function currentBoardMarks() {
+  if (mode !== "studio") return emptyBoardMarks();
+  if (studioPly === 0) {
+    try { return JSON.parse(studioTree.headers.ChessOSRootMarks || "{}"); } catch { return emptyBoardMarks(); }
+  }
+  const edge = studioTree.getEdge(studioPath[studioPly - 1]);
+  return edge ? parseBoardMarks(edge.comment) : emptyBoardMarks();
+}
+
+function storeCurrentBoardMarks(marks) {
+  if (studioPly === 0) {
+    if (marks.squares.length || marks.arrows.length) {
+      studioTree.headers.ChessOSRootMarks = JSON.stringify(marks);
+    } else {
+      delete studioTree.headers.ChessOSRootMarks;
+    }
+  } else {
+    const edge = studioTree.getEdge(studioPath[studioPly - 1]);
+    if (!edge) return;
+    edge.comment = encodeBoardMarks(edge.comment, marks);
+  }
+  setDirty(true);
+  renderBoardMarkings();
+  renderMoves();
+}
+
+function boardDisplayPoint(square) {
+  const file = "abcdefgh".indexOf(square[0]);
+  const rank = Number(square[1]);
+  const col = boardFlipped ? 7 - file : file;
+  const row = boardFlipped ? rank - 1 : 8 - rank;
+  return { x: col * 100 + 50, y: row * 100 + 50 };
+}
+
+function renderBoardMarkings() {
+  const svg = $("#board-markings");
+  if (!svg) return;
+  svg.replaceChildren();
+  const ns = "http://www.w3.org/2000/svg";
+  const colors = { G:"#26a269", R:"#e34b4b", Y:"#e3ad23", B:"#4285f4" };
+  const marks = currentBoardMarks();
+  const defs = document.createElementNS(ns, "defs");
+  for (const [code, color] of Object.entries(colors)) {
+    const marker = document.createElementNS(ns, "marker");
+    marker.setAttribute("id", "board-arrow-" + code);
+    marker.setAttribute("markerWidth", "7");
+    marker.setAttribute("markerHeight", "7");
+    marker.setAttribute("refX", "5.5");
+    marker.setAttribute("refY", "3.5");
+    marker.setAttribute("orient", "auto");
+    marker.setAttribute("markerUnits", "userSpaceOnUse");
+    const tip = document.createElementNS(ns, "path");
+    tip.setAttribute("d", "M0,0 L7,3.5 L0,7 Z");
+    tip.setAttribute("fill", color);
+    marker.append(tip);
+    defs.append(marker);
+  }
+  svg.append(defs);
+  for (const mark of marks.squares || []) {
+    const point = boardDisplayPoint(mark.square);
+    const rect = document.createElementNS(ns, "rect");
+    rect.setAttribute("x", String(point.x - 46));
+    rect.setAttribute("y", String(point.y - 46));
+    rect.setAttribute("width", "92");
+    rect.setAttribute("height", "92");
+    rect.setAttribute("rx", "5");
+    rect.setAttribute("fill", colors[mark.color] || colors.G);
+    rect.setAttribute("fill-opacity", "0.43");
+    svg.append(rect);
+  }
+  for (const arrow of marks.arrows || []) {
+    const from = boardDisplayPoint(arrow.from);
+    const to = boardDisplayPoint(arrow.to);
+    const line = document.createElementNS(ns, "line");
+    line.setAttribute("x1", String(from.x));
+    line.setAttribute("y1", String(from.y));
+    line.setAttribute("x2", String(to.x));
+    line.setAttribute("y2", String(to.y));
+    line.setAttribute("stroke", colors[arrow.color] || colors.G);
+    line.setAttribute("stroke-width", "11");
+    line.setAttribute("stroke-linecap", "round");
+    line.setAttribute("stroke-opacity", "0.9");
+    line.setAttribute("marker-end", "url(#board-arrow-" + (arrow.color in colors ? arrow.color : "G") + ")");
+    svg.append(line);
+  }
+  if (boardMarkAnchor) {
+    const point = boardDisplayPoint(boardMarkAnchor);
+    const circle = document.createElementNS(ns, "circle");
+    circle.setAttribute("cx", String(point.x));
+    circle.setAttribute("cy", String(point.y));
+    circle.setAttribute("r", "39");
+    circle.setAttribute("fill", "none");
+    circle.setAttribute("stroke", colors[boardMarkColor] || colors.G);
+    circle.setAttribute("stroke-width", "8");
+    circle.setAttribute("stroke-dasharray", "11 7");
+    svg.append(circle);
+  }
+}
+
+function handleBoardMarkSquare(square) {
+  if (mode !== "studio") {
+    showToast("Le annotazioni sono disponibili in Studio.");
+    return;
+  }
+  let marks = currentBoardMarks();
+  if (boardMarkTool === "square") {
+    marks = toggleSquareMark(marks, square, boardMarkColor);
+    storeCurrentBoardMarks(marks);
+    return;
+  }
+  if (boardMarkTool === "arrow") {
+    if (!boardMarkAnchor) {
+      boardMarkAnchor = square;
+      renderBoardMarkings();
+      return;
+    }
+    if (boardMarkAnchor === square) {
+      boardMarkAnchor = null;
+      renderBoardMarkings();
+      return;
+    }
+    marks = toggleArrowMark(marks, boardMarkAnchor, square, boardMarkColor);
+    boardMarkAnchor = null;
+    storeCurrentBoardMarks(marks);
+    return;
+  }
+}
+
+function clearCurrentBoardMarks() {
+  boardMarkAnchor = null;
+  storeCurrentBoardMarks(emptyBoardMarks());
+}
+
+function renderAnnotationEditor() {
+  const commentInput = $("#move-comment");
+  const nagInput = $("#move-nag");
+  const targetLabel = $("#annotation-target");
+  if (!commentInput || !nagInput || !targetLabel) return;
+  const edge = studioPly > 0 ? studioTree.getEdge(studioPath[studioPly - 1]) : null;
+  const comment = edge ? edge.comment : (studioTree.headers.ChessOSRootComment || "");
+  const nag = edge ? (edge.nags?.[0] || "") : (studioTree.headers.ChessOSRootNAG || "");
+  commentInput.value = stripBoardMarkTags(comment);
+  nagInput.value = normalizeNag(nag);
+  targetLabel.textContent = edge ? "Mossa " + edge.san + " · modifica l'ultima mossa raggiunta" : "Posizione iniziale · annotazione della radice";
+  const disabled = mode !== "studio";
+  commentInput.disabled = disabled;
+  nagInput.disabled = disabled;
+  $("#save-move-annotation").disabled = disabled;
+}
+
+function saveMoveAnnotation() {
+  if (mode !== "studio") return;
+  const comment = $("#move-comment").value.trim();
+  const nag = normalizeNag($("#move-nag").value);
+  if (studioPly === 0) {
+    if (comment) studioTree.headers.ChessOSRootComment = comment;
+    else delete studioTree.headers.ChessOSRootComment;
+    if (nag) studioTree.headers.ChessOSRootNAG = nag;
+    else delete studioTree.headers.ChessOSRootNAG;
+  } else {
+    const edge = studioTree.getEdge(studioPath[studioPly - 1]);
+    if (!edge) return;
+    edge.comment = encodeBoardMarks(comment, currentBoardMarks());
+    edge.nags = nag ? [nag] : [];
+  }
+  setDirty(true);
+  renderMoves();
+  renderAnnotationEditor();
+  renderBoardMarkings();
+  showToast("Annotazione salvata nella linea.");
+}
+
+function localizedOpeningName(name) {
+  const translations = [
+    ["Sicilian Defense", "Difesa Siciliana"],
+    ["Italian Game", "Partita Italiana"],
+    ["French Defense", "Difesa Francese"],
+    ["Caro-Kann Defense", "Difesa Caro-Kann"],
+    ["Ruy Lopez", "Partita Spagnola"],
+    ["Queen's Gambit", "Gambetto di Donna"],
+    ["King's Gambit", "Gambetto di Re"],
+    ["King's Indian Defense", "Difesa Indiana di Re"],
+    ["Queen's Indian Defense", "Difesa Indiana di Donna"],
+    ["Nimzo-Indian Defense", "Difesa Nimzo-Indiana"],
+    ["Grunfeld Defense", "Difesa Grünfeld"],
+    ["English Opening", "Apertura Inglese"],
+    ["Réti Opening", "Apertura Réti"],
+    ["Scandinavian Defense", "Difesa Scandinava"],
+    ["Pirc Defense", "Difesa Pirc"],
+    ["Modern Defense", "Difesa Moderna"],
+    ["Alekhine Defense", "Difesa Alekhine"],
+    ["Dutch Defense", "Difesa Olandese"],
+    ["Slav Defense", "Difesa Slava"],
+    ["Semi-Slav Defense", "Difesa Semi-Slava"],
+    ["King's Indian Attack", "Attacco Est-Indiano"],
+  ];
+  for (const [english, italian] of translations) {
+    if (name === english || name.startsWith(english + ":")) return italian + name.slice(english.length);
+  }
+  return name.replace(" Defense", " Defense");
+}
+
+function renderOpeningRecognition() {
+  const nameElement = $("#opening-recognized-name");
+  const ecoElement = $("#opening-recognized-eco");
+  const detailElement = $("#opening-recognized-detail");
+  if (!nameElement || !ecoElement || !detailElement) return;
+  if (mode !== "studio") {
+    nameElement.textContent = "Riconoscimento disponibile in Studio";
+    ecoElement.textContent = "—";
+    detailElement.textContent = "";
+    return;
+  }
+  try {
+    const result = identifyOpeningFromFens(studioStates.slice(0, studioPly + 1));
+    if (!result) {
+      nameElement.textContent = "Apertura non ancora identificata";
+      ecoElement.textContent = "—";
+      detailElement.textContent = studioPly === 0
+        ? "Gioca le prime mosse per riconoscere un'apertura."
+        : "Il catalogo contiene 3.865 linee curate per 500 codici ECO.";
+      return;
+    }
+    nameElement.textContent = localizedOpeningName(result.name);
+    ecoElement.textContent = result.eco;
+    detailElement.textContent = "Riconosciuta alla mossa " + result.matchedPly + " · " + result.alternatives.length + " denominazioni per questa posizione";
+  } catch (error) {
+    nameElement.textContent = "Catalogo non disponibile";
+    ecoElement.textContent = "—";
+    detailElement.textContent = error.message;
+  }
+}
+
+function renderFenPalette() {
+  const palette = $("#fen-piece-palette");
+  if (!palette) return;
+  palette.replaceChildren();
+  const choices = [
+    { code:"", label:"Gomma", glyph:"⌫" },
+    ...["K","Q","R","B","N","P"].map((piece) => ({ code:"w"+piece, label:"Bianco "+piece, glyph:symbols.w[piece.toLowerCase()] })),
+    ...["K","Q","R","B","N","P"].map((piece) => ({ code:"b"+piece, label:"Nero "+piece, glyph:symbols.b[piece.toLowerCase()] })),
+  ];
+  for (const choice of choices) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "fen-piece-choice";
+    button.dataset.piece = choice.code;
+    button.textContent = choice.glyph;
+    button.title = choice.label;
+    button.setAttribute("aria-label", choice.label);
+    if (fenSelectedPiece === choice.code) button.classList.add("selected");
+    button.addEventListener("click", () => {
+      fenSelectedPiece = choice.code;
+      renderFenPalette();
+    });
+    palette.append(button);
+  }
+}
+
+function syncFenEditorFields() {
+  if (!fenEditorState) return;
+  $("#fen-turn").value = fenEditorState.turn;
+  for (const input of document.querySelectorAll("#fen-castling input[data-right]")) {
+    input.checked = fenEditorState.castling.includes(input.dataset.right);
+  }
+  $("#fen-en-passant").value = fenEditorState.enPassant;
+  $("#fen-halfmove").value = String(fenEditorState.halfmove);
+  $("#fen-fullmove").value = String(fenEditorState.fullmove);
+  try {
+    $("#fen-editor-string").value = editorStateToFen(fenEditorState);
+    $("#fen-editor-status").textContent = "Posizione FEN valida.";
+    $("#fen-editor-status").className = "fen-editor-status valid";
+  } catch (error) {
+    $("#fen-editor-status").textContent = error.message;
+    $("#fen-editor-status").className = "fen-editor-status invalid";
+  }
+}
+
+function renderFenEditorBoard() {
+  const board = $("#fen-editor-board");
+  if (!board || !fenEditorState) return;
+  board.replaceChildren();
+  for (let row = 0; row < 8; row += 1) {
+    for (let col = 0; col < 8; col += 1) {
+      const square = "abcdefgh"[col] + String(8 - row);
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "fen-editor-square " + ((row + col) % 2 === 0 ? "light" : "dark");
+      button.dataset.square = square;
+      const code = fenEditorState.pieces[square] || "";
+      button.textContent = code ? symbols[code[0]][code[1].toLowerCase()] : "";
+      button.setAttribute("aria-label", square + (code ? " " + code : " vuota"));
+      button.addEventListener("click", () => {
+        if (fenSelectedPiece) fenEditorState.pieces[square] = fenSelectedPiece;
+        else delete fenEditorState.pieces[square];
+        renderFenEditorBoard();
+        syncFenEditorFields();
+      });
+      board.append(button);
+    }
+  }
+}
+
+function openFenEditor() {
+  if (mode === "training") {
+    showToast("Esci dall'allenamento per modificare la posizione.");
+    return;
+  }
+  try {
+    fenEditorState = fenToEditorState(game.fen());
+    fenSelectedPiece = "wP";
+    renderFenPalette();
+    renderFenEditorBoard();
+    syncFenEditorFields();
+    $("#fen-editor-dialog").hidden = false;
+  } catch (error) {
+    showToast("Impossibile aprire l'editor FEN: " + error.message);
+  }
+}
+
+function loadFenEditorText() {
+  try {
+    const fen = $("#fen-editor-string").value.trim();
+    fenEditorState = fenToEditorState(fen);
+    renderFenEditorBoard();
+    syncFenEditorFields();
+  } catch (error) {
+    $("#fen-editor-status").textContent = error.message;
+    $("#fen-editor-status").className = "fen-editor-status invalid";
+  }
+}
+
+function applyFenEditorPosition() {
+  try {
+    const state = { ...fenEditorState };
+    state.turn = $("#fen-turn").value;
+    state.castling = [...document.querySelectorAll("#fen-castling input[data-right]:checked")].map((input) => input.dataset.right);
+    state.enPassant = $("#fen-en-passant").value.trim();
+    state.halfmove = Number($("#fen-halfmove").value);
+    state.fullmove = Number($("#fen-fullmove").value);
+    const fen = editorStateToFen(state);
+    if (!confirmDiscardChanges("sostituire la posizione corrente")) return;
+    baseFen = fen;
+    studioTree = new RepertoireTree(fen, { Event:"Chess OS custom position" });
+    syncStudioPath([]);
+    activeLineId = null;
+    mode = "studio";
+    boardMarkTool = "move";
+    boardMarkAnchor = null;
+    titleInput.value = "Posizione personalizzata";
+    selectedSquare = null;
+    closePromotionChooser();
+    setDirty(true);
+    $("#fen-editor-dialog").hidden = true;
+    renderAll();
+    showToast("Posizione FEN applicata. Ora puoi creare la tua linea.");
+  } catch (error) {
+    $("#fen-editor-status").textContent = error.message;
+    $("#fen-editor-status").className = "fen-editor-status invalid";
+  }
+}
+
+function loadOpeningTemplate() {
+  const family = $("#opening-template").value;
+  if (!family) return;
+  if (!confirmDiscardChanges("caricare il repertorio iniziale selezionato")) return;
+  try {
+    const preset = createOpeningPreset(family);
+    studioTree = preset.tree;
+    baseFen = preset.tree.rootFen;
+    syncStudioPath(preset.tree.mainlinePath());
+    activeLineId = null;
+    mode = "studio";
+    titleInput.value = "Repertorio " + localizedOpeningName(family);
+    selectedSquare = null;
+    closePromotionChooser();
+    setDirty(true);
+    renderAll();
+    showToast(preset.rows + " linee caricate · " + preset.tree.edges.size + " mosse/rami disponibili. Salva il repertorio per conservarlo.");
+  } catch (error) {
+    showToast("Impossibile caricare il repertorio: " + error.message);
+  }
+}
+
 function renderAll() {
   renderBoard();
   renderMoves();
   renderVariations();
   renderRepertoire();
   renderMode();
+  renderOpeningRecognition();
+  renderAnnotationEditor();
   renderReviewPanel();
 }
 
@@ -658,6 +1060,10 @@ function commitSelectedMove(selectedMove) {
 
 function handleSquareClick(square) {
   const chess = activeGame();
+  if (mode === "studio" && boardMarkTool !== "move") {
+    handleBoardMarkSquare(square);
+    return;
+  }
   if (pendingPromotion) return;
   if (chess.isGameOver()) {
     showToast(gameStatus(chess));
@@ -1290,6 +1696,32 @@ $("#flip-board").addEventListener("click", () => {
 });
 $("#copy-fen").addEventListener("click", copyFen);
 $("#save-line").addEventListener("click", saveLine);
+$("#open-fen-editor").addEventListener("click", openFenEditor);
+$("#fen-editor-close").addEventListener("click", () => { $("#fen-editor-dialog").hidden = true; });
+$("#fen-editor-apply").addEventListener("click", applyFenEditorPosition);
+$("#fen-editor-load").addEventListener("click", loadFenEditorText);
+$("#fen-editor-standard").addEventListener("click", () => {
+  fenEditorState = fenToEditorState(DEFAULT_FEN);
+  renderFenEditorBoard();
+  syncFenEditorFields();
+});
+$("#fen-turn").addEventListener("change", () => { fenEditorState.turn = $("#fen-turn").value; syncFenEditorFields(); });
+$("#fen-en-passant").addEventListener("input", () => { fenEditorState.enPassant = $("#fen-en-passant").value.trim(); syncFenEditorFields(); });
+$("#fen-halfmove").addEventListener("input", () => { fenEditorState.halfmove = Number($("#fen-halfmove").value); syncFenEditorFields(); });
+$("#fen-fullmove").addEventListener("input", () => { fenEditorState.fullmove = Number($("#fen-fullmove").value); syncFenEditorFields(); });
+$("#fen-castling").addEventListener("change", () => {
+  fenEditorState.castling = [...document.querySelectorAll("#fen-castling input[data-right]:checked")].map((input) => input.dataset.right);
+  syncFenEditorFields();
+});
+$("#load-opening-template").addEventListener("click", loadOpeningTemplate);
+$("#opening-template").addEventListener("change", () => {
+  const family = $("#opening-template").value;
+  $("#opening-template-count").textContent = family ? getOpeningFamilyCount(family) + " linee catalogate" : "Seleziona un'apertura";
+});
+$("#board-mark-tool").addEventListener("change", () => { boardMarkTool = $("#board-mark-tool").value; boardMarkAnchor = null; renderBoardMarkings(); });
+$("#board-mark-color").addEventListener("change", () => { boardMarkColor = $("#board-mark-color").value; renderBoardMarkings(); });
+$("#clear-board-marks").addEventListener("click", clearCurrentBoardMarks);
+$("#save-move-annotation").addEventListener("click", saveMoveAnnotation);
 $("#import-pgn").addEventListener("click", importPgn);
 $("#export-pgn").addEventListener("click", exportPgn);
 $("#promotion-cancel").addEventListener("click", () => {
