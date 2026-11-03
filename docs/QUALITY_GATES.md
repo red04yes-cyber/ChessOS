@@ -54,6 +54,12 @@ Accettazione scacchistica manuale ancora necessaria:
 4. Confermare che Tactical Trainer presenti gli esercizi come candidati euristici, non come puzzle certificati.
 5. Disconnettere la rete e verificare che il worker Stockfish locale funzioni quando gli asset sono installati.
 
+6. Analizzare un PGN con una mossa corretta e una mossa che perde almeno 2 pedoni; verificare che il report non segnali la mossa già preferita dal motore e mostri la variante.
+7. Completare una sessione di flashcard dagli errori: verificare deduplicazione per posizione, persistenza dopo riavvio e intervalli Again/Hard/Good/Easy. Confermare che il mazzo è nel localStorage WebView e non nel database SQLite.
+8. Avviare Blindfold con un repertorio contenente almeno una mossa per lato; controllare che la posizione non sia visibile prima della risposta e che la scacchiera della soluzione compaia dopo risposta corretta o reveal.
+9. Allenare alcune carte di una linea e controllare che la heatmap usi solo il repertorio attivo, distingua errori e scadenze e lasci non misurabili le posizioni senza cronologia.
+10. Preparare un avversario usando PGN con nome, Date, Opening e Result; verificare filtro del nome, intervallo date, colori, risultati e che le percentuali riflettano solo le partite importate.
+
 
 ## Aggiornamenti e pubblicazione
 
