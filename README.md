@@ -11,7 +11,8 @@ Windows-first chess repertoire and training desktop app. This repository now con
 - Board rotation and current-position FEN copy
 - Check, checkmate, stalemate and draw status
 - Create, rename, save, open and delete repertoire lines
-- Local persistence in browser/Tauri WebView storage
+- SQLite persistence in the Windows desktop app, with localStorage fallback for browser preview
+- Versioned SQLite migrations, normalized position/move tables and localStorage-to-SQLite import
 - PGN import and export, including recursive annotation variations (RAV)
 - Repertoire graph with move nodes/edges, branch navigation and in-place variation editing
 - Position transposition detection so equivalent positions reached by different move orders converge on one node
@@ -26,7 +27,7 @@ Windows-first chess repertoire and training desktop app. This repository now con
 This is **not** the recovered 0.7.0 application and is not yet feature-complete against the original roadmap. The following are not implemented in this rebuild:
 
 - FSRS scheduling and review history
-- SQLite database and schema migrations
+- SQLite database backup/export and restore UI
 - Stockfish analysis / evaluation
 - Dashboard, analytics, goals and exams
 - Cloud sync, account system and backups
@@ -66,9 +67,11 @@ The NSIS installer is configured for a per-user installation (no administrator p
 
 The installer, when a successful CI run produces it, is uploaded as the `chess-os-windows-installer` workflow artifact. A successful build has not yet been independently verified.
 
-## Data
+## Data and SQLite
 
-Repertoire lines are stored locally in the WebView/browser `localStorage`. Export important lines to PGN for backup. Clearing application/browser data will remove locally stored repertoire data.
+The Tauri desktop app stores repertoire data in `chess-os.sqlite3` inside the application data directory managed by Tauri. The database has versioned migrations (`schema_migrations`), a repertoire table, normalized position and move-edge tables (so branches and transpositions are retained), app settings, and the tables reserved for training cards and review history. Foreign keys and cascading deletes keep each repertoire graph consistent. The browser preview uses `localStorage` only as a development fallback.
+
+On first desktop startup, Chess OS imports legacy `chess-os.repertoire.v1` entries from WebView `localStorage` that are not already in SQLite. The legacy key is removed only after all entries have imported successfully. To back up a repertoire today, export it as PGN; a full SQLite backup/restore interface is still planned. See [docs/DATABASE.md](docs/DATABASE.md) for the schema and migration details.
 
 ## License
 
