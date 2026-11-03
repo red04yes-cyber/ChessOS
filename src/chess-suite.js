@@ -809,7 +809,18 @@ export function initializeChessSuite({ getCurrentTree, loadGeneratedTree, getCur
           "Analisi partita " + progress.game + "/" + progress.games + " · semimossa " + progress.ply + "/" + progress.plies + "…"),
       });
       renderGameAnalysisReport(latestGameReport);
-      message("#game-report-status", "Report pronto. Le categorie sono stime in centipawn, non giudizi assoluti sulla qualità umana.");
+      let cardSummary = "Nessun errore da trasformare in flashcard.";
+      if (latestGameReport.mistakes.length) {
+        const updated = upsertMistakeFlashcards(mistakeCards, latestGameReport.mistakes);
+        mistakeCards = updated.cards;
+        if (persistMistakeFlashcards()) {
+          renderMistakeFlashcardSummary();
+          cardSummary = updated.added + " nuove flashcard FSRS · " + updated.updated + " aggiornate.";
+        } else {
+          cardSummary = "Flashcard individuate ma non salvate: controlla lo spazio disponibile in localStorage.";
+        }
+      }
+      message("#game-report-status", "Report pronto. " + cardSummary + " Le categorie sono stime in centipawn, non giudizi assoluti sulla qualità umana.");
     } catch (error) {
       message("#game-report-status", "Report non completato: " + error.message);
     } finally {
@@ -833,7 +844,7 @@ export function initializeChessSuite({ getCurrentTree, loadGeneratedTree, getCur
         const title = document.createElement("strong");
         title.textContent = opening.name + " · " + opening.games + " occorrenze (" + opening.percentage + "%)";
         const outcomes = document.createElement("p");
-        outcomes.textContent = "Risultati dal punto di vista dell'avversario: " + opening.wins + " vittorie, " + opening.draws + " patte, " + opening.losses + " sconfitte.";
+        outcomes.textContent = "Risultati dal punto di vista del giocatore/lato selezionato: " + opening.wins + " vittorie, " + opening.draws + " patte, " + opening.losses + " sconfitte.";
         row.append(title, outcomes);
         target.append(row);
       }
@@ -874,7 +885,23 @@ export function initializeChessSuite({ getCurrentTree, loadGeneratedTree, getCur
         detail.textContent = item.accuracy === null
           ? "Nessun dato FSRS · " + item.overdue + " carte scadute."
           : item.accuracy + "% richiamo · " + item.reviews + " ripassi · " + item.misses + " errori · " + item.overdue + " carte scadute · " + item.confidence;
-        row.append(title, detail);
+        const meter = document.createElement("div");
+        meter.className = "weakness-meter";
+        meter.setAttribute("role", "meter");
+        meter.setAttribute("aria-label", "Indice di debolezza");
+        meter.setAttribute("aria-valuemin", "0");
+        meter.setAttribute("aria-valuemax", "100");
+        if (item.weaknessScore === null) {
+          meter.setAttribute("aria-valuetext", "Non misurabile");
+        } else {
+          meter.setAttribute("aria-valuenow", String(item.weaknessScore));
+          meter.setAttribute("aria-valuetext", item.weaknessScore + " su 100");
+        }
+        const fill = document.createElement("span");
+        fill.className = "weakness-meter-fill";
+        fill.style.width = (item.weaknessScore === null ? 0 : item.weaknessScore) + "%";
+        meter.append(fill);
+        row.append(title, detail, meter);
         target.append(row);
       }
       message("#weakness-heatmap-status", report.totalMoves
@@ -1011,6 +1038,7 @@ export function initializeChessSuite({ getCurrentTree, loadGeneratedTree, getCur
       if (event.target.closest("[data-rating]")) gradeCurrentMistakeCard({ currentTarget: event.target.closest("[data-rating]") });
     });
     $("#blindfold-start")?.addEventListener("click", startBlindfold);
+    $("#blindfold-answer")?.addEventListener("keydown", (event) => { if (event.key === "Enter") checkBlindfoldAnswer(); });
     $("#blindfold-check")?.addEventListener("click", checkBlindfoldAnswer);
     $("#blindfold-reveal")?.addEventListener("click", revealBlindfoldAnswer);
     $("#blindfold-next")?.addEventListener("click", nextBlindfoldMove);
