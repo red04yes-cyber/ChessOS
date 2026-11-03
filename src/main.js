@@ -11,10 +11,26 @@ import "./style.css";
 const STORAGE_KEY = "chess-os.repertoire.v1";
 const DEFAULT_FEN = new Chess().fen();
 const files = "abcdefgh";
-const symbols = {
-  w: { k: "♔", q: "♕", r: "♖", b: "♗", n: "♘", p: "♙" },
-  b: { k: "♚", q: "♛", r: "♜", b: "♝", n: "♞", p: "♟︎" },
+const pieceNames = {
+  k: "Re",
+  q: "Donna",
+  r: "Torre",
+  b: "Alfiere",
+  n: "Cavallo",
+  p: "Pedone",
 };
+
+function createPieceElement(color, type) {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("class", "piece " + (color === "w" ? "white-piece" : "black-piece"));
+  svg.setAttribute("viewBox", "0 0 45 45");
+  svg.setAttribute("aria-hidden", "true");
+  svg.setAttribute("focusable", "false");
+  const use = document.createElementNS(svg.namespaceURI, "use");
+  use.setAttribute("href", "#piece-" + color + type);
+  svg.append(use);
+  return svg;
+}
 const promotionNames = { q: "Donna", r: "Torre", b: "Alfiere", n: "Cavallo" };
 
 let game = new Chess();
@@ -482,13 +498,25 @@ function renderBoard() {
       if (legalTargets.has(square)) button.classList.add(piece ? "capture-target" : "legal-target");
 
       if (piece) {
-        const pieceSpan = document.createElement("span");
-        pieceSpan.className = "piece " + (piece.color === "w" ? "white-piece" : "black-piece");
-        pieceSpan.textContent = symbols[piece.color][piece.type];
-        button.append(pieceSpan);
-        button.setAttribute("aria-label", (piece.color === "w" ? "Bianco " : "Nero ") + piece.type + " in " + square);
+        button.append(createPieceElement(piece.color, piece.type));
+        button.setAttribute("aria-label", pieceNames[piece.type] + " " + (piece.color === "w" ? "bianco" : "nero") + " in " + square);
       } else {
-        button.setAttribute("aria-label", square);
+        button.setAttribute("aria-label", "Casa vuota " + square);
+      }
+
+      if (displayCol === 0) {
+        const rank = document.createElement("span");
+        rank.className = "coord-label coord-rank";
+        rank.textContent = String(8 - rowIndex);
+        rank.setAttribute("aria-hidden", "true");
+        button.append(rank);
+      }
+      if (displayRow === 7) {
+        const file = document.createElement("span");
+        file.className = "coord-label coord-file";
+        file.textContent = files[colIndex];
+        file.setAttribute("aria-hidden", "true");
+        button.append(file);
       }
       boardElement.append(button);
     }
@@ -706,9 +734,7 @@ function openPromotionChooser(from, to, legalMoves) {
     button.type = "button";
     button.className = "promotion-choice";
     button.setAttribute("aria-label", "Promuovi a " + promotionNames[type]);
-    const piece = document.createElement("span");
-    piece.className = "piece " + (color === "w" ? "white-piece" : "black-piece");
-    piece.textContent = symbols[color][type];
+    const piece = createPieceElement(color, type);
     const label = document.createElement("small");
     label.textContent = promotionNames[type];
     button.append(piece, label);
