@@ -302,23 +302,6 @@ export function initChessLab(options) {
     renderPuzzles(report.puzzles);
   }
 
-  async function evaluateTimeline(positions, moves, depth, shouldStop, onProgress, maxAllowed) {
-    const maxPlies = Math.min(moves.length, maxAllowed);
-    const evaluations = [];
-    for (let index = 0; index <= maxPlies; index += 1) {
-      if (shouldStop()) return { cancelled: true, maxPlies };
-      onProgress(index + 1, maxPlies + 1);
-      evaluations.push(await searchPosition(positions[index], depth));
-    }
-    const report = buildMoveReview(
-      positions.slice(0, maxPlies + 1),
-      moves.slice(0, maxPlies),
-      evaluations,
-      { headers: arguments[0] && arguments[4]?.headers, playerNames: getPlayerNames() },
-    );
-    return { cancelled: false, maxPlies, report };
-  }
-
   async function reviewGame() {
     if (reviewRunning || archiveRunning) return;
     if (getMode() !== "studio") {
@@ -369,6 +352,177 @@ export function initChessLab(options) {
   async function stopReview() {
     reviewCancelled = true;
     try { await invoke("stockfish_stop_analysis"); } catch { /* Il motore potrebbe aver già concluso. */ }
+  }
+
+  function readAnalysisStore() {
+    try {
+      const value = JSON.parse(localStorage.getItem(ANALYSIS_STORAGE_KEY) || "{}");
+      return value && typeof value === "object" ? value : {};
+    } catch {
+      return {};
+    }
+  }
+
+  function writeAnalysisStore(store) {
+    try {
+      const entries = Object.entries(store).slice(-100);
+      localStorage.setItem(ANALYSIS_STORAGE_KEY, JSON.stringify(Object.fromEntries(entries)));
+    } catch {
+      setStatus("#lab-archive-status", "Analisi completate, ma lo spazio locale non basta per salvarle tutte.", true);
+    }
+  }
+
+  function archiveDate(report) {
+    const value = String(report.date || "");
+    const match = value.match(/^(\d{4})[.\-/](\d{2})[.\-/](\d{2})$/);
+    return match ? match[1] + "-" + match[2] + "-" + match[3] : value || report.createdAt || "";
+  }
+
+  function renderArchiveReports(reports) {
+    const sorted = [...reports].sort((a, b) => archiveDate(a).localeCompare(archiveDate(b)));
+    const scores = sorted.map((report) => report.playerAccuracy ?? report.accuracy).filter(Number.isFinite);
+    const average = scores.length ? scores.reduce((sum, value) => sum + value, 0) / scores.length : null;
+    const puzzles = sorted.reduce((sum, report) => sum + (report.puzzles?.length || 0), 0);
+    const summary = $("#lab-archive-summary");
+    summary.replaceChildren();
+    const metric = (label, value) => {
+      const item = document.createElement("span");
+      item.className = "lab-metric";
+      item.textContent = label + ": " + value;
+      summary.append(item);
+    };
+    metric("Partite analizzate", sorted.length);
+    metric("Precisione media", average === null ? "—" : average.toFixed(1) + "%");
+    metric("Puzzle", puzzles);
+    renderLineChart("#lab-archive-chart", scores, "accuracy");
+    const target = $("#lab-archive-results");
+    target.replaceChildren();
+    for (const report of [...sorted].reverse()) {
+      const item = document.createElement("article");
+      item.className = "lab-archive-row";
+      const detail = document.createElement("p");
+      detail.textContent = (report.title || "Partita") + " · " + (archiveDate(report) || "data non disponibile")
+        + " · Precisione " + ((report.playerAccuracy ?? report.accuracy) === null ? "—" : (report.playerAccuracy ?? report.accuracy).toFixed(1) + "%")
+        + " · " + (report.puzzles?.length || 0) + " puzzle";
+      const open = document.createElement("button");
+      open.type = "button";
+      open.className = "button small ghost";
+      open.textContent = "Apri report";
+      open.addEventListener("click", () => {
+        if (!openArchiveGame(report.id)) {
+          setStatus("#lab-archive-status", "Non è stato possibile aprire la partita nel repertorio.", true);
+          return;
+        }
+        renderReviewReport(report, report.totalPlies || report.rows.length, Boolean(report.truncated));
+        setStatus("#lab-review-status", "Report salvato · " + report.title);
+      });
+      item.append(detail, open);
+      target.append(item);
+    }
+    if (!sorted.length) {
+      target.textContent = "Non ci sono ancora report. Avvia l'analisi dell'archivio.";
+    }
+  }
+
+  async function analyzeArchive() {
+    if (!desktopApp) {
+      setStatus("#lab-archive-status", "L'analisi Stockfish dell'archivio richiede l'app desktop Windows.", true);
+      return;
+    }
+    if (archiveRunning || reviewRunning) return;
+    const allEntries = getArchive().filter((entry) => entry?.id && entry?.pgn);
+    if (!allEntries.length) {
+      setStatus("#lab-archive-status", "L'archivio è vuoto: sincronizza prima un account o importa un PGN.", true);
+      return;
+    }
+    const selected = $("#lab-archive-limit").value;
+    const limit = selected === "all" ? allEntries.length : Number(selected);
+    const entries = allEntries.slice(0, limit);
+    const store = readAnalysisStore();
+    const todo = entries.filter((entry) => store[entry.id]?.version !== 2);
+    if (!todo.length) {
+      renderArchiveReports(entries.map((entry) => store[entry.id]).filter(Boolean));
+      setStatus("#lab-archive-status", "Le " + entries.length + " partite selezionate hanno già un report salvato. Cambia intervallo per continuare con altre partite.");
+      return;
+    }
+
+    archiveRunning = true;
+    archiveCancelled = false;
+    $("#lab-archive-analyze").disabled = true;
+    $("#lab-archive-stop").disabled = false;
+    $("#lab-archive-progress").style.width = "0%";
+    let completed = 0;
+    let failed = 0;
+    try {
+      for (const [index, entry] of todo.entries()) {
+        if (archiveCancelled) break;
+        setStatus("#lab-archive-status", "Partita " + (index + 1) + " / " + todo.length + ": " + (entry.title || "senza titolo"));
+        let timeline;
+        try {
+          timeline = timelineFromPgn(entry.pgn);
+          if (!timeline.moves.length) throw new Error("La partita non contiene mosse.");
+          const maxPlies = Math.min(timeline.moves.length, 60);
+          const evaluations = [];
+          for (let ply = 0; ply <= maxPlies; ply += 1) {
+            if (archiveCancelled) break;
+            const absolute = completed + (ply + 1) / (maxPlies + 1);
+            $("#lab-archive-progress").style.width = (absolute / todo.length * 100) + "%";
+            setStatus("#lab-archive-status", "Partita " + (index + 1) + " / " + todo.length + " · posizione " + (ply + 1) + " / " + (maxPlies + 1));
+            evaluations.push(await searchPosition(timeline.positions[ply], 8));
+          }
+          if (archiveCancelled) break;
+          const review = buildMoveReview(
+            timeline.positions.slice(0, maxPlies + 1),
+            timeline.moves.slice(0, maxPlies),
+            evaluations,
+            { headers: timeline.headers, playerNames: getPlayerNames() },
+          );
+          const report = {
+            version: 2,
+            id: entry.id,
+            title: entry.title || timeline.headers.Event || "Partita",
+            date: timeline.headers.Date || "",
+            createdAt: entry.createdAt || "",
+            totalPlies: maxPlies,
+            truncated: timeline.moves.length > maxPlies,
+            accuracy: review.accuracy,
+            whiteAccuracy: review.whiteAccuracy,
+            blackAccuracy: review.blackAccuracy,
+            playerAccuracy: review.playerAccuracy,
+            playerSide: review.playerSide,
+            counts: review.counts,
+            rows: review.rows,
+            evals: review.evals,
+            puzzles: review.puzzles,
+          };
+          store[entry.id] = report;
+          writeAnalysisStore(store);
+          completed += 1;
+        } catch (error) {
+          failed += 1;
+          const errors = $("#lab-archive-results");
+          const line = document.createElement("p");
+          line.className = "lab-note";
+          line.textContent = (entry.title || "Partita") + ": " + error.message;
+          errors.append(line);
+        }
+      }
+      const reports = entries.map((entry) => store[entry.id]).filter(Boolean);
+      renderArchiveReports(reports);
+      setStatus("#lab-archive-status", (archiveCancelled ? "Analisi interrotta. " : "Analisi completata. ")
+        + completed + " nuove partite analizzate, " + failed + " non riuscite. I report già salvati sono stati mantenuti.");
+    } catch (error) {
+      setStatus("#lab-archive-status", "Analisi archivio non riuscita: " + error.message, true);
+    } finally {
+      archiveRunning = false;
+      $("#lab-archive-analyze").disabled = !desktopApp;
+      $("#lab-archive-stop").disabled = true;
+    }
+  }
+
+  async function stopArchiveAnalysis() {
+    archiveCancelled = true;
+    try { await invoke("stockfish_stop_analysis"); } catch { /* La ricerca potrebbe essere già conclusa. */ }
   }
 
   async function playEngineTurn() {
