@@ -27,6 +27,17 @@
   "bundle": {
     "active": true,
     "targets": ["nsis"],
-    "icon": []
+    "icon": [],
+    "windows": {
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper",
+        "silent": true
+      },
+      "nsis": {
+        "installMode": "currentUser",
+        "displayLanguageSelector": false,
+        "startMenuFolder": "Chess OS"
+      }
+    }
   }
 }
