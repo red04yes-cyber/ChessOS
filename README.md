@@ -38,6 +38,12 @@ This is **not** the recovered 0.7.0 application and is not yet feature-complete 
 
 The old archive fragments remain under `recovery/` for provenance only. They are not build inputs.
 
+The feature roadmap, including the additional training and opponent-preparation ideas, is tracked in [docs/ROADMAP.md](docs/ROADMAP.md). It also records that transposition handling is already implemented in the repertoire graph.
+
+## Studio delle aperture
+
+La roadmap dello Studio include l'editor visuale FEN, segni e annotazioni sulle mosse, quattro repertori iniziali e riconoscimento ECO offline. Il catalogo incluso contiene 3.865 linee e tutti i 500 codici ECO; licenza e criteri di copertura sono documentati in [docs/OPENING_STUDIO.md](docs/OPENING_STUDIO.md).
+
 ## Requirements
 
 - Node.js 20 or newer
