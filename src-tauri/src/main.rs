@@ -7,8 +7,11 @@ use std::sync::Mutex;
 use tauri::Manager;
 
 fn main() {
-    tauri::Builder::default()
-        .plugin(tauri_plugin_updater::Builder::new().build())
+    let builder = tauri::Builder::default();
+    #[cfg(feature = "app-updater")]
+    let builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
+
+    builder
         .setup(|app| {
             let database_path = app
                 .path()
