@@ -174,10 +174,22 @@ export function initializeExtendedTraining({ getCurrentTree, getCurrentMoves, ge
     })), index: 0 };
     const wrap = $("#blindfold-input-wrap");
     if (wrap) wrap.hidden = false;
+    document.body.classList.add("blindfold-active");
     $("#blindfold-status").textContent = "Blindfold avviato · " + moves.length + " semimosse da richiamare.";
     $("#blindfold-answer").value = "";
     $("#blindfold-answer").focus();
     toast("Blindfold avviato: nessuna scacchiera o notazione sarà mostrata.");
+  }
+
+  function stopBlindfold() {
+    blindfold = null;
+    document.body.classList.remove("blindfold-active");
+    const wrap = $("#blindfold-input-wrap");
+    if (wrap) wrap.hidden = true;
+    const answer = $("#blindfold-answer");
+    if (answer) answer.value = "";
+    const status = $("#blindfold-status");
+    if (status) status.textContent = "Blindfold terminato.";
   }
 
   function submitBlindfoldAnswer() {
@@ -206,6 +218,28 @@ export function initializeExtendedTraining({ getCurrentTree, getCurrentMoves, ge
     $("#blindfold-status").textContent = blindfold.index === blindfold.moves.length
       ? "Linea completata senza vedere la scacchiera."
       : "Corretta · " + blindfold.index + "/" + blindfold.moves.length + ". Continua.";
+    if (blindfold.index === blindfold.moves.length) stopBlindfold();
+  }
+
+  function addConceptCard({ front, back, fen }) {
+    const question = String(front || "").trim();
+    const answer = String(back || "").trim();
+    if (!question || !answer) { toast("Domanda e risposta della flashcard sono obbligatorie."); return false; }
+    const exists = cards.some((card) => card.type === "concept" && card.front === question);
+    if (exists) { toast("Questa flashcard esiste già."); return false; }
+    const card = createErrorFlashcard({
+      fen: fen || getBaseFen(),
+      expectedSan: "richiama il concetto",
+      source: "study-concept",
+    });
+    card.type = "concept";
+    card.front = question;
+    card.back = answer;
+    card.expectedSan = [];
+    cards.unshift(card);
+    void persistCards().then(render).catch((error) => toast("Flashcard non salvata: " + error.message));
+    toast("Flashcard aggiunta al ripasso FSRS.");
+    return true;
   }
 
   function renderHeatmap() {
@@ -302,6 +336,7 @@ export function initializeExtendedTraining({ getCurrentTree, getCurrentMoves, ge
   $("#review-cards")?.addEventListener("click", startCardReview);
   $("#start-blindfold")?.addEventListener("click", startBlindfold);
   $("#submit-blindfold")?.addEventListener("click", submitBlindfoldAnswer);
+  $("#stop-blindfold")?.addEventListener("click", stopBlindfold);
   $("#blindfold-answer")?.addEventListener("keydown", (event) => { if (event.key === "Enter") submitBlindfoldAnswer(); });
   $("#analyze-opponent")?.addEventListener("click", () => { void runOpponentAnalysis(); });
 
@@ -309,6 +344,7 @@ export function initializeExtendedTraining({ getCurrentTree, getCurrentMoves, ge
     refresh: render,
     ready: initializePromise,
     addErrorCard,
+    addConceptCard,
     loadImportedPgn: updateImportedPgn,
     exportState: () => ({ cards, opponentReport, importedPgn }),
     async importState(state) {
