@@ -668,6 +668,7 @@ function renderAll() {
   renderVariations();
   renderRepertoire();
   renderMode();
+  chessLab?.onPositionChanged();
 }
 
 function closePromotionChooser() {
@@ -773,12 +774,15 @@ function commitSelectedMove(selectedMove) {
   appendStudioMove(played);
   setDirty(true);
   renderAll();
-  chessLab?.onPositionChanged();
 }
 
 function handleSquareClick(square) {
   const chess = activeGame();
   if (pendingPromotion) return;
+  if (chessLab && !chessLab.canHumanMove()) {
+    showToast("Attendi la mossa di Stockfish.");
+    return;
+  }
   if (chess.isGameOver()) {
     showToast(gameStatus(chess));
     return;
@@ -826,6 +830,7 @@ function handleSquareClick(square) {
 function openLine(id) {
   const line = repertoire.find((item) => item.id === id);
   if (!line || !confirmDiscardChanges("aprire un'altra linea")) return;
+  chessLab?.stopPlay();
   try {
     const loaded = line.tree ? RepertoireTree.fromJSON(line.tree) : RepertoireTree.fromPgn(line.pgn);
     rebuildTimeline(loaded);
@@ -917,6 +922,7 @@ async function saveLine() {
 }
 
 function startTraining() {
+  chessLab?.stopPlay();
   trainingMoves = studioMoveObjects.map((move) => ({
     from: move.from,
     to: move.to,
@@ -1004,6 +1010,7 @@ function importPgn() {
   try {
     const imported = RepertoireTree.fromPgn(text);
     if (!confirmDiscardChanges("importare questo PGN")) return;
+    chessLab?.stopPlay();
     rebuildTimeline(imported);
     mode = "studio";
     activeLineId = null;
@@ -1041,6 +1048,7 @@ function newPosition() {
     return;
   }
   if (!confirmDiscardChanges("iniziare una nuova linea")) return;
+  chessLab?.stopPlay();
   baseFen = DEFAULT_FEN;
   studioTree = new RepertoireTree(DEFAULT_FEN);
   syncStudioPath([]);

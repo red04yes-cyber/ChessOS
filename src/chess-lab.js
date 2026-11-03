@@ -441,8 +441,15 @@ export function initChessLab(options) {
 
   return {
     onPositionChanged,
+    canHumanMove() {
+      return !playActive || getGame().turn() === playerColor;
+    },
     stopPlay() {
+      const wasBusy = playBusy;
       playActive = false;
+      if (wasBusy) void invoke("stockfish_stop_analysis").catch(() => {});
+      $("#lab-play-toggle").textContent = "Inizia partita";
+      $("#lab-play-toggle").disabled = false;
       if (openingController) openingController.abort();
     },
   };
