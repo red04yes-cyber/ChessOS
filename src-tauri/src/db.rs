@@ -221,42 +221,91 @@ fn now_timestamp() -> String {
 }
 
 fn validate_input(input: &SaveRepertoireInput) -> Result<(), String> {
+    const MAX_PGN_BYTES: usize = 5_000_000;
+    const MAX_PAYLOAD_BYTES: usize = 25_000_000;
+    const MAX_NODES: usize = 100_000;
+    const MAX_EDGES: usize = 100_000;
+
     if input.id.trim().is_empty() || input.id.len() > 160 {
         return Err("ID repertorio non valido.".into());
     }
     if input.title.trim().is_empty() || input.title.len() > 200 {
         return Err("Titolo repertorio non valido.".into());
     }
-    if input.pgn.len() > 5_000_000 {
+    if input.pgn.len() > MAX_PGN_BYTES {
         return Err("PGN troppo grande.".into());
     }
-    if input.tree.nodes.is_empty() || input.tree.nodes.len() > 100_000 {
+    if input.created_at.as_ref().is_some_and(|value| value.len() > 64)
+        || input.updated_at.as_ref().is_some_and(|value| value.len() > 64)
+    {
+        return Err("Timestamp repertorio non valido.".into());
+    }
+    if input.sans.len() > MAX_EDGES || input.sans.iter().any(|san| san.is_empty() || san.len() > 32) {
+        return Err("Elenco delle mosse non valido o troppo grande.".into());
+    }
+    if input.tree.nodes.is_empty() || input.tree.nodes.len() > MAX_NODES {
         return Err("Albero delle posizioni vuoto o troppo grande.".into());
     }
-    if input.tree.edges.len() > 500_000 {
+    if input.tree.edges.len() > MAX_EDGES {
         return Err("Albero delle mosse troppo grande.".into());
     }
+    if input.tree.root_fen.is_empty() || input.tree.root_fen.len() > 256
+        || input.tree.headers.len() > 64
+        || input.tree.headers.iter().any(|(key, value)| key.is_empty() || key.len() > 128 || value.len() > 4096)
+    {
+        return Err("Metadati dell'albero non validi o troppo grandi.".into());
+    }
 
+    let mut payload_bytes = input.id.len()
+        .saturating_add(input.title.len())
+        .saturating_add(input.pgn.len())
+        .saturating_add(input.tree.root_fen.len());
     let mut ids = std::collections::HashSet::new();
+    let mut root_matches = false;
     for node in &input.tree.nodes {
-        if node.id.is_empty() || node.fen.is_empty() || !ids.insert(node.id.as_str()) {
+        if node.id.is_empty() || node.id.len() > 160
+            || node.key.is_empty() || node.key.len() > 256
+            || node.fen.is_empty() || node.fen.len() > 256
+            || !ids.insert(node.id.as_str())
+        {
             return Err("Nodo dell'albero non valido o duplicato.".into());
         }
+        root_matches |= node.id == input.tree.root_id && node.fen == input.tree.root_fen;
+        payload_bytes = payload_bytes
+            .saturating_add(node.id.len())
+            .saturating_add(node.key.len())
+            .saturating_add(node.fen.len());
     }
-    if !ids.contains(input.tree.root_id.as_str()) {
-        return Err("Nodo radice non trovato.".into());
+    if !root_matches {
+        return Err("Nodo radice non valido o non coerente con la posizione iniziale.".into());
     }
+
     let mut edge_ids = std::collections::HashSet::new();
     for edge in &input.tree.edges {
-        if edge.id.is_empty()
-            || edge.uci.len() < 4
-            || edge.uci.len() > 5
+        if edge.id.is_empty() || edge.id.len() > 320
+            || edge.uci.len() < 4 || edge.uci.len() > 5
+            || edge.san.is_empty() || edge.san.len() > 32
+            || edge.comment.len() > 4096
+            || edge.nags.len() > 32
+            || edge.nags.iter().any(|nag| nag.len() > 16)
             || !ids.contains(edge.from.as_str())
             || !ids.contains(edge.to.as_str())
             || !edge_ids.insert(edge.id.as_str())
         {
             return Err("Arco dell'albero non valido o duplicato.".into());
         }
+        payload_bytes = payload_bytes
+            .saturating_add(edge.id.len())
+            .saturating_add(edge.uci.len())
+            .saturating_add(edge.san.len())
+            .saturating_add(edge.comment.len())
+            .saturating_add(edge.nags.iter().map(String::len).sum::<usize>());
+    }
+    for (key, value) in &input.tree.headers {
+        payload_bytes = payload_bytes.saturating_add(key.len()).saturating_add(value.len());
+    }
+    if payload_bytes > MAX_PAYLOAD_BYTES {
+        return Err("Dati del repertorio troppo voluminosi.".into());
     }
     Ok(())
 }
@@ -451,6 +500,17 @@ mod tests {
             created_at: Some("100".into()),
             updated_at: Some("101".into()),
         }
+    }
+
+    #[test]
+    fn rejects_oversized_untrusted_metadata() {
+        let mut input = fixture();
+        input.tree.edges[0].comment = "x".repeat(4097);
+        assert!(validate_input(&input).is_err());
+
+        let mut input = fixture();
+        input.tree.root_fen = "x".repeat(257);
+        assert!(validate_input(&input).is_err());
     }
 
     #[test]
