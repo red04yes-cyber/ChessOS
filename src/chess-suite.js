@@ -247,7 +247,7 @@ function formatEngineResult(result) {
   return { evaluation, best: result.bestSan || "—", pv: result.pvSan.join(" ") || "—", depth: result.depth };
 }
 
-export function initializeChessSuite({ getCurrentTree, loadGeneratedTree, getCurrentFen, getCurrentEdge, onAnnotationSaved, onError }) {
+export function initializeChessSuite({ getCurrentTree, loadGeneratedTree, getCurrentFen, getCurrentEdge, onAnnotationSaved, onImportedGames, onError }) {
   const engine = stockfish;
   let endgameGame = new Chess();
   let endgameBoard;
@@ -444,6 +444,7 @@ export function initializeChessSuite({ getCurrentTree, loadGeneratedTree, getCur
       const games = splitPgnGames(pgn);
       importedPgn = pgn;
       await setAppSetting(GAME_IMPORT_KEY, pgn);
+      onImportedGames?.(pgn);
       fillPgnFields(pgn);
       message("#account-import-status", `Importate ${games.length} partite da ${provider}. Le partite sono disponibili in Opening Explorer, Tactics e preparazione avversario.`);
       message("#opening-summary", `Archivio pronto: ${games.length} partite importate.`);
@@ -649,6 +650,21 @@ export function initializeChessSuite({ getCurrentTree, loadGeneratedTree, getCur
     refreshEndgame() { updateEndgameSummary(); },
     async loadImportedPgn(pgn) { importedPgn = pgn; fillPgnFields(pgn); await setAppSetting(GAME_IMPORT_KEY, pgn); },
     getCurrentEndgameLesson() { return endgameLesson; },
+    exportState() { return { importedPgn, endgameProgress: endgameCards }; },
+    async importState(state) {
+      if (!state || typeof state !== "object") return;
+      if (typeof state.importedPgn === "string") {
+        importedPgn = state.importedPgn;
+        fillPgnFields(importedPgn);
+        await setAppSetting(GAME_IMPORT_KEY, importedPgn);
+        onImportedGames?.(importedPgn);
+      }
+      if (state.endgameProgress && typeof state.endgameProgress === "object" && !Array.isArray(state.endgameProgress)) {
+        endgameCards = state.endgameProgress;
+        await saveEndgameProgress();
+        renderEndgameLesson();
+      }
+    },
     loadEndgameProgress(progress) {
       if (progress && typeof progress === "object" && !Array.isArray(progress)) {
         endgameCards = progress;
