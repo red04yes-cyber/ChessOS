@@ -1,6 +1,7 @@
 import { Chess } from "chess.js";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { RepertoireTree } from "./repertoire-tree.js";
+import { createTrainingSession } from "./training.js";
 import "./style.css";
 
 const STORAGE_KEY = "chess-os.repertoire.v1";
@@ -714,18 +715,20 @@ async function saveLine() {
 }
 
 function startTraining() {
-  trainingMoves = studioMoveObjects.map((move) => ({
-    from: move.from,
-    to: move.to,
-    san: move.san,
-    ...(move.promotion ? { promotion: move.promotion } : {}),
-  }));
-  if (!trainingMoves.length) {
+  let session;
+  try {
+    session = createTrainingSession(baseFen, studioMoveObjects);
+  } catch (error) {
+    showToast("Impossibile avviare il ripasso: " + error.message);
+    return;
+  }
+  if (!session.moves.length) {
     showToast("Seleziona una linea con almeno una mossa per allenarti.");
     return;
   }
-  trainingStartFen = baseFen;
-  trainingGame = new Chess(trainingStartFen);
+  trainingStartFen = session.startFen;
+  trainingGame = session.game;
+  trainingMoves = session.moves;
   trainingIndex = 0;
   selectedSquare = null;
   mode = "training";
