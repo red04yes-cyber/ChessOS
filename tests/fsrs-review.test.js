@@ -93,6 +93,7 @@ test("daily selection filters by due date and side, limiting only new cards", ()
   assert.deepEqual(whiteOnly.map((card) => card.id), [cards[0].id]);
   const bothSides = selectDailyCards(due, now, "both", 1);
   assert.deepEqual(bothSides.map((card) => card.id), [overdueReview.id, cards[0].id]);
+  assert.deepEqual(selectDailyCards(due, now, "both", 0).map((card) => card.id), [overdueReview.id]);
 });
 
 test("counts reviews made on the local calendar day", () => {
@@ -104,13 +105,30 @@ test("counts reviews made on the local calendar day", () => {
   assert.equal(countReviewsToday(logs, now), 2);
   assert.deepEqual(getTodayReviewStats([
     ...logs,
-    { reviewedAt: now.toISOString(), rating: 1 },
-    { reviewedAt: now.toISOString(), rating: 2 },
+    {
+      cardId: "new-card",
+      reviewedAt: now.toISOString(),
+      rating: 4,
+      stateJson: JSON.stringify({ state: State.New, recalled: false }),
+    },
+    {
+      cardId: "review-card",
+      reviewedAt: now.toISOString(),
+      rating: 2,
+      stateJson: JSON.stringify({ state: State.Review, recalled: false }),
+    },
+    {
+      cardId: "correct-card",
+      reviewedAt: now.toISOString(),
+      rating: 3,
+      stateJson: JSON.stringify({ state: State.Review, recalled: true }),
+    },
   ], now), {
-    reviews: 4,
-    again: 1,
-    correct: 3,
-    accuracy: 75,
+    reviews: 5,
+    again: 0,
+    correct: 1,
+    accuracy: 20,
+    newCardsReviewed: 1,
   });
 });
 
