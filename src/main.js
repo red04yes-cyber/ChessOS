@@ -1668,6 +1668,17 @@ function renderReviewPanel() {
       (currentReviewCard.side === "white" ? "Bianco" : "Nero") +
       " · carta " + (reviewCompleted + 1) + "/" + reviewSessionTotal;
   }
+  const progress = reviewSessionTotal > 0
+    ? Math.min(100, Math.round((reviewCompleted / reviewSessionTotal) * 100))
+    : 0;
+  $("#review-session-count").textContent = "Carta " + Math.min(reviewCompleted + (currentReviewCard ? 1 : 0), reviewSessionTotal)
+    + " di " + reviewSessionTotal;
+  $("#review-session-left").textContent = Math.max(0, reviewSessionTotal - reviewCompleted) + " rimanenti";
+  $("#review-session-completed").textContent = String(reviewCompleted);
+  $("#review-session-again").textContent = String(reviewAgainCount);
+  $("#review-progress-fill").style.width = progress + "%";
+  $("#review-progress-track").setAttribute("aria-valuemax", String(reviewSessionTotal));
+  $("#review-progress-track").setAttribute("aria-valuenow", String(reviewCompleted));
   $("#review-feedback").textContent = reviewFeedback || "Trova la mossa prevista in questa posizione.";
   $("#review-show-answer").hidden = reviewSolved || reviewRevealed || !currentReviewCard;
   $("#review-quick-again").hidden = !reviewFailed || reviewSolved || reviewRevealed;
