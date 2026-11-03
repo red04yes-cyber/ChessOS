@@ -23,6 +23,10 @@ Windows-first chess repertoire and training desktop app. This repository now con
 - Review cards generated from repertoire position + move + side to train (White / Black)
 - Due-card selection, a daily new-card cap, review history and local statistics
 - Dashboard with daily/weekly trends, repertoire coverage, recall accuracy, study goals and persisted repertoire exams
+- Offline ECO opening recognition, visual FEN editor, coloured square/arrow annotations and complete Caro-Kann / Italian Game demo repertoires seeded on first start
+- Opening Explorer and Gap Finder that compare imported Chess.com / Lichess games with the active repertoire
+- Local Stockfish 19 Lite WASM analysis with evaluation, best move and principal variation
+- Tactical Trainer that generates candidate exercises from imported PGNs and checks the played solution
 - Import all finished public standard-chess games from Chess.com archives or the Lichess PGN export API, with duplicate detection and a separate local game library
 - Atomic SQLite persistence for card scheduling state, review logs and training sessions in the Tauri desktop app; localStorage fallback in browser preview
 - Vite frontend and Tauri 2 desktop shell
@@ -34,7 +38,6 @@ This is **not** the recovered 0.7.0 application and is not yet feature-complete 
 
 - Cloud sync, account system and backups
 - SQLite database backup/export and restore UI
-- Stockfish analysis / evaluation
 
 The old archive fragments remain under `recovery/` for provenance only. They are not build inputs.
 
@@ -42,7 +45,7 @@ The feature roadmap, including the additional training and opponent-preparation 
 
 ## Studio delle aperture
 
-La roadmap dello Studio include l'editor visuale FEN, segni e annotazioni sulle mosse, quattro repertori iniziali e riconoscimento ECO offline. Il catalogo incluso contiene 3.865 linee e tutti i 500 codici ECO; licenza e criteri di copertura sono documentati in [docs/OPENING_STUDIO.md](docs/OPENING_STUDIO.md).
+La funzionalità Studio include l'editor visuale FEN, segni e annotazioni sulle mosse, riconoscimento ECO offline e 3.865 linee del catalogo Lichess (500 codici ECO). Al primo avvio vengono aggiunti due repertori demo completi, Caro-Kann e Partita Italiana, senza sovrascrivere i repertori personali. Opening Explorer e Gap Finder confrontano le partite importate con il repertorio attivo. Dettagli e provenienza del catalogo: [docs/OPENING_STUDIO.md](docs/OPENING_STUDIO.md).
 
 ## Requirements
 
@@ -81,8 +84,8 @@ The installer, when a successful CI run produces it, is uploaded as the `chess-o
 
 The Tauri desktop app stores repertoire data and FSRS review state in `chess-os.sqlite3` inside the application data directory managed by Tauri. Versioned migrations create normalized repertoire, position and move-edge tables, plus `study_cards`, `training_sessions` and `review_logs`. The latest migration stores the complete serialized FSRS card state alongside its next due date and summary fields. Saving a review updates the card, appends its review log and updates the session counters atomically. The browser preview stores equivalent review state in `localStorage` as a development fallback. Online game import is available in the Tauri desktop app; Chess.com imports public archive data, while Lichess requires a personal API token entered for the request and never saved by ChessOS. See [docs/ONLINE_GAME_IMPORT.md](docs/ONLINE_GAME_IMPORT.md).
 
-On first desktop startup, Chess OS imports legacy `chess-os.repertoire.v1` entries from WebView `localStorage` that are not already in SQLite. The legacy key is removed only after all entries have imported successfully. To back up a repertoire today, export it as PGN; a full SQLite backup/restore interface is still planned. See [docs/DATABASE.md](docs/DATABASE.md) for schema and migration details, and [docs/FSRS.md](docs/FSRS.md) for the fixed scheduler version, parameters and review-card model.
+On first desktop startup, Chess OS imports legacy `chess-os.repertoire.v1` entries from WebView `localStorage` that are not already in SQLite. The legacy key is removed only after all entries have imported successfully. To back up a repertoire today, export it as PGN; a full SQLite backup/restore interface is still planned. Stockfish analysis assets are copied from the pinned npm dependency into `public/stockfish` by the `predev` / `prebuild` scripts and are run locally in a Web Worker. See [docs/DATABASE.md](docs/DATABASE.md) for schema and migration details, and [docs/FSRS.md](docs/FSRS.md) for the fixed scheduler version, parameters and review-card model.
 
-## License
+## Licenses
 
-No license has been selected yet. All rights remain with the project owner unless a license is added.
+No project-wide license has been selected yet; all rights to ChessOS source remain with the project owner unless a license is added. Stockfish is a separate third-party component distributed under GPL-3.0; its license text is included at `licenses/Stockfish-GPL-3.0.txt` and its distribution details are documented in [docs/THIRD_PARTY_NOTICES.md](docs/THIRD_PARTY_NOTICES.md).
