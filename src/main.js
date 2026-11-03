@@ -1686,50 +1686,74 @@ async function openGeneratedPuzzle(fen, solutionUci) {
   if (!expected) return false;
 
   chessLab?.stopPlay();
-  trainingStartFen = fen;
-  trainingGame = new Chess(fen);
-  trainingMoves = [{
+  trainingInitialFen = fen;
+  trainingInitialMoves = [{
     from: expected.from,
     to: expected.to,
     san: expected.san,
     ...(expected.promotion ? { promotion: expected.promotion } : {}),
   }];
+  trainingStartFen = trainingInitialFen;
+  trainingMoves = trainingInitialMoves.map((move) => ({ ...move }));
+  trainingGame = new Chess(trainingStartFen);
   trainingIndex = 0;
   selectedSquare = null;
   mode = "training";
+  resetTrainingCounters();
   closePromotionChooser();
   renderAll();
-  showToast("Puzzle generato: trova la mossa che evita l'errore.");
+  setTrainingStatus("Puzzle avviato. Trova la mossa che evita l'errore.");
   return true;
 }
 
 function startTraining() {
+  if (mode === "training") {
+    restartTraining();
+    return;
+  }
   chessLab?.stopPlay();
-  trainingMoves = studioMoveObjects.map((move) => ({
+  trainingInitialMoves = studioMoveObjects.map((move) => ({
     from: move.from,
     to: move.to,
     san: move.san,
     ...(move.promotion ? { promotion: move.promotion } : {}),
   }));
-  if (!trainingMoves.length) {
-    showToast("Seleziona una linea con almeno una mossa per allenarti.");
-    return;
-  }
-  trainingStartFen = baseFen;
+  trainingInitialFen = baseFen;
+  trainingMoves = trainingInitialMoves.map((move) => ({ ...move }));
+  trainingStartFen = trainingInitialFen;
   trainingGame = new Chess(trainingStartFen);
   trainingIndex = 0;
   selectedSquare = null;
   mode = "training";
   closePromotionChooser();
+  if (trainingMoves.length) {
+    resetTrainingCounters();
+  } else {
+    stopTrainingTimer();
+    trainingElapsedSeconds = 0;
+    trainingErrors = 0;
+    trainingHints = 0;
+    trainingFirstTryErrors = 0;
+    trainingRevealCount = 0;
+    trainingMistakes = [];
+    trainingMistakePlies = new Set();
+    trainingHintLevel = 0;
+  }
   renderAll();
-  showToast("Ripasso avviato: trova la prima mossa.");
+  if (trainingMoves.length) setTrainingStatus("Rigioca la linea dall'inizio. Trova la prima mossa.");
 }
 
+
 function leaveTraining() {
+  stopTrainingTimer();
   mode = "studio";
   trainingGame = null;
   trainingMoves = [];
+  trainingInitialMoves = [];
   trainingIndex = 0;
+  trainingHintLevel = 0;
+  trainingErrorAnimating = false;
+  trainingRevealPending = false;
   selectedSquare = null;
   closePromotionChooser();
   renderAll();
@@ -1963,6 +1987,12 @@ $("#shortcuts-close").addEventListener("click", closeShortcutsDialog);
 $("#shortcuts-dialog").addEventListener("click", (event) => {
   if (event.target === $("#shortcuts-dialog")) closeShortcutsDialog();
 });
+$("#training-hint").addEventListener("click", showTrainingHint);
+$("#training-reveal").addEventListener("click", revealTrainingMove);
+$("#training-restart").addEventListener("click", restartTraining);
+$("#training-exit").addEventListener("click", leaveTraining);
+$("#training-empty-exit").addEventListener("click", leaveTraining);
+
 $("#promotion-cancel").addEventListener("click", () => {
   closePromotionChooser();
   selectedSquare = null;
@@ -2060,6 +2090,11 @@ document.addEventListener("keydown", (event) => {
     return;
   }
   if (typing) return;
+  if (mode === "training" && event.key.toLowerCase() === "h") {
+    event.preventDefault();
+    showTrainingHint();
+    return;
+  }
   if (event.key === "?" || (event.shiftKey && event.key === "/")) {
     event.preventDefault();
     openShortcutsDialog();
