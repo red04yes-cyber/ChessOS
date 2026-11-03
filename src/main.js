@@ -1,4 +1,5 @@
 import { Chess } from "chess.js";
+import { RepertoireTree } from "./repertoire-tree.js";
 import "./style.css";
 
 const STORAGE_KEY = "chess-os.repertoire.v1";
@@ -27,6 +28,8 @@ let studioStates = [DEFAULT_FEN];
 let studioSans = [];
 let studioMoveObjects = [];
 let studioPly = 0;
+let studioTree = new RepertoireTree(DEFAULT_FEN);
+let studioPath = [];
 let toastTimer = null;
 
 const $ = (selector) => document.querySelector(selector);
@@ -86,6 +89,16 @@ function gameStatus(chess) {
   return (chess.turn() === "w" ? "Bianco" : "Nero") + " al tratto";
 }
 
+function syncStudioPath(path, cursor = path.length) {
+  const snapshot = studioTree.replayPath(path);
+  studioPath = [...path];
+  studioStates = snapshot.states;
+  studioMoveObjects = snapshot.moves;
+  studioSans = snapshot.moves.map((move) => move.san);
+  studioPly = Math.max(0, Math.min(cursor, studioMoveObjects.length));
+  game = new Chess(studioStates[studioPly]);
+}
+
 function positionForPly(ply) {
   if (!Number.isInteger(ply) || ply < 0 || ply >= studioStates.length) return;
   try {
@@ -100,42 +113,23 @@ function positionForPly(ply) {
   renderAll();
 }
 
-function rebuildTimeline(loadedGame) {
-  const headers = loadedGame.header();
-  baseFen = headers.FEN || DEFAULT_FEN;
-  const moves = loadedGame.history({ verbose: true });
-  const replay = new Chess(baseFen);
-  studioStates = [replay.fen()];
-  studioSans = [];
-  studioMoveObjects = [];
-
-  for (const previousMove of moves) {
-    const move = replay.move(previousMove.san);
-    studioMoveObjects.push(move);
-    studioSans.push(move.san);
-    studioStates.push(replay.fen());
-  }
-
-  game = replay;
-  studioPly = studioSans.length;
+function rebuildTimeline(loadedTree) {
+  studioTree = loadedTree;
+  baseFen = loadedTree.rootFen;
+  syncStudioPath(loadedTree.mainlinePath());
   selectedSquare = null;
   pendingPromotion = null;
 }
 
 function timelinePgn() {
-  const replay = new Chess(baseFen);
-  for (const san of studioSans) replay.move(san);
-  return replay.pgn();
+  return studioTree.toPgn({ Event: titleInput.value.trim() || "Chess OS repertoire" });
 }
 
 function appendStudioMove(move) {
-  studioSans = studioSans.slice(0, studioPly);
-  studioMoveObjects = studioMoveObjects.slice(0, studioPly);
-  studioStates = studioStates.slice(0, studioPly + 1);
-  studioSans.push(move.san);
-  studioMoveObjects.push(move);
-  studioStates.push(game.fen());
-  studioPly += 1;
+  const fromNodeId = studioTree.nodeAtPath(studioPath, studioPly);
+  const edge = studioTree.addMove(fromNodeId, move, game.fen());
+  const prefix = studioPath.slice(0, studioPly);
+  syncStudioPath([...prefix, edge.id]);
 }
 
 function currentLastMove() {
@@ -286,8 +280,10 @@ function renderRepertoire() {
     name.className = "repertoire-name";
     name.textContent = line.title || "Linea senza nome";
     const meta = document.createElement("small");
-    const count = Array.isArray(line.sans) ? line.sans.length : 0;
-    meta.textContent = count + " " + (count === 1 ? "semimossa" : "semimosse");
+    const count = Number.isInteger(line.edgeCount)
+      ? line.edgeCount
+      : (Array.isArray(line.sans) ? line.sans.length : 0);
+    meta.textContent = count + " " + (count === 1 ? "arco" : "archi") + (line.nodeCount ? " · " + line.nodeCount + " posizioni" : "");
     open.append(name, meta);
     open.addEventListener("click", () => openLine(line.id));
 
@@ -315,12 +311,80 @@ function renderMode() {
     : "Costruisci le tue linee, una mossa alla volta.";
   $("#save-line").disabled = training;
   $("#reset").textContent = training ? "Esci dal ripasso" : "Nuova posizione";
+  $("#page-subtitle").textContent = training
+    ? "Ripeti la linea selezionata e trova le mosse nell’ordine corretto."
+    : "Costruisci linee principali, varianti e transposizioni.";
   $("#flip-board").disabled = false;
+}
+
+function renderVariations() {
+  const list = $("#variation-list");
+  if (!list) return;
+  list.replaceChildren();
+  if (mode === "training") {
+    const note = document.createElement("span");
+    note.className = "empty-state";
+    note.textContent = "Le varianti sono disponibili in Studio.";
+    list.append(note);
+    return;
+  }
+
+  let nodeId;
+  try {
+    nodeId = studioTree.nodeAtPath(studioPath, studioPly);
+  } catch {
+    nodeId = studioTree.rootId;
+  }
+  const options = studioTree.getOutgoing(nodeId);
+  if (!options.length) {
+    const empty = document.createElement("span");
+    empty.className = "empty-state";
+    empty.textContent = "Nessuna continuazione da questa posizione.";
+    list.append(empty);
+    return;
+  }
+
+  options.forEach((edge, index) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "variation-choice";
+    const isSelected = studioPath[studioPly] === edge.id;
+    if (isSelected) button.classList.add("selected");
+    const title = document.createElement("strong");
+    title.textContent = edge.san;
+    const meta = document.createElement("small");
+    const incomingCount = studioTree.getIncoming(edge.to).length;
+    const labels = [];
+    labels.push(index === 0 ? "linea principale" : "variante");
+    if (incomingCount > 1) labels.push("transposizione");
+    meta.textContent = labels.join(" · ");
+    button.append(title, meta);
+    button.setAttribute("aria-pressed", String(isSelected));
+    button.addEventListener("click", () => selectVariation(edge.id));
+    list.append(button);
+  });
+}
+
+function selectVariation(edgeId) {
+  const edge = studioTree.getEdge(edgeId);
+  if (!edge) return;
+  const prefix = studioPath.slice(0, studioPly);
+  const path = [...prefix, edge.id, ...studioTree.preferredPathFrom(edge.to)];
+  try {
+    syncStudioPath(path);
+    selectedSquare = null;
+    closePromotionChooser();
+    renderAll();
+    showToast("Variante selezionata.");
+  } catch (error) {
+    showToast("Impossibile aprire la variante: " + error.message);
+  }
 }
 
 function renderAll() {
   renderBoard();
   renderMoves();
+  renderVariations();
   renderRepertoire();
   renderMode();
 }
@@ -481,8 +545,7 @@ function openLine(id) {
   const line = repertoire.find((item) => item.id === id);
   if (!line) return;
   try {
-    const loaded = new Chess();
-    loaded.loadPgn(line.pgn);
+    const loaded = RepertoireTree.fromPgn(line.pgn);
     rebuildTimeline(loaded);
     activeLineId = line.id;
     titleInput.value = line.title || "Linea senza nome";
@@ -513,7 +576,7 @@ function deleteLine(id) {
 
 function saveLine() {
   if (mode === "training") return;
-  if (!studioSans.length) {
+  if (!studioTree.edges.size) {
     showToast("Aggiungi almeno una mossa prima di salvare.");
     return;
   }
@@ -528,6 +591,8 @@ function saveLine() {
     title,
     pgn,
     sans,
+    edgeCount: studioTree.edges.size,
+    nodeCount: studioTree.nodes.size,
     createdAt: previous?.createdAt || new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };
@@ -542,30 +607,21 @@ function saveLine() {
   showToast("Linea salvata nel repertorio.");
 }
 
-function startTraining(line = null) {
-  const pgn = line ? line.pgn : timelinePgn();
-  let sourceGame = new Chess();
-  try {
-    sourceGame.loadPgn(pgn);
-  } catch (error) {
-    showToast("Impossibile avviare il ripasso: " + error.message);
-    return;
-  }
-
-  trainingMoves = sourceGame.history({ verbose: true });
+function startTraining() {
+  trainingMoves = studioMoveObjects.map((move) => ({
+    from: move.from,
+    to: move.to,
+    san: move.san,
+    ...(move.promotion ? { promotion: move.promotion } : {}),
+  }));
   if (!trainingMoves.length) {
-    showToast("Salva o crea una linea con almeno una mossa per allenarti.");
+    showToast("Seleziona una linea con almeno una mossa per allenarti.");
     return;
   }
-  trainingStartFen = sourceGame.header().FEN || DEFAULT_FEN;
+  trainingStartFen = baseFen;
   trainingGame = new Chess(trainingStartFen);
   trainingIndex = 0;
   selectedSquare = null;
-  if (line) {
-    activeLineId = line.id;
-    titleInput.value = line.title || "Linea senza nome";
-    setDirty(false);
-  }
   mode = "training";
   closePromotionChooser();
   renderAll();
@@ -589,8 +645,7 @@ function importPgn() {
     return;
   }
   try {
-    const imported = new Chess();
-    imported.loadPgn(text);
+    const imported = RepertoireTree.fromPgn(text);
     rebuildTimeline(imported);
     mode = "studio";
     activeLineId = null;
@@ -598,14 +653,14 @@ function importPgn() {
     setDirty(true);
     closePromotionChooser();
     renderAll();
-    showToast("PGN importato correttamente.");
+    showToast("PGN importato: varianti e transposizioni acquisite.");
   } catch (error) {
     showToast("PGN non valido: " + error.message);
   }
 }
 
 function exportPgn() {
-  const pgn = mode === "training" ? "" : timelinePgn();
+  const pgn = mode === "training" || !studioTree.edges.size ? "" : timelinePgn();
   if (!pgn) {
     showToast("Non ci sono mosse da esportare.");
     return;
@@ -628,10 +683,8 @@ function newPosition() {
     return;
   }
   baseFen = DEFAULT_FEN;
-  game = new Chess();
-  studioStates = [DEFAULT_FEN];
-  studioSans = [];
-  studioMoveObjects = [];
+  studioTree = new RepertoireTree(DEFAULT_FEN);
+  syncStudioPath([]);
   studioPly = 0;
   activeLineId = null;
   selectedSquare = null;
