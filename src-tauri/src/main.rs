@@ -25,7 +25,10 @@ fn main() {
             db::list_training_sessions,
             db::start_training_session,
             db::record_study_review,
-            db::finish_training_session
+            db::finish_training_session,
+            db::get_app_setting,
+            db::set_app_setting,
+            db::restore_review_data
         ])
         .run(tauri::generate_context!())
         .expect("error while running Chess OS");
