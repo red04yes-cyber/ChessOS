@@ -9,37 +9,59 @@ function parseUciMove(uci) {
 }
 
 export function parseStockfishAnalysis(lines, fen) {
-  const info = lines
-    .filter((line) => line.startsWith("info depth ") && !/\bmultipv [2-9]/.test(line))
-    .at(-1) || "";
+  const infoLines = lines.filter((line) => line.startsWith("info depth "));
   const bestLine = lines.find((line) => line.startsWith("bestmove ")) || "";
-  const bestmove = bestLine.split(/\s+/)[1] || null;
-  const depth = Number(info.match(/\bdepth (\d+)/)?.[1] || 0);
-  const cp = info.match(/\bscore cp (-?\d+)/);
-  const mate = info.match(/\bscore mate (-?\d+)/);
-  const pvUci = info.match(/\bpv (.+)$/)?.[1]?.trim().split(/\s+/) || [];
-  const chess = new Chess(fen);
-  const pvSan = [];
-  for (const uci of pvUci) {
-    try {
-      const move = chess.move(parseUciMove(uci));
-      if (!move) break;
-      pvSan.push(move.san);
-    } catch { break; }
+  const bestmove = bestLine.split(/\\s+/)[1] || null;
+  const depth = Math.max(0, ...infoLines.map((line) => Number(line.match(/\\bdepth (\\d+)/)?.[1] || 0)));
+  const deepest = infoLines.filter((line) => Number(line.match(/\\bdepth (\\d+)/)?.[1] || 0) === depth);
+  const byVariation = new Map();
+
+  for (const line of deepest) {
+    const variation = Number(line.match(/\\bmultipv (\\d+)/)?.[1] || 1);
+    byVariation.set(variation, line);
   }
-  return {
-    bestmove,
-    bestSan: bestmove && bestmove !== "(none)" ? (() => {
-      const board = new Chess(fen);
-      try { return board.move(parseUciMove(bestmove))?.san || bestmove; } catch { return bestmove; }
-    })() : null,
-    depth,
-    scoreCp: cp ? Number(cp[1]) : null,
-    mate: mate ? Number(mate[1]) : null,
-    pvUci,
-    pvSan,
-    raw: info,
+
+  const parseLine = (line, multipv) => {
+    const cp = line.match(/\\bscore cp (-?\\d+)/);
+    const mate = line.match(/\\bscore mate (-?\\d+)/);
+    const pvUci = line.match(/\\bpv (.+)$/)?.[1]?.trim().split(/\\s+/) || [];
+    const chess = new Chess(fen);
+    const pvSan = [];
+    for (const uci of pvUci) {
+      try {
+        const move = chess.move(parseUciMove(uci));
+        if (!move) break;
+        pvSan.push(move.san);
+      } catch { break; }
+    }
+    return {
+      multipv,
+      depth: Number(line.match(/\\bdepth (\\d+)/)?.[1] || 0),
+      scoreCp: cp ? Number(cp[1]) : null,
+      mate: mate ? Number(mate[1]) : null,
+      pvUci,
+      pvSan,
+      raw: line,
+    };
   };
+
+  const alternatives = [...byVariation.entries()]
+    .sort(([a], [b]) => a - b)
+    .map(([variation, line]) => parseLine(line, variation));
+  const main = alternatives.find((item) => item.multipv === 1) || alternatives[0] || {
+    multipv: 1, depth: 0, scoreCp: null, mate: null, pvUci: [], pvSan: [], raw: "",
+  };
+  let bestSan = null;
+  if (bestmove && bestmove !== "(none)") {
+    const board = new Chess(fen);
+    try { bestSan = board.move(parseUciMove(bestmove))?.san || null; } catch { bestSan = null; }
+  }
+  const second = alternatives.find((item) => item.multipv === 2);
+  const scoreGapCp = Number.isFinite(main.scoreCp) && Number.isFinite(second?.scoreCp)
+    ? Math.abs(main.scoreCp - second.scoreCp)
+    : null;
+
+  return { ...main, bestmove, bestSan, alternatives, scoreGapCp };
 }
 
 export class StockfishEngine {
@@ -127,7 +149,7 @@ export class StockfishEngine {
         "go depth " + Math.max(1, Math.min(18, depth)),
       ];
       const lines = await this.command(commands, (line) => line.startsWith("bestmove "), 120000);
-      return parseAnalysis(lines, fen);
+      return parseStockfishAnalysis(lines, fen);
     } finally {
       this.busy = false;
     }
