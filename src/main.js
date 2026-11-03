@@ -6,6 +6,7 @@ import {
   countDueCards,
   countReviewsToday,
   gradeFsrsCard,
+  getTodayReviewStats,
   parseUci,
   selectDailyCards,
 } from "./fsrs-review.js";
@@ -1018,8 +1019,10 @@ function renderReviewPanel() {
   const now = new Date();
   const side = $("#review-side").value;
   const cards = buildReviewCards(repertoire, studyCards, now);
+  const todayStats = getTodayReviewStats(reviewLogs, now);
   $("#review-stat-due").textContent = String(countDueCards(cards, now, side));
-  $("#review-stat-today").textContent = String(countReviewsToday(reviewLogs, now));
+  $("#review-stat-today").textContent = String(todayStats.reviews);
+  $("#review-stat-accuracy").textContent = todayStats.reviews ? todayStats.accuracy + "%" : "—";
   $("#review-stat-total").textContent = String(cards.length);
 
   const hasSession = Boolean(reviewSessionId);
