@@ -28,6 +28,12 @@ Windows-first chess repertoire and training desktop app. This repository now con
 - Local Stockfish 19 Lite WASM analysis with evaluation, best move and principal variation
 - Signed automatic updates on Windows, installed only when no study changes or active sessions are pending
 - Tactical Trainer that generates candidate exercises from imported PGNs and checks the played solution
+- High-selectivity Tactical Trainer: requires a meaningful centipawn loss, a distinct best move and a forcing line; results remain heuristic candidates, not certified puzzles
+- PGN game-analysis report with Stockfish classifications for inaccuracies, mistakes and blunders, plus best move and principal variation
+- Automatic mistake flashcards from analyzed games, scheduled with FSRS-6 and stored locally in the WebView (separate from SQLite repertoire cards)
+- Blindfold recall of the active repertoire mainline, with SAN/UCI answer checking and solution reveal
+- Repertoire weakness heatmap from FSRS recall and overdue-card history; positions without enough review evidence are marked unmeasurable
+- Opponent-preparation statistics from imported PGNs: opening frequencies, colors, results and recurring move choices
 - Import all finished public standard-chess games from Chess.com archives or the Lichess PGN export API, with duplicate detection and a separate local game library
 - Atomic SQLite persistence for card scheduling state, review logs and training sessions in the Tauri desktop app; localStorage fallback in browser preview
 - Vite frontend and Tauri 2 desktop shell
@@ -39,6 +45,8 @@ This is **not** the recovered 0.7.0 application and is not yet feature-complete 
 
 - Cloud sync, account system and backups
 - SQLite database backup/export and restore UI
+
+The chess-feature additions in PR #31 are first MVPs with explicit limits: game analysis checks at most three games and 48 half-moves per game at depth 10; Blindfold follows the saved mainline only; opponent statistics describe only the imported PGN sample; the weakness heatmap needs FSRS review history. Mistake flashcards use a separate WebView `localStorage` deck, not yet SQLite-backed or synced. Stockfish-based error labels and tactical-puzzle filtering are estimates, not certified annotations.
 
 The old archive fragments remain under `recovery/` for provenance only. They are not build inputs.
 
