@@ -921,6 +921,32 @@ async function saveLine() {
   }
 }
 
+function openGeneratedPuzzle(fen, solutionUci) {
+  if (!confirmDiscardChanges("aprire il puzzle generato")) return false;
+  const puzzle = new Chess(fen);
+  const expected = puzzle.moves({ verbose: true }).find((move) =>
+    move.from + move.to + (move.promotion || "") === solutionUci
+  );
+  if (!expected) return false;
+
+  chessLab?.stopPlay();
+  trainingStartFen = fen;
+  trainingGame = new Chess(fen);
+  trainingMoves = [{
+    from: expected.from,
+    to: expected.to,
+    san: expected.san,
+    ...(expected.promotion ? { promotion: expected.promotion } : {}),
+  }];
+  trainingIndex = 0;
+  selectedSquare = null;
+  mode = "training";
+  closePromotionChooser();
+  renderAll();
+  showToast("Puzzle generato: trova la mossa che evita l'errore.");
+  return true;
+}
+
 function startTraining() {
   chessLab?.stopPlay();
   trainingMoves = studioMoveObjects.map((move) => ({
@@ -953,17 +979,42 @@ function leaveTraining() {
   renderAll();
 }
 
+function importedGameFingerprint(tree) {
+  const headers = tree.headers || {};
+  const players = [headers.White || "", headers.Black || ""].map((value) => String(value).trim().toLowerCase());
+  const date = String(headers.Date || "").trim();
+  const site = String(headers.Site || "").trim().toLowerCase();
+  const moves = tree.mainlinePath().map((edgeId) => tree.getEdge(edgeId).uci).join(" ");
+  return [date, players.join("|"), site, moves].join("::");
+}
+
 async function saveImportedGames(games) {
-  if (!databaseReady) return { saved: 0, errors: [{ index: 0, message: "Database non pronto." }] };
+  if (!databaseReady) return { saved: 0, skipped: 0, errors: [{ index: 0, message: "Database non pronto." }] };
   if (!confirmDiscardChanges("importare le partite selezionate")) {
-    return { saved: 0, errors: [{ index: 0, message: "Importazione annullata: modifiche non salvate." }] };
+    return { saved: 0, skipped: 0, errors: [{ index: 0, message: "Importazione annullata: modifiche non salvate." }] };
   }
 
+  const knownGames = new Set();
+  for (const line of repertoire) {
+    try {
+      const tree = line.tree ? RepertoireTree.fromJSON(line.tree) : RepertoireTree.fromPgn(line.pgn);
+      knownGames.add(importedGameFingerprint(tree));
+    } catch {
+      // Una linea storica non valida non deve bloccare l'importazione dell'archivio.
+    }
+  }
   const savedEntries = [];
   const errors = [];
+  let skipped = 0;
   for (const [offset, item] of games.entries()) {
     try {
       const tree = item.tree;
+      const fingerprint = importedGameFingerprint(tree);
+      if (knownGames.has(fingerprint)) {
+        skipped += 1;
+        continue;
+      }
+      knownGames.add(fingerprint);
       const now = new Date().toISOString();
       const title = String(item.title || "Partita importata " + (offset + 1)).trim().slice(0, 70);
       const entry = {
@@ -998,7 +1049,7 @@ async function saveImportedGames(games) {
     openLine(savedEntries[0].id);
     renderAll();
   }
-  return { saved: savedEntries.length, errors };
+  return { saved: savedEntries.length, skipped, errors };
 }
 
 function importPgn() {
@@ -1163,5 +1214,16 @@ chessLab = initChessLab({
     return true;
   },
   importGames: saveImportedGames,
+  getArchive: () => [...repertoire],
+  getPlayerNames: () => {
+    try {
+      const profiles = JSON.parse(localStorage.getItem("chess-os.connected-accounts.v1") || "{}");
+      return [profiles.chesscom, profiles.lichess].filter((name) => typeof name === "string" && name.trim());
+    } catch {
+      return [];
+    }
+  },
+  openPuzzle: openGeneratedPuzzle,
+  openArchiveGame: (id) => openLine(id),
 });
 void initializePersistence();
