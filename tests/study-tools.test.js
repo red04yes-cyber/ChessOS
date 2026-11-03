@@ -82,5 +82,12 @@ test("shows the distinct paths that converge on a transposed position", () => {
   const tree = RepertoireTree.fromPgn("1. e4 (1. Nf3 Nc6 2. e4 e5) e5 2. Nf3 Nc6 *");
   const groups = getTranspositionGroups(tree);
   assert.ok(groups.length >= 1);
-  assert.ok(groups.some((group) => group.paths.length >= 2));
+  const group = groups.find((item) => item.paths.length >= 2);
+  assert.ok(group);
+  for (const path of group.paths) {
+    assert.ok(Array.isArray(path.edgeIds));
+    const replay = tree.replayPath(path.edgeIds);
+    assert.equal(replay.nodeId, group.nodeId);
+    assert.equal(replay.states.length - 1, path.ply);
+  }
 });
