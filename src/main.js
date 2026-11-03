@@ -187,6 +187,7 @@ function syncStudioPath(path, cursor = path.length) {
 }
 
 function positionForPly(ply) {
+  boardMarkAnchor = null;
   if (!Number.isInteger(ply) || ply < 0 || ply >= studioStates.length) return;
   try {
     game.load(studioStates[ply]);
@@ -499,7 +500,6 @@ function storeCurrentBoardMarks(marks) {
   setDirty(true);
   renderBoardMarkings();
   renderMoves();
-  renderAnnotationEditor();
 }
 
 function boardDisplayPoint(square) {
