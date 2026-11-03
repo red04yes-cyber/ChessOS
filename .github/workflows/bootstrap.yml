@@ -5,17 +5,21 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# CI must never write back to the repository.
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   windows:
     runs-on: windows-latest
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
-      - name: Reconstruct and publish the source tree
+
+      - name: Reconstruct source archive (fail closed)
         shell: pwsh
         run: |
+          $ErrorActionPreference = "Stop"
           $parts = @(
             "chessos-source-0.7.0.tar.gz.b64.part1",
             "chessos-source-0.7.0.tar.gz.b64.part2",
@@ -25,60 +29,74 @@ jobs:
             "chessos-source-0.7.0.tar.gz.b64.part6",
             "chessos-source-0.7.0.tar.gz.b64.part7"
           )
-          if (Test-Path $parts[0]) {
-            $encoded = ($parts | ForEach-Object { Get-Content $_ -Raw }) -join ""
-            [IO.File]::WriteAllBytes("chessos-source-0.7.0.tar.gz", [Convert]::FromBase64String($encoded))
-            tar -xzf chessos-source-0.7.0.tar.gz -C .
-            Remove-Item $parts
-            Remove-Item "chessos-source-0.7.0.tar.gz"
-            Remove-Item ".github/workflows/bootstrap.yml" -ErrorAction SilentlyContinue
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add -A
-            git commit -m "chore: publish Chess OS 0.7.0 source tree"
-            git push origin HEAD:main
+
+          $missing = @($parts | Where-Object { -not (Test-Path -LiteralPath $_ -PathType Leaf) })
+          if ($missing.Count -gt 0) {
+            Write-Error ("Source bundle is incomplete. Missing: " + ($missing -join ", ") + ". Add all seven archive parts to the repository before building.")
+            exit 1
           }
+
+          $encoded = ($parts | ForEach-Object { (Get-Content -LiteralPath $_ -Raw).Trim() }) -join ""
+          $archive = Join-Path $env:RUNNER_TEMP "chessos-source-0.7.0.tar.gz"
+          $extract = Join-Path $env:RUNNER_TEMP "chessos-source"
+          [IO.File]::WriteAllBytes($archive, [Convert]::FromBase64String($encoded))
+          New-Item -ItemType Directory -Force -Path $extract | Out-Null
+
+          tar -tzf $archive | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw "Source archive is not a valid gzip tar archive." }
+          tar -xzf $archive -C $extract
+          if ($LASTEXITCODE -ne 0) { throw "Could not extract the source archive." }
+
+          if (-not (Test-Path (Join-Path $extract "package.json")) -or
+              -not (Test-Path (Join-Path $extract "src-tauri/Cargo.toml"))) {
+            throw "Archive must contain package.json and src-tauri/Cargo.toml at its root."
+          }
+
+          Get-ChildItem -LiteralPath $extract -Force |
+            Where-Object { $_.Name -notin @(".git", ".github") } |
+            Copy-Item -Destination $env:GITHUB_WORKSPACE -Recurse -Force
+
+          if (-not (Test-Path "package.json") -or -not (Test-Path "src-tauri/Cargo.toml")) {
+            throw "Source reconstruction did not produce the expected project files."
+          }
+
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-pc-windows-msvc
-      - name: Install dependencies and generate Stockfish assets
+
+      - name: Install dependencies
         run: npm install --no-audit --no-fund
-      - name: Commit dependency lockfile
-        shell: pwsh
-        run: |
-          if (Test-Path "package-lock.json") {
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add package-lock.json
-            git diff --cached --quiet
-            if ($LASTEXITCODE -eq 1) {
-              git commit -m "chore: lock JavaScript dependencies"
-              git push origin HEAD:main
-            }
-          }
+
       - name: Verify dependencies and Stockfish assets
         run: |
           npm ls chess.js ts-fsrs stockfish react react-dom
           npm run verify:stockfish
+
       - name: Type-check
         run: npm run typecheck
+
       - name: Unit and migration tests
         run: |
           npm test
           npm run verify:schema
+
       - name: Browser engine test
         run: |
           npx playwright install chromium
           npm run build
           npm run smoke:engine
+
       - name: Build Windows installer
         run: npm run tauri:build -- --bundles nsis
+
       - name: Smoke test desktop executable
         shell: pwsh
         run: ./scripts/smoke-windows-exe.ps1
+
       - uses: actions/upload-artifact@v4
         with:
           name: chess-os-windows-nsis
