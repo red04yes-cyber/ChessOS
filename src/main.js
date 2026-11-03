@@ -696,9 +696,31 @@ function renderMoves() {
   });
 }
 
+function relativeRepertoireDate(line) {
+  const raw = line.updatedAt || line.createdAt;
+  if (!raw) return "";
+  const date = new Date(raw);
+  if (Number.isNaN(date.getTime())) return "";
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const target = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+  const days = Math.round((today - target) / 86_400_000);
+  if (days <= 0) return "oggi";
+  if (days === 1) return "ieri";
+  if (days < 7) return days + " giorni fa";
+  const sameYear = date.getFullYear() === now.getFullYear();
+  return new Intl.DateTimeFormat("it-IT", {
+    day: "numeric",
+    month: "short",
+    ...(sameYear ? {} : { year: "numeric" }),
+  }).format(date);
+}
+
 function renderRepertoire() {
   const list = $("#repertoire-list");
+  const search = $("#repertoire-search");
   list.replaceChildren();
+  search.hidden = repertoire.length <= 6;
 
   if (!repertoire.length) {
     const empty = document.createElement("div");
@@ -708,7 +730,19 @@ function renderRepertoire() {
     return;
   }
 
-  for (const line of repertoire) {
+  const query = search.hidden ? "" : search.value.trim().toLocaleLowerCase("it-IT");
+  const filtered = query
+    ? repertoire.filter((line) => String(line.title || "Repertorio senza nome").toLocaleLowerCase("it-IT").includes(query))
+    : repertoire;
+  if (!filtered.length) {
+    const empty = document.createElement("div");
+    empty.className = "repertoire-empty";
+    empty.textContent = "Nessun repertorio corrisponde a “" + search.value.trim() + "”.";
+    list.append(empty);
+    return;
+  }
+
+  for (const line of filtered) {
     const row = document.createElement("div");
     row.className = "repertoire-entry";
     if (line.id === activeLineId) row.classList.add("current");
@@ -723,20 +757,34 @@ function renderRepertoire() {
     const count = Number.isInteger(line.edgeCount)
       ? line.edgeCount
       : (Array.isArray(line.sans) ? line.sans.length : 0);
-    meta.textContent = count + " " + (count === 1 ? "mossa" : "mosse") + (line.nodeCount ? " · " + line.nodeCount + " posizioni" : "");
+    const positions = Number.isInteger(line.nodeCount) ? line.nodeCount : 0;
+    const date = relativeRepertoireDate(line);
+    meta.textContent = count + " " + (count === 1 ? "mossa" : "mosse")
+      + (positions ? " · " + positions + " posizioni" : "")
+      + (date ? " · " + date : "");
     open.title = line.title || "Repertorio senza nome";
     open.append(name, meta);
-    open.addEventListener("click", () => openLine(line.id));
+    open.addEventListener("click", () => { void openLine(line.id); });
 
+    const menu = document.createElement("details");
+    menu.className = "repertoire-menu";
+    const trigger = document.createElement("summary");
+    trigger.textContent = "···";
+    trigger.setAttribute("aria-label", "Azioni per " + (line.title || "questo repertorio"));
+    trigger.title = "Azioni repertorio";
+    const panel = document.createElement("div");
+    panel.className = "repertoire-menu-panel";
     const remove = document.createElement("button");
     remove.type = "button";
-    remove.className = "remove-line";
-    remove.textContent = "×";
-    remove.title = "Elimina linea";
-    remove.setAttribute("aria-label", "Elimina " + (line.title || "linea"));
-    remove.addEventListener("click", () => deleteLine(line.id));
-
-    row.append(open, remove);
+    remove.className = "menu-action danger";
+    remove.textContent = "Elimina repertorio";
+    remove.addEventListener("click", () => {
+      menu.open = false;
+      void deleteLine(line.id);
+    });
+    panel.append(remove);
+    menu.append(trigger, panel);
+    row.append(open, menu);
     list.append(row);
   }
 }
@@ -2439,6 +2487,7 @@ document.querySelectorAll("#review-grades [data-rating]").forEach((button) => {
   button.addEventListener("click", () => { void rateCurrentCard(button.dataset.rating); });
 });
 $("#review-exit").addEventListener("click", leaveTraining);
+$("#repertoire-search").addEventListener("input", renderRepertoire);
 $("#new-line").addEventListener("click", () => { void newPosition(); });
 $("#reset").addEventListener("click", () => { void newPosition(); });
 $("#undo").addEventListener("click", () => {
