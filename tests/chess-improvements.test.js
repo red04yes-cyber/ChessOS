@@ -34,6 +34,7 @@ test("opponent preparation filters named players and reports openings and recurr
     '[White "Alice"]',
     '[Black "Bob"]',
     '[Opening "Italian Game"]',
+    '[Date "2025.01.15"]',
     '[Result "1-0"]',
     "",
     "1. e4 e5 2. Nf3 Nc6 3. Bc4 Bc5 1-0",
@@ -42,6 +43,7 @@ test("opponent preparation filters named players and reports openings and recurr
     '[White "Carol"]',
     '[Black "Bob"]',
     '[Opening "Sicilian Defense"]',
+    '[Date "2025.03.02"]',
     '[Result "0-1"]',
     "",
     "1. e4 c5 2. Nf3 d6 3. d4 cxd4 0-1",
@@ -59,6 +61,9 @@ test("opponent preparation filters named players and reports openings and recurr
   assert.equal(report.colors.black, 2);
   assert.equal(report.openings.length, 2);
   assert.equal(report.openings[0].games, 1);
+  assert.deepEqual(report.period, { from: "2025-01-15", to: "2025-03-02", datedGames: 2 });
+  assert.equal(report.results.win, 1);
+  assert.equal(report.results.loss, 1);
   assert.ok(report.firstMoves.some((move) => move.san === "e5"));
   assert.ok(report.movePreferences[0].moves.some((move) => move.san === "e5"));
 });
