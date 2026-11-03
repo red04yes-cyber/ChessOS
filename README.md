@@ -12,6 +12,7 @@ Windows-first chess repertoire and training desktop app. This repository now con
 - Check, checkmate, stalemate and draw status
 - Create, rename, save, open and delete repertoire lines
 - SQLite persistence in the Windows desktop app, with localStorage fallback for browser preview
+- Full local SQLite backup export, validated restore, rotating automatic snapshots and conservative recovery from corruption
 - Versioned SQLite migrations, normalized position/move tables and localStorage-to-SQLite import
 - PGN import and export, including recursive annotation variations (RAV)
 - Repertoire graph with move nodes/edges, branch navigation and in-place variation editing
@@ -30,7 +31,7 @@ This is **not** the recovered 0.7.0 application and is not yet feature-complete 
 - SQLite database backup/export and restore UI
 - Stockfish analysis / evaluation
 - Dashboard, analytics, goals and exams
-- Cloud sync, account system and backups
+- Cloud sync, account system and remote backups
 
 The old archive fragments remain under `recovery/` for provenance only. They are not build inputs.
 
@@ -71,11 +72,15 @@ The installer, when a successful CI run produces it, is uploaded as the `chess-o
 
 The Tauri desktop app stores repertoire data in `chess-os.sqlite3` inside the application data directory managed by Tauri. The database has versioned migrations (`schema_migrations`), a repertoire table, normalized position and move-edge tables (so branches and transpositions are retained), app settings, and the tables reserved for training cards and review history. Foreign keys and cascading deletes keep each repertoire graph consistent. The browser preview uses `localStorage` only as a development fallback.
 
-On first desktop startup, Chess OS imports legacy `chess-os.repertoire.v1` entries from WebView `localStorage` that are not already in SQLite. The legacy key is removed only after all entries have imported successfully. To back up a repertoire today, export it as PGN; a full SQLite backup/restore interface is still planned. See [docs/DATABASE.md](docs/DATABASE.md) for the schema and migration details.
+On first desktop startup, Chess OS imports legacy `chess-os.repertoire.v1` entries from WebView `localStorage` that are not already in SQLite. The legacy key is removed only after all entries have imported successfully. Use **Crea backup** in the Database / Sicurezza panel to export a standalone SQLite snapshot, or **Ripristina da file** to import a validated backup. The app keeps five rotating automatic snapshots and attempts conservative recovery from the newest verified snapshot if SQLite reports corruption. The browser preview exports JSON for its localStorage repertoire rather than a SQLite file. See [docs/DATABASE.md](docs/DATABASE.md) for the schema and migration details and [docs/DATABASE_BACKUPS.md](docs/DATABASE_BACKUPS.md) for backup, restore and recovery behavior.
 
 ## Release preparation
 
 Release checklist, clean-Windows acceptance steps, branch-protection instructions and draft 0.1.0 notes: [docs/RELEASING.md](docs/RELEASING.md) and [docs/releases/v0.1.0.md](docs/releases/v0.1.0.md). The current CI runs an installer upgrade/data-preservation smoke test and produces a SHA-256 sidecar; manual testing on a separate Windows 10/11 machine is still required.
+
+## Dependency security
+
+GitHub Actions runs `npm audit --audit-level=high` and `cargo audit` during verification. Dependabot proposes weekly dependency updates for npm and Cargo.
 
 ## License
 

@@ -802,6 +802,152 @@ function newPosition() {
   renderAll();
 }
 
+
+const MAX_BACKUP_BYTES = 64 * 1024 * 1024;
+
+function bytesToBase64(bytes) {
+  let binary = "";
+  const chunkSize = 0x8000;
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
+  }
+  return btoa(binary);
+}
+
+function base64ToBytes(encoded) {
+  const binary = atob(encoded);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  return bytes;
+}
+
+function downloadBackupBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.append(anchor);
+  anchor.click();
+  anchor.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+async function exportDatabaseBackup() {
+  if (!databaseReady) {
+    showToast("Archivio non pronto: il backup non è disponibile.");
+    return;
+  }
+  try {
+    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+    if (persistenceMode === "sqlite") {
+      const encoded = await invoke("create_database_backup");
+      const bytes = base64ToBytes(encoded);
+      if (bytes.byteLength > MAX_BACKUP_BYTES) {
+        throw new Error("Il database supera il limite di esportazione di 64 MiB.");
+      }
+      downloadBackupBlob(new Blob([bytes], { type: "application/vnd.sqlite3" }),
+        "chess-os-backup-" + timestamp + ".sqlite3");
+    } else {
+      const payload = {
+        format: "chess-os-browser-backup",
+        schemaVersion: 1,
+        exportedAt: new Date().toISOString(),
+        repertoires,
+      };
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+      if (blob.size > MAX_BACKUP_BYTES) {
+        throw new Error("I dati superano il limite di esportazione di 64 MiB.");
+      }
+      downloadBackupBlob(blob, "chess-os-browser-backup-" + timestamp + ".json");
+    }
+    showToast("Backup creato e pronto per essere salvato.");
+  } catch (error) {
+    showToast("Backup non riuscito: " + error.message);
+  }
+}
+
+function resetStudioAfterDatabaseRestore() {
+  mode = "studio";
+  trainingGame = null;
+  trainingMoves = [];
+  trainingIndex = 0;
+  activeLineId = null;
+  baseFen = DEFAULT_FEN;
+  studioTree = new RepertoireTree(DEFAULT_FEN);
+  syncStudioPath([]);
+  studioPly = 0;
+  selectedSquare = null;
+  closePromotionChooser();
+  titleInput.value = "Nuova linea";
+  setDirty(false);
+}
+
+function validateBrowserBackup(payload) {
+  if (payload?.format !== "chess-os-browser-backup"
+    || payload?.schemaVersion !== 1
+    || !Array.isArray(payload.repertoires)) {
+    throw new Error("Formato del backup browser non riconosciuto.");
+  }
+
+  return payload.repertoires.map((entry) => {
+    if (!entry || typeof entry.id !== "string" || !entry.id.trim()
+      || typeof entry.pgn !== "string" || entry.pgn.length > 5_000_000) {
+      throw new Error("Il backup contiene un repertorio non valido.");
+    }
+    const tree = entry.tree
+      ? RepertoireTree.fromJSON(entry.tree)
+      : RepertoireTree.fromPgn(entry.pgn);
+    return {
+      ...entry,
+      pgn: entry.pgn || tree.toPgn({ Event: entry.title || "Chess OS repertoire" }),
+      tree: tree.toJSON(),
+    };
+  });
+}
+
+async function restoreDatabaseFromFile(file) {
+  if (!file) return;
+  if (file.size <= 0 || file.size > MAX_BACKUP_BYTES) {
+    showToast("Dimensione del backup non valida (limite 64 MiB).");
+    return;
+  }
+  if (!databaseReady) {
+    showToast("Archivio non pronto: il ripristino non è disponibile.");
+    return;
+  }
+
+  const confirmation = persistenceMode === "sqlite"
+    ? "Il ripristino sostituirà l'archivio corrente. Prima verrà creato un backup SQLite di sicurezza. Continuare?"
+    : "Il ripristino sostituirà i repertori nella memoria del browser. Una copia di sicurezza locale verrà conservata prima della sostituzione. Continuare?";
+  const accepted = window.confirm(confirmation);
+  if (!accepted) return;
+
+  try {
+    if (persistenceMode === "sqlite") {
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      await invoke("restore_database", { backupBase64: bytesToBase64(bytes) });
+      repertoire = await invoke("list_repertoires");
+      resetStudioAfterDatabaseRestore();
+      updateStorageLabel("Database SQLite", "Archivio ripristinato · " + repertoire.length + " repertori");
+    } else {
+      const payload = JSON.parse(await file.text());
+      const restored = validateBrowserBackup(payload);
+      const previousState = localStorage.getItem(STORAGE_KEY) || "[]";
+      localStorage.setItem("chess-os.repertoire.restore-safety.v1", previousState);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(restored));
+      repertoire = readRepertoire();
+      resetStudioAfterDatabaseRestore();
+      updateStorageLabel("Anteprima browser", "Backup ripristinato · " + repertoire.length + " repertori");
+    }
+    renderAll();
+    showToast("Ripristino completato.");
+  } catch (error) {
+    showToast("Ripristino non riuscito: " + error.message);
+  }
+}
+
 async function copyFen() {
   const fen = activeGame().fen();
   try {
@@ -850,6 +996,13 @@ promotionDialog.addEventListener("click", (event) => {
   }
 });
 titleInput.addEventListener("input", () => setDirty(true));
+$("#database-backup").addEventListener("click", () => { void exportDatabaseBackup(); });
+$("#database-restore").addEventListener("click", () => $("#database-backup-file").click());
+$("#database-backup-file").addEventListener("change", (event) => {
+  const [file] = event.target.files || [];
+  if (file) void restoreDatabaseFromFile(file);
+  event.target.value = "";
+});
 
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && pendingPromotion) {

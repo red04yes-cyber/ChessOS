@@ -7,6 +7,8 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
+  schedule:
+    - cron: '23 7 * * 1'
 
 permissions:
   contents: read
@@ -29,6 +31,8 @@ jobs:
           node-version: 22
       - name: Install dependencies
         run: npm install --no-audit --no-fund
+      - name: Check npm dependency advisories
+        run: npm audit --audit-level=high
       - name: Run chess logic tests
         run: npm test
       - name: Build frontend
@@ -52,12 +56,18 @@ jobs:
           targets: x86_64-pc-windows-msvc
       - name: Install dependencies
         run: npm install --no-audit --no-fund
+      - name: Check npm dependency advisories
+        run: npm audit --audit-level=high
       - name: Run chess logic tests
         run: npm test
       - name: Build frontend for Tauri metadata
         run: npm run build
       - name: Run SQLite backend tests
         run: cargo test --manifest-path src-tauri/Cargo.toml
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked
+      - name: Check Rust dependency advisories
+        run: cargo audit --file src-tauri/Cargo.lock
       - name: Test clean install, app launch, 0.1.x upgrade and SQLite preservation
         shell: pwsh
         run: ./scripts/windows-installer-smoke.ps1
