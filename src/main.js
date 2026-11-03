@@ -40,6 +40,8 @@ let mode = "studio";
 let selectedSquare = null;
 let boardFlipped = false;
 let pendingPromotion = null;
+let promotionReturnFocus = null;
+let pendingBoardFocusSquare = null;
 const persistenceMode = isTauri() ? "sqlite" : "browser";
 let databaseReady = persistenceMode === "browser";
 let repertoire = persistenceMode === "browser" ? readRepertoire() : [];
@@ -530,6 +532,11 @@ function renderBoard() {
       boardElement.append(button);
     }
   }
+  if (pendingBoardFocusSquare) {
+    const focusSquare = boardElement.querySelector('[data-square="' + pendingBoardFocusSquare + '"]');
+    pendingBoardFocusSquare = null;
+    focusSquare?.focus({ preventScroll: true });
+  }
 
   const turnSide = chess.turn() === "w" ? "Bianco" : "Nero";
   $("#turn-label").textContent = turnSide + " al tratto";
@@ -951,10 +958,13 @@ async function removeImportedGame(id) {
   }
 }
 
-function closePromotionChooser() {
+function closePromotionChooser(restoreFocus = true) {
+  const returnSquare = promotionReturnFocus?.dataset.square;
+  promotionReturnFocus = null;
   pendingPromotion = null;
   promotionDialog.hidden = true;
   promotionOptions.replaceChildren();
+  if (restoreFocus && returnSquare) pendingBoardFocusSquare = returnSquare;
 }
 
 function openPromotionChooser(from, to, legalMoves) {
@@ -962,6 +972,7 @@ function openPromotionChooser(from, to, legalMoves) {
   pendingPromotion = { from, to, legalMoves };
   promotionOptions.replaceChildren();
   const color = chess.turn();
+  promotionReturnFocus = boardElement.querySelector('[data-square="' + from + '"]');
 
   for (const type of ["q", "r", "b", "n"]) {
     const choice = legalMoves.find((move) => move.promotion === type);
@@ -970,6 +981,9 @@ function openPromotionChooser(from, to, legalMoves) {
     button.type = "button";
     button.className = "promotion-choice";
     button.setAttribute("aria-label", "Promuovi a " + promotionNames[type]);
+    const keyMap = { q: "1,d", r: "2,t", b: "3,a", n: "4,c" };
+    button.dataset.promotionKeys = keyMap[type];
+    button.title = promotionNames[type] + " · " + keyMap[type].split(",").join(" / ").toUpperCase();
     const piece = document.createElementNS("http://www.w3.org/2000/svg", "svg");
     piece.setAttribute("class", "piece " + (color === "w" ? "white-piece" : "black-piece"));
     piece.setAttribute("viewBox", "0 0 45 45");
@@ -982,8 +996,11 @@ function openPromotionChooser(from, to, legalMoves) {
     button.append(piece, label);
     button.addEventListener("click", () => {
       const selectedMove = pendingPromotion?.legalMoves.find((move) => move.promotion === type);
-      closePromotionChooser();
-      if (selectedMove) commitSelectedMove(selectedMove);
+      closePromotionChooser(false);
+      if (selectedMove) {
+        pendingBoardFocusSquare = to;
+        commitSelectedMove(selectedMove);
+      }
     });
     promotionOptions.append(button);
   }
@@ -2359,10 +2376,36 @@ document.addEventListener("keydown", (event) => {
     closeOnlineImportDialog();
     return;
   }
-  if (event.key === "Escape" && pendingPromotion) {
-    closePromotionChooser();
-    selectedSquare = null;
-    renderBoard();
+  if (pendingPromotion) {
+    if (event.key === "Escape") {
+      closePromotionChooser();
+      selectedSquare = null;
+      renderBoard();
+      return;
+    }
+    const promotionButtons = Array.from(promotionOptions.querySelectorAll("button"));
+    const cancelButton = $("#promotion-cancel");
+    const firstButton = promotionButtons[0];
+    const lastButton = cancelButton;
+    if (event.key === "Tab") {
+      if (event.shiftKey && document.activeElement === firstButton) {
+        event.preventDefault();
+        lastButton.focus();
+      } else if (!event.shiftKey && document.activeElement === lastButton) {
+        event.preventDefault();
+        firstButton?.focus();
+      }
+      return;
+    }
+    const key = event.key.toLowerCase();
+    const selectedPromotion = promotionButtons.find((button) =>
+      button.dataset.promotionKeys?.split(",").includes(key)
+    );
+    if (selectedPromotion) {
+      event.preventDefault();
+      selectedPromotion.click();
+      return;
+    }
     return;
   }
   const target = event.target;
