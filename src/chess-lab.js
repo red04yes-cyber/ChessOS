@@ -1,14 +1,14 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { parseUciInfo, uciPvToSan } from "./engine-uci.js";
+import { parseUciInfo } from "./engine-uci.js";
 import { parsePgnCollection } from "./pgn-import.js";
-import { fetchChessComGames, fetchLichessGames } from "./game-sources.js";
-import { classifyMoveLoss, explainMove, scoreToWhiteCentipawns } from "./chess-coach.js";
+import { syncChessComGames, syncLichessGames } from "./game-sources.js";
+import { buildMoveReview, timelineFromPgn } from "./chess-metrics.js";
 
 const fmt = new Intl.NumberFormat("it-IT");
 
 export function initChessLab(options) {
-  const { container, desktopApp, getGame, getMode, getPositions, getMoves, startEngine, playUciMove, importGames } = options;
+  const { container, desktopApp, getGame, getMode, getPositions, getMoves, startEngine, playUciMove, importGames, getArchive = () => [], getPlayerNames = () => [], openPuzzle = () => false, openArchiveGame = () => false } = options;
   const style = document.createElement("style");
   style.textContent = [
     ".chess-lab-card{min-width:0}",
@@ -34,7 +34,18 @@ export function initChessLab(options) {
     ".lab-progress>span{display:block;height:100%;width:0;background:#d7a64b;transition:width .15s}",
     ".lab-file{color:#9eadbd;font-size:10px;max-width:100%}",
     ".lab-input{width:100%;min-height:60px;background:#121923;color:#e6edf5;border:1px solid #3a4656;border-radius:5px;padding:8px;font:inherit;font-size:10px;resize:vertical}",
-    ".lab-link{color:#e2bd70;font-size:9px;text-decoration:underline}"
+    ".lab-link{color:#e2bd70;font-size:9px;text-decoration:underline}",
+    ".lab-metrics{display:flex;gap:7px;flex-wrap:wrap;color:#e6edf5;font-size:10px;line-height:1.5}",
+    ".lab-metric{border:1px solid #354253;border-radius:6px;padding:7px 9px;background:#202a37}",
+    ".lab-chart{min-height:92px;border:1px solid #354253;border-radius:6px;background:#121923;padding:6px;overflow:hidden}",
+    ".lab-chart svg{width:100%;height:100px;display:block}",
+    ".lab-chart text{font:9px sans-serif;fill:#91a0b2}",
+    ".lab-puzzle{display:grid;gap:5px;border:1px solid #80683d;border-radius:6px;padding:8px;background:#292a2b}",
+    ".lab-puzzle button{justify-self:start}",
+    ".lab-archive-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:7px;align-items:center;border:1px solid #354253;border-radius:6px;padding:7px;background:#202a37}",
+    ".lab-archive-row p{margin:0;color:#c5d0dd;font-size:10px;line-height:1.4}",
+    ".lab-account-grid{display:grid;gap:7px}",
+    ".lab-account-grid .text-input{min-width:0;width:100%;padding:7px;font-size:10px}"
   ].join("");
   document.head.append(style);
 
@@ -45,7 +56,7 @@ export function initChessLab(options) {
     '<div class="lab-sections">',
     '<details class="lab-section" open><summary>1–2 · Analisi partita e spiegazione degli errori</summary><div class="lab-body">',
     '<div class="lab-row"><label class="field-label" for="lab-depth">Profondità</label><select id="lab-depth" class="text-input"><option value="8">8</option><option value="10" selected>10</option><option value="12">12</option></select><button class="button small primary" id="lab-review">Analizza le mosse</button><button class="button small ghost" id="lab-review-stop" disabled>Interrompi</button></div>',
-    '<div class="lab-status" id="lab-review-status">Apri o importa una partita con mosse.</div><div class="lab-progress"><span id="lab-review-progress"></span></div><div class="lab-list" id="lab-review-results"></div>',
+    '<div class="lab-status" id="lab-review-status">Apri una partita oppure sincronizza un account e analizza l\'archivio.</div><div class="lab-progress"><span id="lab-review-progress"></span></div><div class="lab-metrics" id="lab-review-summary"></div><div class="lab-chart" id="lab-review-chart"></div><div class="lab-list" id="lab-review-results"></div><div class="lab-list" id="lab-puzzles"></div>',
     '<p class="lab-note">Il motore confronta la valutazione prima e dopo ogni mossa. Le spiegazioni indicano il tema riconosciuto o, in assenza di una causa evidente, la differenza rispetto alla linea migliore.</p>',
     '</div></details>',
     '<details class="lab-section"><summary>3 · Opening Explorer</summary><div class="lab-body">',
@@ -59,12 +70,22 @@ export function initChessLab(options) {
     '<div class="lab-status" id="lab-play-status">' + (desktopApp ? "Parti dalla posizione corrente o da una variante selezionata." : "Stockfish è disponibile nella versione desktop Windows.") + '</div>',
     '<p class="lab-note">Il motore gioca automaticamente quando è il suo turno. Puoi terminare la partita in qualsiasi momento.</p>',
     '</div></details>',
-    '<details class="lab-section"><summary>5 · Importa partite da file, Chess.com o Lichess</summary><div class="lab-body">',
-    '<label class="field-label" for="lab-pgn-file">File PGN locale</label><input id="lab-pgn-file" class="lab-file" type="file" accept=".pgn,.txt,application/x-chess-pgn,text/plain" />',
-    '<div class="lab-row"><select id="lab-platform" class="text-input"><option value="chesscom">Chess.com</option><option value="lichess">Lichess</option></select><input id="lab-username" class="text-input" maxlength="30" placeholder="Username pubblico" autocomplete="off" /><button class="button small ghost" id="lab-import-account">Scarica partite</button></div>',
-    '<textarea id="lab-pgn-text" class="lab-input" rows="3" placeholder="Oppure incolla uno o più PGN…"></textarea><div class="lab-row"><button class="button small primary" id="lab-import-text">Importa PGN</button></div>',
-    '<div class="lab-status" id="lab-import-status">Fino a 100 partite per importazione. Le partite valide vengono conservate anche se altre non superano la verifica.</div><div class="lab-list" id="lab-import-errors"></div>',
-    '<p class="lab-note">I profili remoti devono essere pubblici. L&#39;importazione non richiede la password dell&#39;account.</p>',
+    '<details class="lab-section" open><summary>5 · Sincronizza account e importa partite</summary><div class="lab-body">',
+    '<div class="lab-account-grid">',
+    '<label class="field-label" for="lab-chesscom-user">Username Chess.com</label><input id="lab-chesscom-user" class="text-input" maxlength="30" placeholder="Il tuo username pubblico" autocomplete="off" />',
+    '<label class="field-label" for="lab-lichess-user">Username Lichess</label><input id="lab-lichess-user" class="text-input" maxlength="30" placeholder="Il tuo username Lichess" autocomplete="off" />',
+    '<label class="field-label" for="lab-lichess-import-token">Token Lichess (facoltativo)</label><input id="lab-lichess-import-token" class="text-input" type="password" autocomplete="off" placeholder="Solo in memoria · nessuna password" />',
+    '<a class="lab-link" href="https://lichess.org/account/oauth/token" target="_blank" rel="noopener noreferrer">Crea token API Lichess</a>',
+    '<button class="button small primary" id="lab-sync-accounts">Sincronizza account</button></div>',
+    '<p class="lab-note">Chess.com: il servizio ufficiale espone solo le partite pubbliche, senza login. Lichess: esporta tutte le partite; il token facoltativo resta in memoria e non viene salvato.</p>',
+    '<label class="field-label" for="lab-pgn-file">Oppure importa un file PGN</label><input id="lab-pgn-file" class="lab-file" type="file" accept=".pgn,.txt,application/x-chess-pgn,text/plain" />',
+    '<textarea id="lab-pgn-text" class="lab-input" rows="3" placeholder="Oppure incolla uno o più PGN…"></textarea><div class="lab-row"><button class="button small ghost" id="lab-import-text">Importa PGN</button></div>',
+    '<div class="lab-status" id="lab-import-status">La sincronizzazione scarica gli archivi mensili Chess.com e l\'export completo Lichess, in sequenza. Le partite già presenti vengono saltate.</div><div class="lab-list" id="lab-import-errors"></div>',
+    '</div></details>',
+    '<details class="lab-section"><summary>6 · Analizza tutte le partite archiviate e crea puzzle</summary><div class="lab-body">',
+    '<div class="lab-row"><label class="field-label" for="lab-archive-limit">Partite</label><select id="lab-archive-limit" class="text-input"><option value="10">Ultime 10</option><option value="25" selected>Ultime 25</option><option value="50">Ultime 50</option><option value="all">Tutte</option></select><button class="button small primary" id="lab-archive-analyze">Analizza archivio</button><button class="button small ghost" id="lab-archive-stop" disabled>Interrompi</button></div>',
+    '<div class="lab-status" id="lab-archive-status">Analizza ogni mossa con Stockfish e conserva localmente precisione, grafico e puzzle generati.</div><div class="lab-progress"><span id="lab-archive-progress"></span></div><div class="lab-metrics" id="lab-archive-summary"></div><div class="lab-chart" id="lab-archive-chart"></div><div class="lab-list" id="lab-archive-results"></div>',
+    '<p class="lab-note">La precisione è una stima interna basata sulla perdita media in centipawn, non coincide con il punteggio proprietario di Chess.com o Lichess. Per contenere i tempi l\'analisi dell\'archivio usa profondità 8 e al massimo 60 semimosse per partita; puoi interromperla e riprenderla.</p>',
     '</div></details>',
     '</div>'
   ].join("");
@@ -81,6 +102,10 @@ export function initChessLab(options) {
   let openingController = null;
   const openingCache = new Map();
   let tokenInMemory = "";
+  let archiveCancelled = false;
+  let archiveRunning = false;
+  let latestReviewReport = null;
+  const ANALYSIS_STORAGE_KEY = "chess-os.move-analysis.v1";
   let searchBusy = false;
 
   function setStatus(selector, message, isError = false) {
