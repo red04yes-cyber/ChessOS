@@ -592,7 +592,7 @@ function renderBoard() {
         use.setAttribute("href", "#piece-" + piece.color + piece.type);
         pieceSvg.append(use);
         button.append(pieceSvg);
-        button.setAttribute("aria-label", (piece.color === "w" ? "Bianco " : "Nero ") + PIECE_NAMES[piece.type] + " in " + square);
+        button.setAttribute("aria-label", PIECE_NAMES[piece.type] + (piece.color === "w" ? " bianco" : " nero") + " in " + square);
       } else {
         button.setAttribute("aria-label", "Casa vuota " + square);
       }
