@@ -1192,9 +1192,9 @@ function handleSquareClick(square) {
   commitSelectedMove(choices[0]);
 }
 
-function openLine(id) {
+async function openLine(id) {
   const line = repertoire.find((item) => item.id === id);
-  if (!line || !confirmDiscardChanges("aprire un'altra linea")) return;
+  if (!line || !(await confirmDiscardChanges("aprire un altro repertorio"))) return false;
   chessLab?.stopPlay();
   try {
     const loaded = line.tree ? RepertoireTree.fromJSON(line.tree) : RepertoireTree.fromPgn(line.pgn);
@@ -1206,16 +1206,26 @@ function openLine(id) {
     trainingGame = null;
     closePromotionChooser();
     renderAll();
+    return true;
   } catch (error) {
-    showToast("PGN non leggibile: " + error.message);
+    showToast("PGN non leggibile: " + error.message, { type: "error" });
+    return false;
   }
 }
 
 async function deleteLine(id) {
   const line = repertoire.find((item) => item.id === id);
   if (!line) return;
-  const accepted = window.confirm("Eliminare “" + (line.title || "Linea senza nome") + "” dal repertorio?");
-  if (!accepted) return;
+  const title = line.title || "Repertorio senza nome";
+  const accepted = await confirmDialog({
+    title: "Eliminare “" + title + "”?",
+    message: "Il repertorio verrà eliminato definitivamente da questo dispositivo. Esporta il PGN prima, se vuoi conservarne una copia.",
+    actions: [
+      { label: "Annulla", value: "cancel", variant: "ghost", safe: true },
+      { label: "Elimina repertorio", value: "delete", variant: "danger" },
+    ],
+  });
+  if (accepted !== "delete") return;
   if (!databaseReady) {
     showToast("Database non pronto: eliminazione non eseguita.");
     return;
@@ -1240,14 +1250,14 @@ async function deleteLine(id) {
 }
 
 async function saveLine() {
-  if (mode === "training") return;
+  if (mode === "training") return false;
   if (!databaseReady) {
-    showToast("Database non pronto: il salvataggio è disattivato.");
-    return;
+    showToast("Database non pronto: il salvataggio è disattivato.", { type: "error" });
+    return false;
   }
   if (!studioTree.edges.size) {
-    showToast("Aggiungi almeno una mossa prima di salvare.");
-    return;
+    showToast("Aggiungi almeno una mossa prima di salvare.", { type: "warning" });
+    return false;
   }
 
   const pgn = timelinePgn();
@@ -1275,19 +1285,21 @@ async function saveLine() {
     } else {
       const next = repertoire.filter((item) => item.id !== id);
       repertoire = [entry, ...next];
-      if (!persistRepertoire()) return;
+      if (!persistRepertoire()) return false;
     }
     activeLineId = id;
     setDirty(false);
     renderAll();
-    showToast("Linea salvata nel database.");
+    showToast("Repertorio salvato.", { type: "success" });
+    return true;
   } catch (error) {
-    showToast("Errore salvataggio SQLite: " + error.message);
+    showToast("Errore salvataggio SQLite: " + error.message, { type: "error" });
+    return false;
   }
 }
 
-function openGeneratedPuzzle(fen, solutionUci) {
-  if (!confirmDiscardChanges("aprire il puzzle generato")) return false;
+async function openGeneratedPuzzle(fen, solutionUci) {
+  if (!(await confirmDiscardChanges("aprire il puzzle generato"))) return false;
   const puzzle = new Chess(fen);
   const expected = puzzle.moves({ verbose: true }).find((move) =>
     move.from + move.to + (move.promotion || "") === solutionUci
@@ -1355,7 +1367,7 @@ function importedGameFingerprint(tree) {
 
 async function saveImportedGames(games) {
   if (!databaseReady) return { saved: 0, skipped: 0, errors: [{ index: 0, message: "Database non pronto." }] };
-  if (!confirmDiscardChanges("importare le partite selezionate")) {
+  if (!(await confirmDiscardChanges("importare le partite selezionate"))) {
     return { saved: 0, skipped: 0, errors: [{ index: 0, message: "Importazione annullata: modifiche non salvate." }] };
   }
 
@@ -1411,13 +1423,13 @@ async function saveImportedGames(games) {
 
   if (savedEntries.length) {
     setDirty(false);
-    openLine(savedEntries[0].id);
+    await openLine(savedEntries[0].id);
     renderAll();
   }
   return { saved: savedEntries.length, skipped, errors };
 }
 
-function importPgn() {
+async function importPgn() {
   const text = $("#pgn-input").value.trim();
   if (!text) {
     showToast("Incolla prima un testo PGN.");
@@ -1425,7 +1437,7 @@ function importPgn() {
   }
   try {
     const imported = RepertoireTree.fromPgn(text);
-    if (!confirmDiscardChanges("importare questo PGN")) return;
+    if (!(await confirmDiscardChanges("importare questo PGN"))) return;
     chessLab?.stopPlay();
     rebuildTimeline(imported);
     mode = "studio";
@@ -1458,12 +1470,12 @@ function exportPgn() {
   showToast("File PGN esportato.");
 }
 
-function newPosition() {
+async function newPosition() {
   if (mode === "training") {
     leaveTraining();
     return;
   }
-  if (!confirmDiscardChanges("iniziare una nuova linea")) return;
+  if (!(await confirmDiscardChanges("creare un nuovo repertorio"))) return;
   chessLab?.stopPlay();
   baseFen = DEFAULT_FEN;
   studioTree = new RepertoireTree(DEFAULT_FEN);
@@ -1608,8 +1620,7 @@ chessLab = initChessLab({
   },
   openPuzzle: openGeneratedPuzzle,
   openArchiveGame: (id) => {
-    openLine(id);
-    return activeLineId === id && !dirty;
+    return openLine(id);
   },
 });
 void initializePersistence();
