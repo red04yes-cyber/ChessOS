@@ -1,7 +1,7 @@
 use rusqlite::backup::Backup;
 use rusqlite::{Connection, OpenFlags};
 use serde::Serialize;
-use std::fs::{self, File, OpenOptions};
+use std::fs::{self, OpenOptions};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Manager, State};
@@ -45,7 +45,10 @@ fn now_millis() -> String {
 }
 
 fn backup_directory(app: &AppHandle) -> Result<PathBuf, String> {
-    let app_data = app.path().app_data_dir().map_err(|error| error.to_string())?;
+    let app_data = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| error.to_string())?;
     Ok(app_data.join("backups"))
 }
 
@@ -91,7 +94,11 @@ fn verify_database(connection: &Connection) -> Result<i64, String> {
         .prepare("PRAGMA foreign_key_check")
         .map_err(|error| error.to_string())?;
     let mut violations = foreign_keys.query([]).map_err(|error| error.to_string())?;
-    if violations.next().map_err(|error| error.to_string())?.is_some() {
+    if violations
+        .next()
+        .map_err(|error| error.to_string())?
+        .is_some()
+    {
         return Err("Il backup contiene riferimenti tra tabelle non validi.".into());
     }
 
@@ -281,7 +288,11 @@ pub fn list_database_backups(app: AppHandle) -> Result<Vec<BackupRecord>, String
     let mut records = Vec::new();
     for entry in fs::read_dir(&directory).map_err(|error| error.to_string())? {
         let entry = entry.map_err(|error| error.to_string())?;
-        if !entry.file_type().map_err(|error| error.to_string())?.is_file() {
+        if !entry
+            .file_type()
+            .map_err(|error| error.to_string())?
+            .is_file()
+        {
             continue;
         }
         let Some(name) = entry.file_name().to_str().map(str::to_string) else {
@@ -297,10 +308,7 @@ pub fn list_database_backups(app: AppHandle) -> Result<Vec<BackupRecord>, String
 }
 
 #[tauri::command]
-pub fn verify_database_backup(
-    app: AppHandle,
-    name: String,
-) -> Result<BackupVerification, String> {
+pub fn verify_database_backup(app: AppHandle, name: String) -> Result<BackupVerification, String> {
     let directory = backup_directory(&app)?;
     let path = backup_path(&directory, &name)?;
     open_and_verify(&path, &name)
@@ -314,11 +322,8 @@ pub fn restore_database_backup(
 ) -> Result<RestoreResult, String> {
     let directory = backup_directory(&app)?;
     let selected_path = backup_path(&directory, &name)?;
-    let selected = Connection::open_with_flags(
-        &selected_path,
-        OpenFlags::SQLITE_OPEN_READ_ONLY,
-    )
-    .map_err(|error| format!("Impossibile aprire il backup: {error}"))?;
+    let selected = Connection::open_with_flags(&selected_path, OpenFlags::SQLITE_OPEN_READ_ONLY)
+        .map_err(|error| format!("Impossibile aprire il backup: {error}"))?;
     verify_database(&selected)?;
 
     let mut destination = database
@@ -337,13 +342,10 @@ pub fn restore_database_backup(
         });
 
     if let Err(error) = restore_result {
-        let rollback = Connection::open_with_flags(
-            &safety_path,
-            OpenFlags::SQLITE_OPEN_READ_ONLY,
-        )
-        .map_err(|rollback_error| rollback_error.to_string())
-        .and_then(|safety_source| copy_database(&safety_source, &mut destination))
-        .and_then(|_| verify_database(&destination).map(|_| ()));
+        let rollback = Connection::open_with_flags(&safety_path, OpenFlags::SQLITE_OPEN_READ_ONLY)
+            .map_err(|rollback_error| rollback_error.to_string())
+            .and_then(|safety_source| copy_database(&safety_source, &mut destination))
+            .and_then(|_| verify_database(&destination).map(|_| ()));
         return match rollback {
             Ok(()) => Err(format!(
                 "Ripristino annullato: {error}. Il database precedente è stato ripristinato; copia conservata: {}",
@@ -377,7 +379,9 @@ mod tests {
 
     fn memory_database() -> Connection {
         let mut connection = Connection::open_in_memory().unwrap();
-        connection.execute_batch("PRAGMA foreign_keys = ON;").unwrap();
+        connection
+            .execute_batch("PRAGMA foreign_keys = ON;")
+            .unwrap();
         db::migrate(&mut connection).unwrap();
         connection
     }
@@ -393,25 +397,31 @@ mod tests {
     }
 
     fn insert_backup_fixtures(connection: &Connection) {
-        connection.execute(
-            "INSERT INTO repertoires (id, title, root_fen, pgn, created_at, updated_at)
+        connection
+            .execute(
+                "INSERT INTO repertoires (id, title, root_fen, pgn, created_at, updated_at)
              VALUES ('repo-1', 'Test', 'fen', '1. e4 *', '1', '1')",
-            [],
-        ).unwrap();
-        connection.execute(
-            "INSERT INTO study_cards
+                [],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO study_cards
                 (id, repertoire_id, edge_id, side, state, created_at, updated_at, fsrs_json)
              VALUES ('card-1', 'repo-1', 'edge-1', 'white', 'learning', '1', '2',
                      '{\"stability\":1.25,\"difficulty\":4.5}')",
-            [],
-        ).unwrap();
-        connection.execute(
-            "INSERT INTO imported_games
+                [],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO imported_games
                 (id, provider, source_username, source_game_id, pgn, white, black, imported_at)
              VALUES ('game-1', 'lichess', 'player', 'remote-1', '1. d4 *',
                      'White', 'Black', '3')",
-            [],
-        ).unwrap();
+                [],
+            )
+            .unwrap();
     }
 
     #[test]
@@ -424,16 +434,20 @@ mod tests {
         let restored = Connection::open(directory.join(&record.name)).unwrap();
         verify_database(&restored).unwrap();
 
-        let pgn: String = restored.query_row(
-            "SELECT pgn FROM imported_games WHERE id = 'game-1'",
-            [],
-            |row| row.get(0),
-        ).unwrap();
-        let fsrs_json: String = restored.query_row(
-            "SELECT fsrs_json FROM study_cards WHERE id = 'card-1'",
-            [],
-            |row| row.get(0),
-        ).unwrap();
+        let pgn: String = restored
+            .query_row(
+                "SELECT pgn FROM imported_games WHERE id = 'game-1'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let fsrs_json: String = restored
+            .query_row(
+                "SELECT fsrs_json FROM study_cards WHERE id = 'card-1'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
         assert_eq!(pgn, "1. d4 *");
         assert_eq!(fsrs_json, r#"{"stability":1.25,"difficulty":4.5}"#);
 
@@ -449,25 +463,28 @@ mod tests {
         let record = create_snapshot(&source, &directory, "backup").unwrap();
 
         let mut destination = memory_database();
-        destination.execute(
-            "INSERT INTO app_settings (key, value, updated_at)
+        destination
+            .execute(
+                "INSERT INTO app_settings (key, value, updated_at)
              VALUES ('before-restore', 'keep-in-safety-copy', '4')",
-            [],
-        ).unwrap();
+                [],
+            )
+            .unwrap();
 
         let selected = Connection::open_with_flags(
             directory.join(&record.name),
             OpenFlags::SQLITE_OPEN_READ_ONLY,
-        ).unwrap();
+        )
+        .unwrap();
         copy_database(&selected, &mut destination).unwrap();
         verify_database(&destination).unwrap();
 
-        let imported_count: i64 = destination.query_row(
-            "SELECT COUNT(*) FROM imported_games", [], |row| row.get(0)
-        ).unwrap();
-        let settings_count: i64 = destination.query_row(
-            "SELECT COUNT(*) FROM app_settings", [], |row| row.get(0)
-        ).unwrap();
+        let imported_count: i64 = destination
+            .query_row("SELECT COUNT(*) FROM imported_games", [], |row| row.get(0))
+            .unwrap();
+        let settings_count: i64 = destination
+            .query_row("SELECT COUNT(*) FROM app_settings", [], |row| row.get(0))
+            .unwrap();
         assert_eq!(imported_count, 1);
         assert_eq!(settings_count, 0);
 
@@ -479,7 +496,10 @@ mod tests {
     fn verification_rejects_a_non_chessos_sqlite_file() {
         let directory = temporary_directory("invalid-test");
         let path = directory.join("chessos-backup-invalid-0.sqlite3");
-        Connection::open(&path).unwrap().execute_batch("CREATE TABLE unrelated (id INTEGER);").unwrap();
+        Connection::open(&path)
+            .unwrap()
+            .execute_batch("CREATE TABLE unrelated (id INTEGER);")
+            .unwrap();
         let result = open_and_verify(&path, "chessos-backup-invalid-0.sqlite3");
         assert!(result.is_err());
         fs::remove_dir_all(directory).unwrap();

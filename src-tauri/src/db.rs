@@ -2,9 +2,9 @@ use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::Path;
+use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::State;
-use std::sync::Mutex;
 
 pub struct Database(pub Mutex<Connection>);
 
@@ -88,7 +88,7 @@ pub fn migrate(connection: &mut Connection) -> rusqlite::Result<()> {
         "CREATE TABLE IF NOT EXISTS schema_migrations (
             version INTEGER PRIMARY KEY NOT NULL,
             applied_at TEXT NOT NULL
-        );"
+        );",
     )?;
 
     let current_version: i64 = connection.query_row(
@@ -180,7 +180,7 @@ pub fn migrate(connection: &mut Connection) -> rusqlite::Result<()> {
                 state_json TEXT NOT NULL DEFAULT '{}',
                 FOREIGN KEY (card_id) REFERENCES study_cards(id) ON DELETE CASCADE,
                 FOREIGN KEY (session_id) REFERENCES training_sessions(id) ON DELETE SET NULL
-            );"
+            );",
         )?;
         transaction.execute(
             "INSERT INTO schema_migrations (version, applied_at) VALUES (1, ?1)",
@@ -218,7 +218,7 @@ pub fn migrate(connection: &mut Connection) -> rusqlite::Result<()> {
         let transaction = connection.transaction()?;
         transaction.execute_batch(
             "ALTER TABLE study_cards ADD COLUMN fsrs_json TEXT NOT NULL DEFAULT '{}';
-             CREATE INDEX idx_study_cards_due_side ON study_cards(side, due_at);"
+             CREATE INDEX idx_study_cards_due_side ON study_cards(side, due_at);",
         )?;
         transaction.execute(
             "INSERT INTO schema_migrations (version, applied_at) VALUES (3, ?1)",
@@ -306,7 +306,7 @@ pub fn migrate(connection: &mut Connection) -> rusqlite::Result<()> {
             CREATE INDEX idx_imported_games_date
                 ON imported_games(played_at DESC, imported_at DESC);
             CREATE INDEX idx_imported_games_provider_user
-                ON imported_games(provider, source_username);"
+                ON imported_games(provider, source_username);",
         )?;
         transaction.execute(
             "INSERT INTO schema_migrations (version, applied_at) VALUES (5, ?1)",
@@ -325,61 +325,211 @@ fn now_timestamp() -> String {
     millis.to_string()
 }
 
+fn is_valid_fen(fen: &str) -> bool {
+    let fields: Vec<&str> = fen.split_whitespace().collect();
+    if fields.len() != 6 || (fields[1] != "w" && fields[1] != "b") {
+        return false;
+    }
+
+    let ranks: Vec<&str> = fields[0].split('/').collect();
+    if ranks.len() != 8 {
+        return false;
+    }
+
+    let mut white_kings = 0usize;
+    let mut black_kings = 0usize;
+    for (rank_index, rank) in ranks.iter().enumerate() {
+        let mut squares = 0usize;
+        let mut previous_was_digit = false;
+        for piece in rank.chars() {
+            match piece {
+                '1'..='8' => {
+                    if previous_was_digit {
+                        return false;
+                    }
+                    squares += piece.to_digit(10).unwrap_or(0) as usize;
+                    previous_was_digit = true;
+                }
+                'p' | 'n' | 'b' | 'r' | 'q' | 'k'
+                | 'P' | 'N' | 'B' | 'R' | 'Q' | 'K' => {
+                    if matches!(piece, 'p' | 'P') && (rank_index == 0 || rank_index == 7) {
+                        return false;
+                    }
+                    match piece {
+                        'k' => black_kings += 1,
+                        'K' => white_kings += 1,
+                        _ => {}
+                    }
+                    squares += 1;
+                    previous_was_digit = false;
+                }
+                _ => return false,
+            }
+            if squares > 8 {
+                return false;
+            }
+        }
+        if squares != 8 {
+            return false;
+        }
+    }
+    if white_kings != 1 || black_kings != 1 {
+        return false;
+    }
+
+    if fields[2] != "-" {
+        let mut seen = std::collections::HashSet::new();
+        if !fields[2].chars().all(|right| {
+            matches!(right, 'K' | 'Q' | 'k' | 'q') && seen.insert(right)
+        }) {
+            return false;
+        }
+    }
+
+    if fields[3] != "-" {
+        let expected_rank = if fields[1] == "w" { b'6' } else { b'3' };
+        if fields[3].len() != 2
+            || !(b'a'..=b'h').contains(&fields[3].as_bytes()[0])
+            || fields[3].as_bytes()[1] != expected_rank
+        {
+            return false;
+        }
+    }
+
+    fields[4].parse::<u32>().is_ok()
+        && fields[5].parse::<u32>().is_ok_and(|fullmove| fullmove > 0)
+}
+
 fn validate_input(input: &SaveRepertoireInput) -> Result<(), String> {
+    const MAX_PGN_BYTES: usize = 5_000_000;
+    const MAX_PAYLOAD_BYTES: usize = 25_000_000;
+    const MAX_NODES: usize = 100_000;
+    const MAX_EDGES: usize = 100_000;
+
     if input.id.trim().is_empty() || input.id.len() > 160 {
         return Err("ID repertorio non valido.".into());
     }
     if input.title.trim().is_empty() || input.title.len() > 200 {
         return Err("Titolo repertorio non valido.".into());
     }
-    if input.pgn.len() > 5_000_000 {
+    if input.pgn.len() > MAX_PGN_BYTES {
         return Err("PGN troppo grande.".into());
     }
-    if input.tree.nodes.is_empty() || input.tree.nodes.len() > 100_000 {
+    if input.created_at.as_ref().is_some_and(|value| value.len() > 64)
+        || input.updated_at.as_ref().is_some_and(|value| value.len() > 64)
+    {
+        return Err("Timestamp repertorio non valido.".into());
+    }
+    if input.sans.len() > MAX_EDGES || input.sans.iter().any(|san| san.is_empty() || san.len() > 32) {
+        return Err("Elenco delle mosse non valido o troppo grande.".into());
+    }
+    if input.tree.nodes.is_empty() || input.tree.nodes.len() > MAX_NODES {
         return Err("Albero delle posizioni vuoto o troppo grande.".into());
     }
-    if input.tree.edges.len() > 500_000 {
+    if input.tree.edges.len() > MAX_EDGES {
         return Err("Albero delle mosse troppo grande.".into());
     }
+    if input.tree.root_fen.is_empty() || input.tree.root_fen.len() > 256
+        || input.tree.headers.len() > 64
+        || input.tree.headers.iter().any(|(key, value)| key.is_empty() || key.len() > 128 || value.len() > 4096)
+    {
+        return Err("Metadati dell'albero non validi o troppo grandi.".into());
+    }
 
+    let mut payload_bytes = input.id.len()
+        .saturating_add(input.title.len())
+        .saturating_add(input.pgn.len())
+        .saturating_add(input.tree.root_id.len())
+        .saturating_add(input.tree.root_fen.len());
     let mut ids = std::collections::HashSet::new();
+    let mut root_matches = false;
     for node in &input.tree.nodes {
-        if node.id.is_empty() || node.fen.is_empty() || !ids.insert(node.id.as_str()) {
+        let fen_fields: Vec<&str> = node.fen.split_whitespace().collect();
+        let expected_key = fen_fields.iter().take(4).copied().collect::<Vec<_>>().join(" ");
+        if node.id.is_empty() || node.id.len() > 160
+            || node.key.is_empty() || node.key.len() > 256
+            || node.fen.is_empty() || node.fen.len() > 256
+            || !is_valid_fen(&node.fen) || node.key != expected_key
+            || !ids.insert(node.id.as_str())
+        {
             return Err("Nodo dell'albero non valido o duplicato.".into());
         }
+        root_matches |= node.id == input.tree.root_id && node.fen == input.tree.root_fen;
+        payload_bytes = payload_bytes
+            .saturating_add(node.id.len())
+            .saturating_add(node.key.len())
+            .saturating_add(node.fen.len());
     }
-    if !ids.contains(input.tree.root_id.as_str()) {
-        return Err("Nodo radice non trovato.".into());
+    if !root_matches {
+        return Err("Nodo radice non valido o non coerente con la posizione iniziale.".into());
     }
-    let root = input.tree.nodes.iter().find(|node| node.id == input.tree.root_id);
-    if root.map(|node| node.fen.as_str()) != Some(input.tree.root_fen.as_str()) {
-        return Err("La FEN del nodo radice non coincide con la FEN iniziale.".into());
-    }
+
     let mut edge_ids = std::collections::HashSet::new();
+    let mut edge_orders: std::collections::HashMap<&str, std::collections::HashSet<i64>> =
+        std::collections::HashMap::new();
     for edge in &input.tree.edges {
-        if edge.id.is_empty()
-            || edge.uci.len() < 4
-            || edge.uci.len() > 5
+        let uci = edge.uci.as_bytes();
+        let valid_uci = (uci.len() == 4 || uci.len() == 5)
+            && (b'a'..=b'h').contains(&uci[0])
+            && (b'1'..=b'8').contains(&uci[1])
+            && (b'a'..=b'h').contains(&uci[2])
+            && (b'1'..=b'8').contains(&uci[3])
+            && (uci.len() == 4 || b"qrbn".contains(&uci[4]));
+        if edge.id.is_empty() || edge.id.len() > 320
+            || !valid_uci || edge.san.is_empty() || edge.san.len() > 32
+            || edge.comment.len() > 4096
+            || edge.nags.len() > 32
+            || edge.nags.iter().any(|nag| nag.is_empty() || nag.len() > 16)
             || !ids.contains(edge.from.as_str())
             || !ids.contains(edge.to.as_str())
+            || edge.id != format!("{}|{}", edge.from, edge.uci)
             || !edge_ids.insert(edge.id.as_str())
+            || edge.order < 0
+            || !edge_orders.entry(edge.from.as_str()).or_default().insert(edge.order)
         {
             return Err("Arco dell'albero non valido o duplicato.".into());
         }
+        payload_bytes = payload_bytes
+            .saturating_add(edge.id.len())
+            .saturating_add(edge.from.len())
+            .saturating_add(edge.to.len())
+            .saturating_add(edge.uci.len())
+            .saturating_add(edge.san.len())
+            .saturating_add(edge.comment.len())
+            .saturating_add(edge.nags.iter().map(String::len).sum::<usize>());
+    }
+    for (key, value) in &input.tree.headers {
+        payload_bytes = payload_bytes.saturating_add(key.len()).saturating_add(value.len());
+    }
+    for san in &input.sans {
+        payload_bytes = payload_bytes.saturating_add(san.len());
+    }
+    for timestamp in [&input.created_at, &input.updated_at].into_iter().flatten() {
+        payload_bytes = payload_bytes.saturating_add(timestamp.len());
+    }
+    if payload_bytes > MAX_PAYLOAD_BYTES {
+        return Err("Dati del repertorio troppo voluminosi.".into());
     }
     Ok(())
 }
 
-fn save_with_connection(connection: &mut Connection, input: SaveRepertoireInput) -> Result<RepertoireRecord, String> {
+fn save_with_connection(
+    connection: &mut Connection,
+    input: SaveRepertoireInput,
+) -> Result<RepertoireRecord, String> {
     validate_input(&input)?;
     let created_at = input.created_at.unwrap_or_else(now_timestamp);
     let updated_at = input.updated_at.unwrap_or_else(now_timestamp);
     let sans_json = serde_json::to_string(&input.sans).map_err(|error| error.to_string())?;
-    let headers_json = serde_json::to_string(&input.tree.headers).map_err(|error| error.to_string())?;
-    let transaction = connection.transaction().map_err(|error| error.to_string())?;
+    let headers_json =
+        serde_json::to_string(&input.tree.headers).map_err(|error| error.to_string())?;
+    let transaction = connection
+        .transaction()
+        .map_err(|error| error.to_string())?;
 
-    transaction.execute(
-        "INSERT INTO repertoires
+    transaction
+        .execute(
+            "INSERT INTO repertoires
             (id, title, root_fen, pgn, sans_json, headers_json, created_at, updated_at)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
          ON CONFLICT(id) DO UPDATE SET
@@ -389,30 +539,36 @@ fn save_with_connection(connection: &mut Connection, input: SaveRepertoireInput)
             sans_json = excluded.sans_json,
             headers_json = excluded.headers_json,
             updated_at = excluded.updated_at",
-        params![
-            input.id,
-            input.title.trim(),
-            input.tree.root_fen,
-            input.pgn,
-            sans_json,
-            headers_json,
-            created_at,
-            updated_at
-        ],
-    ).map_err(|error| error.to_string())?;
+            params![
+                input.id,
+                input.title.trim(),
+                input.tree.root_fen,
+                input.pgn,
+                sans_json,
+                headers_json,
+                created_at,
+                updated_at
+            ],
+        )
+        .map_err(|error| error.to_string())?;
 
-    transaction.execute(
-        "DELETE FROM repertoire_positions WHERE repertoire_id = ?1",
-        params![input.id],
-    ).map_err(|error| error.to_string())?;
+    transaction
+        .execute(
+            "DELETE FROM repertoire_positions WHERE repertoire_id = ?1",
+            params![input.id],
+        )
+        .map_err(|error| error.to_string())?;
 
     {
-        let mut statement = transaction.prepare(
-            "INSERT INTO repertoire_positions (repertoire_id, position_id, position_key, fen)
-             VALUES (?1, ?2, ?3, ?4)"
-        ).map_err(|error| error.to_string())?;
+        let mut statement = transaction
+            .prepare(
+                "INSERT INTO repertoire_positions (repertoire_id, position_id, position_key, fen)
+             VALUES (?1, ?2, ?3, ?4)",
+            )
+            .map_err(|error| error.to_string())?;
         for node in &input.tree.nodes {
-            statement.execute(params![input.id, node.id, node.key, node.fen])
+            statement
+                .execute(params![input.id, node.id, node.key, node.fen])
                 .map_err(|error| error.to_string())?;
         }
     }
@@ -425,93 +581,157 @@ fn save_with_connection(connection: &mut Connection, input: SaveRepertoireInput)
         ).map_err(|error| error.to_string())?;
         for edge in &input.tree.edges {
             let nags = serde_json::to_string(&edge.nags).map_err(|error| error.to_string())?;
-            statement.execute(params![
-                input.id, edge.id, edge.from, edge.to, edge.uci, edge.san, nags, edge.comment, edge.order
-            ]).map_err(|error| error.to_string())?;
+            statement
+                .execute(params![
+                    input.id,
+                    edge.id,
+                    edge.from,
+                    edge.to,
+                    edge.uci,
+                    edge.san,
+                    nags,
+                    edge.comment,
+                    edge.order
+                ])
+                .map_err(|error| error.to_string())?;
         }
     }
 
-    transaction.execute(
-        "DELETE FROM study_cards
+    transaction
+        .execute(
+            "DELETE FROM study_cards
          WHERE repertoire_id = ?1
            AND edge_id NOT IN (
              SELECT edge_id FROM repertoire_moves WHERE repertoire_id = ?1
            )",
-        params![input.id],
-    ).map_err(|error| error.to_string())?;
+            params![input.id],
+        )
+        .map_err(|error| error.to_string())?;
 
     transaction.commit().map_err(|error| error.to_string())?;
-    load_one(connection, &input.id)?.ok_or_else(|| "Il repertorio salvato non è stato trovato.".into())
+    load_one(connection, &input.id)?
+        .ok_or_else(|| "Il repertorio salvato non è stato trovato.".into())
 }
 
 fn load_one(connection: &Connection, id: &str) -> Result<Option<RepertoireRecord>, String> {
-    let base: Option<(String, String, String, String, String, String, String)> = connection.query_row(
-        "SELECT title, root_fen, pgn, sans_json, headers_json, created_at, updated_at
+    let base: Option<(String, String, String, String, String, String, String)> = connection
+        .query_row(
+            "SELECT title, root_fen, pgn, sans_json, headers_json, created_at, updated_at
          FROM repertoires WHERE id = ?1",
-        params![id],
-        |row| Ok((
-            row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?,
-            row.get(4)?, row.get(5)?, row.get(6)?
-        )),
-    ).optional().map_err(|error| error.to_string())?;
+            params![id],
+            |row| {
+                Ok((
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                    row.get(5)?,
+                    row.get(6)?,
+                ))
+            },
+        )
+        .optional()
+        .map_err(|error| error.to_string())?;
 
     let Some((title, root_fen, pgn, sans_json, headers_json, created_at, updated_at)) = base else {
         return Ok(None);
     };
 
-    let mut nodes_statement = connection.prepare(
-        "SELECT position_id, position_key, fen FROM repertoire_positions
-         WHERE repertoire_id = ?1 ORDER BY position_id"
-    ).map_err(|error| error.to_string())?;
-    let nodes = nodes_statement.query_map(params![id], |row| {
-        Ok(PositionNode { id: row.get(0)?, key: row.get(1)?, fen: row.get(2)? })
-    }).map_err(|error| error.to_string())?
-      .collect::<Result<Vec<_>, _>>().map_err(|error| error.to_string())?;
+    let mut nodes_statement = connection
+        .prepare(
+            "SELECT position_id, position_key, fen FROM repertoire_positions
+         WHERE repertoire_id = ?1 ORDER BY position_id",
+        )
+        .map_err(|error| error.to_string())?;
+    let nodes = nodes_statement
+        .query_map(params![id], |row| {
+            Ok(PositionNode {
+                id: row.get(0)?,
+                key: row.get(1)?,
+                fen: row.get(2)?,
+            })
+        })
+        .map_err(|error| error.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| error.to_string())?;
     drop(nodes_statement);
 
     let mut edges_statement = connection.prepare(
         "SELECT edge_id, from_position_id, to_position_id, uci, san, nags_json, comment, sort_order
          FROM repertoire_moves WHERE repertoire_id = ?1 ORDER BY sort_order, edge_id"
     ).map_err(|error| error.to_string())?;
-    let edges = edges_statement.query_map(params![id], |row| {
-        let nags_json: String = row.get(5)?;
-        let nags = serde_json::from_str(&nags_json).unwrap_or_default();
-        Ok(MoveEdge {
-            id: row.get(0)?, from: row.get(1)?, to: row.get(2)?,
-            uci: row.get(3)?, san: row.get(4)?, nags, comment: row.get(6)?, order: row.get(7)?
+    let edges = edges_statement
+        .query_map(params![id], |row| {
+            let nags_json: String = row.get(5)?;
+            let nags = serde_json::from_str(&nags_json).unwrap_or_default();
+            Ok(MoveEdge {
+                id: row.get(0)?,
+                from: row.get(1)?,
+                to: row.get(2)?,
+                uci: row.get(3)?,
+                san: row.get(4)?,
+                nags,
+                comment: row.get(6)?,
+                order: row.get(7)?,
+            })
         })
-    }).map_err(|error| error.to_string())?
-      .collect::<Result<Vec<_>, _>>().map_err(|error| error.to_string())?;
+        .map_err(|error| error.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| error.to_string())?;
 
     let sans = serde_json::from_str(&sans_json).unwrap_or_default();
     let headers = serde_json::from_str(&headers_json).unwrap_or_default();
-    let root_id = nodes.iter().find(|node| node.fen == root_fen).map(|node| node.id.clone())
+    let root_id = nodes
+        .iter()
+        .find(|node| node.fen == root_fen)
+        .map(|node| node.id.clone())
         .ok_or_else(|| "Nodo radice assente dal database.".to_string())?;
-    let tree = RepertoireTreeData { root_id, root_fen, headers, nodes, edges };
+    let tree = RepertoireTreeData {
+        root_id,
+        root_fen,
+        headers,
+        nodes,
+        edges,
+    };
     let edge_count = tree.edges.len();
     let node_count = tree.nodes.len();
 
     Ok(Some(RepertoireRecord {
-        id: id.to_string(), title, pgn, sans, edge_count, node_count,
-        created_at, updated_at, tree,
+        id: id.to_string(),
+        title,
+        pgn,
+        sans,
+        edge_count,
+        node_count,
+        created_at,
+        updated_at,
+        tree,
     }))
 }
 
 fn list_with_connection(connection: &Connection) -> Result<Vec<RepertoireRecord>, String> {
-    let mut statement = connection.prepare(
-        "SELECT id FROM repertoires ORDER BY updated_at DESC, title COLLATE NOCASE"
-    ).map_err(|error| error.to_string())?;
-    let ids = statement.query_map([], |row| row.get::<_, String>(0))
+    let mut statement = connection
+        .prepare("SELECT id FROM repertoires ORDER BY updated_at DESC, title COLLATE NOCASE")
+        .map_err(|error| error.to_string())?;
+    let ids = statement
+        .query_map([], |row| row.get::<_, String>(0))
         .map_err(|error| error.to_string())?
-        .collect::<Result<Vec<_>, _>>().map_err(|error| error.to_string())?;
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| error.to_string())?;
     drop(statement);
 
-    ids.iter().map(|id| load_one(connection, id)?.ok_or_else(|| "Repertorio non trovato.".into())).collect()
+    ids.iter()
+        .map(|id| load_one(connection, id)?.ok_or_else(|| "Repertorio non trovato.".into()))
+        .collect()
 }
 
 #[tauri::command]
 pub fn list_repertoires(database: State<'_, Database>) -> Result<Vec<RepertoireRecord>, String> {
-    let connection = database.0.lock().map_err(|_| "Database non disponibile.".to_string())?;
+    let connection = database
+        .0
+        .lock()
+        .map_err(|_| "Database non disponibile.".to_string())?;
     list_with_connection(&connection)
 }
 
@@ -520,18 +740,24 @@ pub fn save_repertoire(
     database: State<'_, Database>,
     input: SaveRepertoireInput,
 ) -> Result<RepertoireRecord, String> {
-    let mut connection = database.0.lock().map_err(|_| "Database non disponibile.".to_string())?;
+    let mut connection = database
+        .0
+        .lock()
+        .map_err(|_| "Database non disponibile.".to_string())?;
     save_with_connection(&mut connection, input)
 }
 
 #[tauri::command]
 pub fn delete_repertoire(database: State<'_, Database>, id: String) -> Result<bool, String> {
-    let connection = database.0.lock().map_err(|_| "Database non disponibile.".to_string())?;
-    let deleted = connection.execute("DELETE FROM repertoires WHERE id = ?1", params![id])
+    let connection = database
+        .0
+        .lock()
+        .map_err(|_| "Database non disponibile.".to_string())?;
+    let deleted = connection
+        .execute("DELETE FROM repertoires WHERE id = ?1", params![id])
         .map_err(|error| error.to_string())?;
     Ok(deleted > 0)
 }
-
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -635,9 +861,13 @@ pub struct TrainingSessionRecord {
 
 #[tauri::command]
 pub fn list_study_cards(database: State<'_, Database>) -> Result<Vec<StudyCardRecord>, String> {
-    let connection = database.0.lock().map_err(|_| "Database non disponibile.".to_string())?;
-    let mut statement = connection.prepare(
-        "SELECT c.id, c.repertoire_id, r.title, c.edge_id, c.side,
+    let connection = database
+        .0
+        .lock()
+        .map_err(|_| "Database non disponibile.".to_string())?;
+    let mut statement = connection
+        .prepare(
+            "SELECT c.id, c.repertoire_id, r.title, c.edge_id, c.side,
                 p.fen, m.uci, m.san, c.due_at, c.stability, c.difficulty,
                 c.reps, c.lapses, c.state, c.fsrs_json, c.created_at, c.updated_at
          FROM study_cards c
@@ -646,74 +876,104 @@ pub fn list_study_cards(database: State<'_, Database>) -> Result<Vec<StudyCardRe
            ON m.repertoire_id = c.repertoire_id AND m.edge_id = c.edge_id
          JOIN repertoire_positions p
            ON p.repertoire_id = m.repertoire_id AND p.position_id = m.from_position_id
-         ORDER BY c.due_at ASC, c.updated_at DESC"
-    ).map_err(|error| error.to_string())?;
-    let rows = statement.query_map([], |row| Ok(StudyCardRecord {
-        id: row.get(0)?,
-        repertoire_id: row.get(1)?,
-        repertoire_title: row.get(2)?,
-        edge_id: row.get(3)?,
-        side: row.get(4)?,
-        fen: row.get(5)?,
-        uci: row.get(6)?,
-        san: row.get(7)?,
-        due_at: row.get(8)?,
-        stability: row.get(9)?,
-        difficulty: row.get(10)?,
-        reps: row.get(11)?,
-        lapses: row.get(12)?,
-        state: row.get(13)?,
-        fsrs_json: row.get(14)?,
-        created_at: row.get(15)?,
-        updated_at: row.get(16)?,
-    })).map_err(|error| error.to_string())?;
-    let records = rows.collect::<Result<Vec<_>, _>>().map_err(|error| error.to_string())?;
+         ORDER BY c.due_at ASC, c.updated_at DESC",
+        )
+        .map_err(|error| error.to_string())?;
+    let rows = statement
+        .query_map([], |row| {
+            Ok(StudyCardRecord {
+                id: row.get(0)?,
+                repertoire_id: row.get(1)?,
+                repertoire_title: row.get(2)?,
+                edge_id: row.get(3)?,
+                side: row.get(4)?,
+                fen: row.get(5)?,
+                uci: row.get(6)?,
+                san: row.get(7)?,
+                due_at: row.get(8)?,
+                stability: row.get(9)?,
+                difficulty: row.get(10)?,
+                reps: row.get(11)?,
+                lapses: row.get(12)?,
+                state: row.get(13)?,
+                fsrs_json: row.get(14)?,
+                created_at: row.get(15)?,
+                updated_at: row.get(16)?,
+            })
+        })
+        .map_err(|error| error.to_string())?;
+    let records = rows
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| error.to_string())?;
     Ok(records)
 }
 
 #[tauri::command]
-pub fn list_review_logs(database: State<'_, Database>) -> Result<Vec<StudyReviewLogRecord>, String> {
-    let connection = database.0.lock().map_err(|_| "Database non disponibile.".to_string())?;
+pub fn list_review_logs(
+    database: State<'_, Database>,
+) -> Result<Vec<StudyReviewLogRecord>, String> {
+    let connection = database
+        .0
+        .lock()
+        .map_err(|_| "Database non disponibile.".to_string())?;
     let mut statement = connection.prepare(
         "SELECT id, card_id, session_id, rating, reviewed_at, elapsed_ms, scheduled_days, state_json
          FROM review_logs ORDER BY reviewed_at DESC LIMIT 10000"
     ).map_err(|error| error.to_string())?;
-    let rows = statement.query_map([], |row| Ok(StudyReviewLogRecord {
-        id: row.get(0)?,
-        card_id: row.get(1)?,
-        session_id: row.get(2)?,
-        rating: row.get(3)?,
-        reviewed_at: row.get(4)?,
-        elapsed_ms: row.get(5)?,
-        scheduled_days: row.get(6)?,
-        state_json: row.get(7)?,
-    })).map_err(|error| error.to_string())?;
-    let records = rows.collect::<Result<Vec<_>, _>>().map_err(|error| error.to_string())?;
+    let rows = statement
+        .query_map([], |row| {
+            Ok(StudyReviewLogRecord {
+                id: row.get(0)?,
+                card_id: row.get(1)?,
+                session_id: row.get(2)?,
+                rating: row.get(3)?,
+                reviewed_at: row.get(4)?,
+                elapsed_ms: row.get(5)?,
+                scheduled_days: row.get(6)?,
+                state_json: row.get(7)?,
+            })
+        })
+        .map_err(|error| error.to_string())?;
+    let records = rows
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| error.to_string())?;
     Ok(records)
 }
 
 fn list_training_sessions_with_connection(
     connection: &Connection,
 ) -> Result<Vec<TrainingSessionRecord>, String> {
-    let mut statement = connection.prepare(
-        "SELECT id, started_at, finished_at, side, cards_reviewed, correct_count, again_count
-         FROM training_sessions ORDER BY started_at DESC LIMIT 100"
-    ).map_err(|error| error.to_string())?;
-    let rows = statement.query_map([], |row| Ok(TrainingSessionRecord {
-        id: row.get(0)?,
-        started_at: row.get(1)?,
-        finished_at: row.get(2)?,
-        side: row.get(3)?,
-        cards_reviewed: row.get(4)?,
-        correct_count: row.get(5)?,
-        again_count: row.get(6)?,
-    })).map_err(|error| error.to_string())?;
-    rows.collect::<Result<Vec<_>, _>>().map_err(|error| error.to_string())
+    let mut statement = connection
+        .prepare(
+            "SELECT id, started_at, finished_at, side, cards_reviewed, correct_count, again_count
+         FROM training_sessions ORDER BY started_at DESC LIMIT 100",
+        )
+        .map_err(|error| error.to_string())?;
+    let rows = statement
+        .query_map([], |row| {
+            Ok(TrainingSessionRecord {
+                id: row.get(0)?,
+                started_at: row.get(1)?,
+                finished_at: row.get(2)?,
+                side: row.get(3)?,
+                cards_reviewed: row.get(4)?,
+                correct_count: row.get(5)?,
+                again_count: row.get(6)?,
+            })
+        })
+        .map_err(|error| error.to_string())?;
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
-pub fn list_training_sessions(database: State<'_, Database>) -> Result<Vec<TrainingSessionRecord>, String> {
-    let connection = database.0.lock().map_err(|_| "Database non disponibile.".to_string())?;
+pub fn list_training_sessions(
+    database: State<'_, Database>,
+) -> Result<Vec<TrainingSessionRecord>, String> {
+    let connection = database
+        .0
+        .lock()
+        .map_err(|_| "Database non disponibile.".to_string())?;
     list_training_sessions_with_connection(&connection)
 }
 
@@ -725,11 +985,16 @@ pub fn start_training_session(
     if input.id.trim().is_empty() || !["white", "black", "both"].contains(&input.side.as_str()) {
         return Err("Sessione di ripasso non valida.".into());
     }
-    let connection = database.0.lock().map_err(|_| "Database non disponibile.".to_string())?;
-    connection.execute(
-        "INSERT INTO training_sessions (id, started_at, side) VALUES (?1, ?2, ?3)",
-        params![input.id, input.started_at, input.side],
-    ).map_err(|error| error.to_string())?;
+    let connection = database
+        .0
+        .lock()
+        .map_err(|_| "Database non disponibile.".to_string())?;
+    connection
+        .execute(
+            "INSERT INTO training_sessions (id, started_at, side) VALUES (?1, ?2, ?3)",
+            params![input.id, input.started_at, input.side],
+        )
+        .map_err(|error| error.to_string())?;
     Ok(true)
 }
 
@@ -752,9 +1017,12 @@ fn record_study_review_with_connection(
         return Err("Dati del ripasso non validi.".into());
     }
 
-    let transaction = connection.transaction().map_err(|error| error.to_string())?;
-    transaction.execute(
-        "INSERT INTO study_cards
+    let transaction = connection
+        .transaction()
+        .map_err(|error| error.to_string())?;
+    transaction
+        .execute(
+            "INSERT INTO study_cards
             (id, repertoire_id, edge_id, side, due_at, stability, difficulty,
              reps, lapses, state, created_at, updated_at, fsrs_json)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
@@ -770,36 +1038,65 @@ fn record_study_review_with_connection(
             state = excluded.state,
             updated_at = excluded.updated_at,
             fsrs_json = excluded.fsrs_json",
-        params![
-            card.id, card.repertoire_id, card.edge_id, card.side, card.due_at,
-            card.stability, card.difficulty, card.reps, card.lapses, card.state,
-            card.created_at, card.updated_at, card.fsrs_json
-        ],
-    ).map_err(|error| error.to_string())?;
+            params![
+                card.id,
+                card.repertoire_id,
+                card.edge_id,
+                card.side,
+                card.due_at,
+                card.stability,
+                card.difficulty,
+                card.reps,
+                card.lapses,
+                card.state,
+                card.created_at,
+                card.updated_at,
+                card.fsrs_json
+            ],
+        )
+        .map_err(|error| error.to_string())?;
 
-    transaction.execute(
-        "INSERT INTO review_logs
+    transaction
+        .execute(
+            "INSERT INTO review_logs
             (id, card_id, session_id, rating, reviewed_at, elapsed_ms, scheduled_days, state_json)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-        params![
-            log.id, log.card_id, log.session_id, log.rating, log.reviewed_at,
-            log.elapsed_ms, log.scheduled_days, log.state_json
-        ],
-    ).map_err(|error| error.to_string())?;
+            params![
+                log.id,
+                log.card_id,
+                log.session_id,
+                log.rating,
+                log.reviewed_at,
+                log.elapsed_ms,
+                log.scheduled_days,
+                log.state_json
+            ],
+        )
+        .map_err(|error| error.to_string())?;
 
     if let Some(session_id) = log.session_id.as_deref() {
         let recalled = serde_json::from_str::<serde_json::Value>(&log.state_json)
             .ok()
-            .and_then(|metadata| metadata.get("recalled").and_then(serde_json::Value::as_bool))
+            .and_then(|metadata| {
+                metadata
+                    .get("recalled")
+                    .and_then(serde_json::Value::as_bool)
+            })
             .unwrap_or(log.rating > 1);
-        let updated = transaction.execute(
-            "UPDATE training_sessions
+        let updated = transaction
+            .execute(
+                "UPDATE training_sessions
              SET cards_reviewed = cards_reviewed + 1,
                  correct_count = correct_count + ?1,
                  again_count = again_count + ?2
              WHERE id = ?3",
-            params![if recalled { 1 } else { 0 }, if log.rating == 1 { 1 } else { 0 }, session_id],
-        ).map_err(|error| error.to_string())?;
+                params![
+                    if recalled { 1 } else { 0 },
+                    if log.rating == 1 { 1 } else { 0 },
+                    session_id
+                ],
+            )
+            .map_err(|error| error.to_string())?;
         if updated != 1 {
             return Err("La sessione di ripasso non esiste più.".into());
         }
@@ -813,7 +1110,10 @@ pub fn record_study_review(
     database: State<'_, Database>,
     input: RecordStudyReviewInput,
 ) -> Result<bool, String> {
-    let mut connection = database.0.lock().map_err(|_| "Database non disponibile.".to_string())?;
+    let mut connection = database
+        .0
+        .lock()
+        .map_err(|_| "Database non disponibile.".to_string())?;
     record_study_review_with_connection(&mut connection, input)
 }
 
@@ -822,11 +1122,16 @@ pub fn finish_training_session(
     database: State<'_, Database>,
     input: FinishTrainingSessionInput,
 ) -> Result<bool, String> {
-    let connection = database.0.lock().map_err(|_| "Database non disponibile.".to_string())?;
-    let updated = connection.execute(
-        "UPDATE training_sessions SET finished_at = COALESCE(finished_at, ?1) WHERE id = ?2",
-        params![input.finished_at, input.id],
-    ).map_err(|error| error.to_string())?;
+    let connection = database
+        .0
+        .lock()
+        .map_err(|_| "Database non disponibile.".to_string())?;
+    let updated = connection
+        .execute(
+            "UPDATE training_sessions SET finished_at = COALESCE(finished_at, ?1) WHERE id = ?2",
+            params![input.finished_at, input.id],
+        )
+        .map_err(|error| error.to_string())?;
     if updated != 1 {
         return Err("La sessione di ripasso non esiste.".into());
     }
@@ -913,8 +1218,9 @@ fn save_study_goal_with_connection(
         return Err("Obiettivo di studio non valido.".into());
     }
     let updated_at = now_timestamp();
-    connection.execute(
-        "INSERT INTO study_goals
+    connection
+        .execute(
+            "INSERT INTO study_goals
             (period, target_reviews, target_minutes, target_accuracy, updated_at)
          VALUES (?1, ?2, ?3, ?4, ?5)
          ON CONFLICT(period) DO UPDATE SET
@@ -922,11 +1228,15 @@ fn save_study_goal_with_connection(
             target_minutes = excluded.target_minutes,
             target_accuracy = excluded.target_accuracy,
             updated_at = excluded.updated_at",
-        params![
-            input.period, input.target_reviews, input.target_minutes,
-            input.target_accuracy, updated_at
-        ],
-    ).map_err(|error| error.to_string())?;
+            params![
+                input.period,
+                input.target_reviews,
+                input.target_minutes,
+                input.target_accuracy,
+                updated_at
+            ],
+        )
+        .map_err(|error| error.to_string())?;
     Ok(StudyGoalRecord {
         period: input.period,
         target_reviews: input.target_reviews,
@@ -938,19 +1248,29 @@ fn save_study_goal_with_connection(
 
 #[tauri::command]
 pub fn list_study_goals(database: State<'_, Database>) -> Result<Vec<StudyGoalRecord>, String> {
-    let connection = database.0.lock().map_err(|_| "Database non disponibile.".to_string())?;
-    let mut statement = connection.prepare(
-        "SELECT period, target_reviews, target_minutes, target_accuracy, updated_at
-         FROM study_goals ORDER BY CASE period WHEN 'daily' THEN 0 ELSE 1 END"
-    ).map_err(|error| error.to_string())?;
-    let rows = statement.query_map([], |row| Ok(StudyGoalRecord {
-        period: row.get(0)?,
-        target_reviews: row.get(1)?,
-        target_minutes: row.get(2)?,
-        target_accuracy: row.get(3)?,
-        updated_at: row.get(4)?,
-    })).map_err(|error| error.to_string())?;
-    rows.collect::<Result<Vec<_>, _>>().map_err(|error| error.to_string())
+    let connection = database
+        .0
+        .lock()
+        .map_err(|_| "Database non disponibile.".to_string())?;
+    let mut statement = connection
+        .prepare(
+            "SELECT period, target_reviews, target_minutes, target_accuracy, updated_at
+         FROM study_goals ORDER BY CASE period WHEN 'daily' THEN 0 ELSE 1 END",
+        )
+        .map_err(|error| error.to_string())?;
+    let rows = statement
+        .query_map([], |row| {
+            Ok(StudyGoalRecord {
+                period: row.get(0)?,
+                target_reviews: row.get(1)?,
+                target_minutes: row.get(2)?,
+                target_accuracy: row.get(3)?,
+                updated_at: row.get(4)?,
+            })
+        })
+        .map_err(|error| error.to_string())?;
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
@@ -958,7 +1278,10 @@ pub fn save_study_goal(
     database: State<'_, Database>,
     input: SaveStudyGoalInput,
 ) -> Result<StudyGoalRecord, String> {
-    let mut connection = database.0.lock().map_err(|_| "Database non disponibile.".to_string())?;
+    let mut connection = database
+        .0
+        .lock()
+        .map_err(|_| "Database non disponibile.".to_string())?;
     save_study_goal_with_connection(&mut connection, input)
 }
 
@@ -975,33 +1298,42 @@ fn start_exam_with_connection(
     {
         return Err("Configurazione esame non valida.".into());
     }
-    let exists: bool = connection.query_row(
-        "SELECT EXISTS(SELECT 1 FROM repertoires WHERE id = ?1)",
-        params![input.repertoire_id],
-        |row| row.get(0),
-    ).map_err(|error| error.to_string())?;
+    let exists: bool = connection
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM repertoires WHERE id = ?1)",
+            params![input.repertoire_id],
+            |row| row.get(0),
+        )
+        .map_err(|error| error.to_string())?;
     if !exists {
         return Err("Il repertorio selezionato non esiste più.".into());
     }
-    connection.execute(
-        "INSERT INTO exam_attempts
+    connection
+        .execute(
+            "INSERT INTO exam_attempts
             (id, repertoire_id, repertoire_title, started_at, total_questions,
              pass_threshold, side, status)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'in_progress')",
-        params![
-            input.id, input.repertoire_id, input.repertoire_title, input.started_at,
-            input.total_questions, input.pass_threshold, input.side
-        ],
-    ).map_err(|error| error.to_string())?;
+            params![
+                input.id,
+                input.repertoire_id,
+                input.repertoire_title,
+                input.started_at,
+                input.total_questions,
+                input.pass_threshold,
+                input.side
+            ],
+        )
+        .map_err(|error| error.to_string())?;
     Ok(true)
 }
 
 #[tauri::command]
-pub fn start_exam(
-    database: State<'_, Database>,
-    input: StartExamInput,
-) -> Result<bool, String> {
-    let mut connection = database.0.lock().map_err(|_| "Database non disponibile.".to_string())?;
+pub fn start_exam(database: State<'_, Database>, input: StartExamInput) -> Result<bool, String> {
+    let mut connection = database
+        .0
+        .lock()
+        .map_err(|_| "Database non disponibile.".to_string())?;
     start_exam_with_connection(&mut connection, input)
 }
 
@@ -1019,56 +1351,76 @@ fn record_exam_answer_with_connection(
     {
         return Err("Risposta d'esame non valida.".into());
     }
-    let transaction = connection.transaction().map_err(|error| error.to_string())?;
-    let attempt: Option<(i64, String, String)> = transaction.query_row(
-        "SELECT total_questions, status, repertoire_id FROM exam_attempts WHERE id = ?1",
-        params![input.attempt_id],
-        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
-    ).optional().map_err(|error| error.to_string())?;
+    let transaction = connection
+        .transaction()
+        .map_err(|error| error.to_string())?;
+    let attempt: Option<(i64, String, String)> = transaction
+        .query_row(
+            "SELECT total_questions, status, repertoire_id FROM exam_attempts WHERE id = ?1",
+            params![input.attempt_id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .optional()
+        .map_err(|error| error.to_string())?;
     let Some((total_questions, status, repertoire_id)) = attempt else {
         return Err("Sessione d'esame non trovata.".into());
     };
     if status != "in_progress" || input.question_index >= total_questions {
         return Err("La sessione d'esame non accetta altre risposte.".into());
     }
-    let previous_answers: i64 = transaction.query_row(
-        "SELECT COUNT(*) FROM exam_answers WHERE attempt_id = ?1",
-        params![input.attempt_id],
-        |row| row.get(0),
-    ).map_err(|error| error.to_string())?;
+    let previous_answers: i64 = transaction
+        .query_row(
+            "SELECT COUNT(*) FROM exam_answers WHERE attempt_id = ?1",
+            params![input.attempt_id],
+            |row| row.get(0),
+        )
+        .map_err(|error| error.to_string())?;
     if previous_answers != input.question_index {
         return Err("Le risposte dell'esame devono essere registrate in ordine.".into());
     }
-    let expected_position: Option<String> = transaction.query_row(
-        "SELECT p.fen
+    let expected_position: Option<String> = transaction
+        .query_row(
+            "SELECT p.fen
          FROM repertoire_moves m
          JOIN repertoire_positions p
            ON p.repertoire_id = m.repertoire_id
           AND p.position_id = m.from_position_id
          WHERE m.repertoire_id = ?1 AND m.edge_id = ?2 AND m.uci = ?3",
-        params![repertoire_id, input.edge_id, input.expected_uci],
-        |row| row.get(0),
-    ).optional().map_err(|error| error.to_string())?;
+            params![repertoire_id, input.edge_id, input.expected_uci],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|error| error.to_string())?;
     if expected_position.as_deref() != Some(input.position_fen.as_str()) {
         return Err("La domanda non corrisponde al repertorio selezionato.".into());
     }
     let correct = input.expected_uci == input.selected_uci;
-    transaction.execute(
-        "INSERT INTO exam_answers
+    transaction
+        .execute(
+            "INSERT INTO exam_answers
             (id, attempt_id, question_index, edge_id, position_fen,
              expected_uci, selected_uci, correct, answered_at)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
-        params![
-            input.id, input.attempt_id, input.question_index, input.edge_id,
-            input.position_fen, input.expected_uci, input.selected_uci,
-            if correct { 1 } else { 0 }, input.answered_at
-        ],
-    ).map_err(|error| error.to_string())?;
-    let updated = transaction.execute(
-        "UPDATE exam_attempts SET correct_count = correct_count + ?1
+            params![
+                input.id,
+                input.attempt_id,
+                input.question_index,
+                input.edge_id,
+                input.position_fen,
+                input.expected_uci,
+                input.selected_uci,
+                if correct { 1 } else { 0 },
+                input.answered_at
+            ],
+        )
+        .map_err(|error| error.to_string())?;
+    let updated = transaction
+        .execute(
+            "UPDATE exam_attempts SET correct_count = correct_count + ?1
          WHERE id = ?2 AND status = 'in_progress'",
-        params![if correct { 1 } else { 0 }, input.attempt_id],
-    ).map_err(|error| error.to_string())?;
+            params![if correct { 1 } else { 0 }, input.attempt_id],
+        )
+        .map_err(|error| error.to_string())?;
     if updated != 1 {
         return Err("La sessione d'esame non è più attiva.".into());
     }
@@ -1081,7 +1433,10 @@ pub fn record_exam_answer(
     database: State<'_, Database>,
     input: RecordExamAnswerInput,
 ) -> Result<bool, String> {
-    let mut connection = database.0.lock().map_err(|_| "Database non disponibile.".to_string())?;
+    let mut connection = database
+        .0
+        .lock()
+        .map_err(|_| "Database non disponibile.".to_string())?;
     record_exam_answer_with_connection(&mut connection, input)
 }
 
@@ -1092,16 +1447,23 @@ fn finish_exam_with_connection(
     if input.id.trim().is_empty() || input.finished_at.trim().is_empty() {
         return Err("Chiusura esame non valida.".into());
     }
-    let status = if input.aborted { "aborted" } else { "completed" };
+    let status = if input.aborted {
+        "aborted"
+    } else {
+        "completed"
+    };
     if !input.aborted {
-        let counts: Option<(i64, i64)> = connection.query_row(
-            "SELECT a.total_questions,
+        let counts: Option<(i64, i64)> = connection
+            .query_row(
+                "SELECT a.total_questions,
                     (SELECT COUNT(*) FROM exam_answers WHERE attempt_id = a.id)
              FROM exam_attempts a
              WHERE a.id = ?1 AND a.status = 'in_progress'",
-            params![input.id],
-            |row| Ok((row.get(0)?, row.get(1)?)),
-        ).optional().map_err(|error| error.to_string())?;
+                params![input.id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .optional()
+            .map_err(|error| error.to_string())?;
         let Some((total_questions, answers_recorded)) = counts else {
             return Ok(false);
         };
@@ -1109,8 +1471,9 @@ fn finish_exam_with_connection(
             return Err("Non è possibile concludere un esame con domande senza risposta.".into());
         }
     }
-    let updated = connection.execute(
-        "UPDATE exam_attempts
+    let updated = connection
+        .execute(
+            "UPDATE exam_attempts
          SET finished_at = ?1,
              status = ?2,
              passed = CASE
@@ -1119,44 +1482,54 @@ fn finish_exam_with_connection(
                  ELSE 0
              END
          WHERE id = ?3 AND status = 'in_progress'",
-        params![input.finished_at, status, input.id],
-    ).map_err(|error| error.to_string())?;
+            params![input.finished_at, status, input.id],
+        )
+        .map_err(|error| error.to_string())?;
     Ok(updated == 1)
 }
 
 #[tauri::command]
-pub fn finish_exam(
-    database: State<'_, Database>,
-    input: FinishExamInput,
-) -> Result<bool, String> {
-    let mut connection = database.0.lock().map_err(|_| "Database non disponibile.".to_string())?;
+pub fn finish_exam(database: State<'_, Database>, input: FinishExamInput) -> Result<bool, String> {
+    let mut connection = database
+        .0
+        .lock()
+        .map_err(|_| "Database non disponibile.".to_string())?;
     finish_exam_with_connection(&mut connection, input)
 }
 
 #[tauri::command]
 pub fn list_exam_attempts(database: State<'_, Database>) -> Result<Vec<ExamAttemptRecord>, String> {
-    let connection = database.0.lock().map_err(|_| "Database non disponibile.".to_string())?;
-    let mut statement = connection.prepare(
-        "SELECT id, repertoire_id, repertoire_title, started_at, finished_at,
+    let connection = database
+        .0
+        .lock()
+        .map_err(|_| "Database non disponibile.".to_string())?;
+    let mut statement = connection
+        .prepare(
+            "SELECT id, repertoire_id, repertoire_title, started_at, finished_at,
                 total_questions, correct_count, pass_threshold, passed, side, status
-         FROM exam_attempts ORDER BY started_at DESC LIMIT 50"
-    ).map_err(|error| error.to_string())?;
-    let rows = statement.query_map([], |row| Ok(ExamAttemptRecord {
-        id: row.get(0)?,
-        repertoire_id: row.get(1)?,
-        repertoire_title: row.get(2)?,
-        started_at: row.get(3)?,
-        finished_at: row.get(4)?,
-        total_questions: row.get(5)?,
-        correct_count: row.get(6)?,
-        pass_threshold: row.get(7)?,
-        passed: row.get::<_, i64>(8)? != 0,
-        side: row.get(9)?,
-        status: row.get(10)?,
-    })).map_err(|error| error.to_string())?;
-    rows.collect::<Result<Vec<_>, _>>().map_err(|error| error.to_string())
+         FROM exam_attempts ORDER BY started_at DESC LIMIT 50",
+        )
+        .map_err(|error| error.to_string())?;
+    let rows = statement
+        .query_map([], |row| {
+            Ok(ExamAttemptRecord {
+                id: row.get(0)?,
+                repertoire_id: row.get(1)?,
+                repertoire_title: row.get(2)?,
+                started_at: row.get(3)?,
+                finished_at: row.get(4)?,
+                total_questions: row.get(5)?,
+                correct_count: row.get(6)?,
+                pass_threshold: row.get(7)?,
+                passed: row.get::<_, i64>(8)? != 0,
+                side: row.get(9)?,
+                status: row.get(10)?,
+            })
+        })
+        .map_err(|error| error.to_string())?;
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|error| error.to_string())
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -1164,7 +1537,9 @@ mod tests {
 
     fn memory_db() -> Connection {
         let mut connection = Connection::open_in_memory().unwrap();
-        connection.execute_batch("PRAGMA foreign_keys = ON;").unwrap();
+        connection
+            .execute_batch("PRAGMA foreign_keys = ON;")
+            .unwrap();
         migrate(&mut connection).unwrap();
         connection
     }
@@ -1196,8 +1571,14 @@ mod tests {
                     },
                 ],
                 edges: vec![MoveEdge {
-                    id: "root|e2e4".into(), from: root_id, to: child_id,
-                    uci: "e2e4".into(), san: "e4".into(), order: 0, nags: vec![], comment: "".into(),
+                    id: "root|e2e4".into(),
+                    from: root_id,
+                    to: child_id,
+                    uci: "e2e4".into(),
+                    san: "e4".into(),
+                    order: 0,
+                    nags: vec![],
+                    comment: "".into(),
                 }],
             },
             created_at: Some("100".into()),
@@ -1210,9 +1591,11 @@ mod tests {
         let mut connection = Connection::open_in_memory().unwrap();
         migrate(&mut connection).unwrap();
         migrate(&mut connection).unwrap();
-        let version: i64 = connection.query_row(
-            "SELECT MAX(version) FROM schema_migrations", [], |row| row.get(0)
-        ).unwrap();
+        let version: i64 = connection
+            .query_row("SELECT MAX(version) FROM schema_migrations", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
         assert_eq!(version, 5);
     }
 
@@ -1283,18 +1666,23 @@ mod tests {
         record_study_review_with_connection(
             &mut connection,
             sample_review(Some("session-1"), "review-1"),
-        ).unwrap();
+        )
+        .unwrap();
 
-        let card_count: i64 = connection.query_row(
-            "SELECT COUNT(*) FROM study_cards WHERE id = 'open-game::root|e2e4'",
-            [],
-            |row| row.get(0),
-        ).unwrap();
-        let log_count: i64 = connection.query_row(
-            "SELECT COUNT(*) FROM review_logs WHERE id = 'review-1'",
-            [],
-            |row| row.get(0),
-        ).unwrap();
+        let card_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM study_cards WHERE id = 'open-game::root|e2e4'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let log_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM review_logs WHERE id = 'review-1'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
         let counters: (i64, i64, i64) = connection.query_row(
             "SELECT cards_reviewed, correct_count, again_count FROM training_sessions WHERE id = 'session-1'",
             [],
@@ -1317,23 +1705,19 @@ mod tests {
         );
         assert!(result.is_err());
 
-        let card_count: i64 = connection.query_row(
-            "SELECT COUNT(*) FROM study_cards",
-            [],
-            |row| row.get(0),
-        ).unwrap();
-        let log_count: i64 = connection.query_row(
-            "SELECT COUNT(*) FROM review_logs",
-            [],
-            |row| row.get(0),
-        ).unwrap();
+        let card_count: i64 = connection
+            .query_row("SELECT COUNT(*) FROM study_cards", [], |row| row.get(0))
+            .unwrap();
+        let log_count: i64 = connection
+            .query_row("SELECT COUNT(*) FROM review_logs", [], |row| row.get(0))
+            .unwrap();
         assert_eq!(card_count, 0);
         assert_eq!(log_count, 0);
     }
 
     #[test]
     fn list_training_sessions_returns_saved_review_statistics() {
-        let mut connection = memory_db();
+        let connection = memory_db();
         connection.execute(
             "INSERT INTO training_sessions (id, started_at, finished_at, side, cards_reviewed, correct_count, again_count)
              VALUES ('session-history', '2026-11-02T10:00:00.000Z', '2026-11-02T10:05:00.000Z', 'black', 8, 6, 2)",
@@ -1343,9 +1727,16 @@ mod tests {
         assert_eq!(sessions.len(), 1);
         assert_eq!(sessions[0].id, "session-history");
         assert_eq!(sessions[0].side, "black");
-        assert_eq!(sessions[0].finished_at.as_deref(), Some("2026-11-02T10:05:00.000Z"));
         assert_eq!(
-            (sessions[0].cards_reviewed, sessions[0].correct_count, sessions[0].again_count),
+            sessions[0].finished_at.as_deref(),
+            Some("2026-11-02T10:05:00.000Z")
+        );
+        assert_eq!(
+            (
+                sessions[0].cards_reviewed,
+                sessions[0].correct_count,
+                sessions[0].again_count
+            ),
             (8, 6, 2),
         );
     }
@@ -1354,44 +1745,56 @@ mod tests {
     fn exam_answer_rejects_a_question_not_in_the_selected_repertoire() {
         let mut connection = memory_db();
         save_with_connection(&mut connection, fixture()).unwrap();
-        start_exam_with_connection(&mut connection, StartExamInput {
-            id: "exam-secure".into(),
-            repertoire_id: "open-game".into(),
-            repertoire_title: "Open Game".into(),
-            started_at: "2026-11-03T10:00:00Z".into(),
-            total_questions: 1,
-            pass_threshold: 70,
-            side: "white".into(),
-        }).unwrap();
+        start_exam_with_connection(
+            &mut connection,
+            StartExamInput {
+                id: "exam-secure".into(),
+                repertoire_id: "open-game".into(),
+                repertoire_title: "Open Game".into(),
+                started_at: "2026-11-03T10:00:00Z".into(),
+                total_questions: 1,
+                pass_threshold: 70,
+                side: "white".into(),
+            },
+        )
+        .unwrap();
 
-        let tampered = record_exam_answer_with_connection(&mut connection, RecordExamAnswerInput {
-            id: "answer-tampered".into(),
-            attempt_id: "exam-secure".into(),
-            question_index: 0,
-            edge_id: "root|e2e4".into(),
-            position_fen: "8/8/8/8/8/8/8/8 w - - 0 1".into(),
-            expected_uci: "e2e4".into(),
-            selected_uci: "e2e4".into(),
-            answered_at: "2026-11-03T10:01:00Z".into(),
-        });
+        let tampered = record_exam_answer_with_connection(
+            &mut connection,
+            RecordExamAnswerInput {
+                id: "answer-tampered".into(),
+                attempt_id: "exam-secure".into(),
+                question_index: 0,
+                edge_id: "root|e2e4".into(),
+                position_fen: "8/8/8/8/8/8/8/8 w - - 0 1".into(),
+                expected_uci: "e2e4".into(),
+                selected_uci: "e2e4".into(),
+                answered_at: "2026-11-03T10:01:00Z".into(),
+            },
+        );
         assert!(tampered.is_err());
-        let answers: i64 = connection.query_row(
-            "SELECT COUNT(*) FROM exam_answers WHERE attempt_id = 'exam-secure'",
-            [],
-            |row| row.get(0),
-        ).unwrap();
+        let answers: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM exam_answers WHERE attempt_id = 'exam-secure'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
         assert_eq!(answers, 0);
 
-        let skipped = record_exam_answer_with_connection(&mut connection, RecordExamAnswerInput {
-            id: "answer-skipped".into(),
-            attempt_id: "exam-secure".into(),
-            question_index: 1,
-            edge_id: "root|e2e4".into(),
-            position_fen: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1".into(),
-            expected_uci: "e2e4".into(),
-            selected_uci: "e2e4".into(),
-            answered_at: "2026-11-03T10:02:00Z".into(),
-        });
+        let skipped = record_exam_answer_with_connection(
+            &mut connection,
+            RecordExamAnswerInput {
+                id: "answer-skipped".into(),
+                attempt_id: "exam-secure".into(),
+                question_index: 1,
+                edge_id: "root|e2e4".into(),
+                position_fen: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1".into(),
+                expected_uci: "e2e4".into(),
+                selected_uci: "e2e4".into(),
+                answered_at: "2026-11-03T10:02:00Z".into(),
+            },
+        );
         assert!(skipped.is_err());
     }
 
@@ -1400,60 +1803,81 @@ mod tests {
         let mut connection = memory_db();
         save_with_connection(&mut connection, fixture()).unwrap();
 
-        let goal = save_study_goal_with_connection(&mut connection, SaveStudyGoalInput {
-            period: "daily".into(),
-            target_reviews: 25,
-            target_minutes: 30,
-            target_accuracy: 85,
-        }).unwrap();
+        let goal = save_study_goal_with_connection(
+            &mut connection,
+            SaveStudyGoalInput {
+                period: "daily".into(),
+                target_reviews: 25,
+                target_minutes: 30,
+                target_accuracy: 85,
+            },
+        )
+        .unwrap();
         assert_eq!(goal.target_reviews, 25);
 
-        start_exam_with_connection(&mut connection, StartExamInput {
-            id: "exam-1".into(),
-            repertoire_id: "open-game".into(),
-            repertoire_title: "Open Game".into(),
-            started_at: "2026-11-03T10:00:00Z".into(),
-            total_questions: 1,
-            pass_threshold: 70,
-            side: "white".into(),
-        }).unwrap();
+        start_exam_with_connection(
+            &mut connection,
+            StartExamInput {
+                id: "exam-1".into(),
+                repertoire_id: "open-game".into(),
+                repertoire_title: "Open Game".into(),
+                started_at: "2026-11-03T10:00:00Z".into(),
+                total_questions: 1,
+                pass_threshold: 70,
+                side: "white".into(),
+            },
+        )
+        .unwrap();
 
-        record_exam_answer_with_connection(&mut connection, RecordExamAnswerInput {
-            id: "answer-1".into(),
-            attempt_id: "exam-1".into(),
-            question_index: 0,
-            edge_id: "root|e2e4".into(),
-            position_fen: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1".into(),
-            expected_uci: "e2e4".into(),
-            selected_uci: "e2e4".into(),
-            answered_at: "2026-11-03T10:01:00Z".into(),
-        }).unwrap();
+        record_exam_answer_with_connection(
+            &mut connection,
+            RecordExamAnswerInput {
+                id: "answer-1".into(),
+                attempt_id: "exam-1".into(),
+                question_index: 0,
+                edge_id: "root|e2e4".into(),
+                position_fen: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1".into(),
+                expected_uci: "e2e4".into(),
+                selected_uci: "e2e4".into(),
+                answered_at: "2026-11-03T10:01:00Z".into(),
+            },
+        )
+        .unwrap();
 
-        finish_exam_with_connection(&mut connection, FinishExamInput {
-            id: "exam-1".into(),
-            finished_at: "2026-11-03T10:02:00Z".into(),
-            aborted: false,
-        }).unwrap();
+        finish_exam_with_connection(
+            &mut connection,
+            FinishExamInput {
+                id: "exam-1".into(),
+                finished_at: "2026-11-03T10:02:00Z".into(),
+                aborted: false,
+            },
+        )
+        .unwrap();
 
-        let (correct, passed, status): (i64, i64, String) = connection.query_row(
-            "SELECT correct_count, passed, status FROM exam_attempts WHERE id = 'exam-1'",
-            [],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
-        ).unwrap();
+        let (correct, passed, status): (i64, i64, String) = connection
+            .query_row(
+                "SELECT correct_count, passed, status FROM exam_attempts WHERE id = 'exam-1'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .unwrap();
         assert_eq!(correct, 1);
         assert_eq!(passed, 1);
         assert_eq!(status, "completed");
 
-        let duplicate = record_exam_answer_with_connection(&mut connection, RecordExamAnswerInput {
-            id: "answer-duplicate".into(),
-            attempt_id: "exam-1".into(),
-            question_index: 0,
-            edge_id: "root|e2e4".into(),
-            position_fen: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1".into(),
-            expected_uci: "e2e4".into(),
-            selected_uci: "e2e4".into(),
-            answered_at: "2026-11-03T10:03:00Z".into(),
-        });
+        let duplicate = record_exam_answer_with_connection(
+            &mut connection,
+            RecordExamAnswerInput {
+                id: "answer-duplicate".into(),
+                attempt_id: "exam-1".into(),
+                question_index: 0,
+                edge_id: "root|e2e4".into(),
+                position_fen: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1".into(),
+                expected_uci: "e2e4".into(),
+                selected_uci: "e2e4".into(),
+                answered_at: "2026-11-03T10:03:00Z".into(),
+            },
+        );
         assert!(duplicate.is_err());
     }
 
@@ -1461,41 +1885,125 @@ mod tests {
     fn completed_exam_requires_all_questions_to_be_answered() {
         let mut connection = memory_db();
         save_with_connection(&mut connection, fixture()).unwrap();
-        start_exam_with_connection(&mut connection, StartExamInput {
-            id: "exam-incomplete".into(),
-            repertoire_id: "open-game".into(),
-            repertoire_title: "Open Game".into(),
-            started_at: "2026-11-03T10:00:00Z".into(),
-            total_questions: 2,
-            pass_threshold: 70,
-            side: "white".into(),
-        }).unwrap();
-        assert!(finish_exam_with_connection(&mut connection, FinishExamInput {
-            id: "exam-incomplete".into(),
-            finished_at: "2026-11-03T10:01:00Z".into(),
-            aborted: false,
-        }).is_err());
-        let status: String = connection.query_row(
-            "SELECT status FROM exam_attempts WHERE id = 'exam-incomplete'",
-            [],
-            |row| row.get(0),
-        ).unwrap();
+        start_exam_with_connection(
+            &mut connection,
+            StartExamInput {
+                id: "exam-incomplete".into(),
+                repertoire_id: "open-game".into(),
+                repertoire_title: "Open Game".into(),
+                started_at: "2026-11-03T10:00:00Z".into(),
+                total_questions: 2,
+                pass_threshold: 70,
+                side: "white".into(),
+            },
+        )
+        .unwrap();
+        assert!(finish_exam_with_connection(
+            &mut connection,
+            FinishExamInput {
+                id: "exam-incomplete".into(),
+                finished_at: "2026-11-03T10:01:00Z".into(),
+                aborted: false,
+            }
+        )
+        .is_err());
+        let status: String = connection
+            .query_row(
+                "SELECT status FROM exam_attempts WHERE id = 'exam-incomplete'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
         assert_eq!(status, "in_progress");
-        assert!(finish_exam_with_connection(&mut connection, FinishExamInput {
-            id: "exam-incomplete".into(),
-            finished_at: "2026-11-03T10:02:00Z".into(),
-            aborted: true,
-        }).unwrap());
+        assert!(finish_exam_with_connection(
+            &mut connection,
+            FinishExamInput {
+                id: "exam-incomplete".into(),
+                finished_at: "2026-11-03T10:02:00Z".into(),
+                aborted: true,
+            }
+        )
+        .unwrap());
     }
 
     #[test]
     fn deleting_repertoire_cascades_to_positions_and_moves() {
         let mut connection = memory_db();
         save_with_connection(&mut connection, fixture()).unwrap();
-        connection.execute("DELETE FROM repertoires WHERE id = 'open-game'", []).unwrap();
-        let positions: i64 = connection.query_row("SELECT COUNT(*) FROM repertoire_positions", [], |r| r.get(0)).unwrap();
-        let moves: i64 = connection.query_row("SELECT COUNT(*) FROM repertoire_moves", [], |r| r.get(0)).unwrap();
+        connection
+            .execute("DELETE FROM repertoires WHERE id = 'open-game'", [])
+            .unwrap();
+        let positions: i64 = connection
+            .query_row("SELECT COUNT(*) FROM repertoire_positions", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        let moves: i64 = connection
+            .query_row("SELECT COUNT(*) FROM repertoire_moves", [], |r| r.get(0))
+            .unwrap();
         assert_eq!(positions, 0);
         assert_eq!(moves, 0);
     }
+    #[test]
+    fn repertoire_validation_rejects_malformed_fens_and_position_keys() {
+        let mut invalid_fen = fixture();
+        invalid_fen.tree.nodes[1].fen = "not a FEN".into();
+        assert!(validate_input(&invalid_fen).is_err());
+
+        let mut invalid_key = fixture();
+        invalid_key.tree.nodes[1].key = "unrelated position key".into();
+        assert!(validate_input(&invalid_key).is_err());
+
+        let mut mismatched_root = fixture();
+        mismatched_root.tree.root_fen = "8/8/8/8/8/8/8/8 w - - 0 1".into();
+        assert!(validate_input(&mismatched_root).is_err());
+    }
+
+    #[test]
+    fn repertoire_validation_rejects_invalid_uci_edges_and_orders() {
+        let mut invalid_uci = fixture();
+        invalid_uci.tree.edges[0].uci = "e2e9".into();
+        invalid_uci.tree.edges[0].id = "root|e2e9".into();
+        assert!(validate_input(&invalid_uci).is_err());
+
+        let mut invalid_id = fixture();
+        invalid_id.tree.edges[0].id = "not-the-from-node-and-uci".into();
+        assert!(validate_input(&invalid_id).is_err());
+
+        let mut negative_order = fixture();
+        negative_order.tree.edges[0].order = -1;
+        assert!(validate_input(&negative_order).is_err());
+
+        let mut duplicate_order = fixture();
+        let mut second = duplicate_order.tree.edges[0].clone();
+        second.id = "root|d2d4".into();
+        second.uci = "d2d4".into();
+        duplicate_order.tree.edges.push(second);
+        assert!(validate_input(&duplicate_order).is_err());
+    }
+
+    #[test]
+    fn repertoire_validation_bounds_pgn_headers_timestamps_and_payload() {
+        let mut oversized_pgn = fixture();
+        oversized_pgn.pgn = "x".repeat(5_000_001);
+        assert!(validate_input(&oversized_pgn).is_err());
+
+        let mut oversized_timestamp = fixture();
+        oversized_timestamp.created_at = Some("x".repeat(65));
+        assert!(validate_input(&oversized_timestamp).is_err());
+
+        let mut invalid_headers = fixture();
+        invalid_headers.tree.headers.insert(String::new(), "value".into());
+        assert!(validate_input(&invalid_headers).is_err());
+
+        let mut oversized_comment = fixture();
+        oversized_comment.tree.edges[0].comment = "x".repeat(4097);
+        assert!(validate_input(&oversized_comment).is_err());
+
+        let mut valid = fixture();
+        assert!(validate_input(&valid).is_ok());
+        valid.tree.edges[0].comment = "x".repeat(4096);
+        assert!(validate_input(&valid).is_ok());
+    }
+
 }
