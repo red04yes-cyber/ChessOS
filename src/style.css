@@ -60,9 +60,18 @@
     --hl-hint: rgba(111, 207, 159, .40);
     --hl-error: rgba(239, 125, 114, .50);
     --hl-check: rgba(239, 83, 74, .72);
+    --hl-check-mid: rgba(239, 83, 74, .42);
+    --coord-light: #29343d;
+    --coord-dark: #fffdf4;
+    --target-dot: rgba(20, 30, 25, .36);
+    --target-ring: rgba(20, 30, 25, .48);
+    --selection-outline: rgba(255, 255, 255, .35);
+    --dialog-scrim: rgba(5, 9, 14, .68);
+    --piece-shadow: rgba(0, 0, 0, .16);
+    --turn-indicator-border: rgba(0, 0, 0, .12);
 
     --piece-white-fill: #fbf9f2;
-    --piece-white-stroke: #253441;
+    --piece-white-stroke: #17232d;
     --piece-black-fill: #1c2832;
     --piece-black-stroke: #f5f0e5;
 
@@ -143,9 +152,18 @@
     --hl-hint: rgba(36, 108, 76, .30);
     --hl-error: rgba(164, 62, 53, .38);
     --hl-check: rgba(164, 62, 53, .66);
+    --hl-check-mid: rgba(164, 62, 53, .38);
+    --coord-light: #29343d;
+    --coord-dark: #fffdf4;
+    --target-dot: rgba(20, 30, 25, .36);
+    --target-ring: rgba(20, 30, 25, .48);
+    --selection-outline: rgba(255, 255, 255, .35);
+    --dialog-scrim: rgba(5, 9, 14, .68);
+    --piece-shadow: rgba(0, 0, 0, .16);
+    --turn-indicator-border: rgba(0, 0, 0, .12);
 
     --piece-white-fill: #fffdf7;
-    --piece-white-stroke: #273440;
+    --piece-white-stroke: #17232d;
     --piece-black-fill: #202b35;
     --piece-black-stroke: #fffdf7;
 
@@ -186,6 +204,16 @@
       --danger-soft: rgba(164, 62, 53, .10);
       --info: #315f91;
       --info-soft: rgba(49, 95, 145, .10);
+      --hl-check: rgba(164, 62, 53, .66);
+      --hl-check-mid: rgba(164, 62, 53, .38);
+      --coord-light: #29343d;
+      --coord-dark: #fffdf4;
+      --target-dot: rgba(20, 30, 25, .36);
+      --target-ring: rgba(20, 30, 25, .48);
+      --selection-outline: rgba(255, 255, 255, .35);
+      --dialog-scrim: rgba(5, 9, 14, .68);
+      --piece-shadow: rgba(0, 0, 0, .16);
+      --turn-indicator-border: rgba(0, 0, 0, .12);
       --piece-white-fill: #fffdf7;
       --piece-white-stroke: #273440;
       --piece-black-fill: #202b35;
@@ -413,7 +441,7 @@
     min-width: 0;
     min-height: 0;
     display: grid;
-    grid-template-rows: 34px minmax(0, 1fr) 44px 38px;
+    grid-template-rows: 30px minmax(0, 1fr) 38px 34px;
     gap: 4px;
     padding: 14px 16px 10px;
     border: 1px solid var(--border-subtle);
@@ -833,7 +861,7 @@
     border: 1px solid var(--border-strong);
     border-radius: 50%;
     background: var(--piece-white-fill);
-    box-shadow: inset 0 0 0 2px rgba(0, 0, 0, .12);
+    box-shadow: inset 0 0 0 2px var(--turn-indicator-border);
   }
   .board-panel:has(.turn-label-black) .turn-piece { background: var(--piece-black-fill); border-color: var(--piece-black-stroke); }
   .board-view-label { color: var(--text-3); font-size: 12px; }
@@ -871,14 +899,16 @@
   .square.light { background: var(--square-light); }
   .square.dark { background: var(--square-dark); }
   .square:hover { filter: brightness(1.045); }
-  .square.selected { background-image: linear-gradient(var(--hl-select), var(--hl-select)); box-shadow: inset 0 0 0 2px rgba(255, 255, 255, .35); }
+  .square.has-piece { cursor: grab; touch-action: none; }
+  .square.has-piece:active { cursor: grabbing; }
+  .square.selected { background-image: linear-gradient(var(--hl-select), var(--hl-select)); box-shadow: inset 0 0 0 2px var(--selection-outline); }
   .square.last-move { background-image: linear-gradient(var(--hl-last), var(--hl-last)); }
   .square.in-check::before {
     content: "";
     position: absolute;
     z-index: 0;
     inset: 0;
-    background: radial-gradient(circle, var(--hl-check) 0%, rgba(239, 83, 74, .42) 48%, transparent 78%);
+    background: radial-gradient(circle, var(--hl-check) 0%, var(--hl-check-mid) 48%, transparent 78%);
     pointer-events: none;
   }
   .square.legal-target::after {
@@ -888,7 +918,7 @@
     width: 30%;
     height: 30%;
     border-radius: 50%;
-    background: rgba(20, 30, 25, .36);
+    background: var(--target-dot);
     pointer-events: none;
   }
   .square.capture-target::after {
@@ -896,7 +926,7 @@
     position: absolute;
     z-index: 1;
     inset: 5%;
-    border: max(2px, .065em) solid rgba(20, 30, 25, .48);
+    border: max(2px, .065em) solid var(--target-ring);
     border-radius: 50%;
     background: transparent;
     pointer-events: none;
@@ -913,7 +943,7 @@
     pointer-events: none;
     user-select: none;
     -webkit-user-select: none;
-    filter: drop-shadow(0 1px 1px rgba(0, 0, 0, .16));
+    filter: drop-shadow(0 1px 1px var(--piece-shadow));
   }
   .piece use { fill: var(--piece-white-fill); stroke: var(--piece-white-stroke); stroke-width: 1.15; stroke-linecap: round; stroke-linejoin: round; paint-order: stroke fill; }
   .piece.white-piece { --piece-white-fill: var(--piece-white-fill); --piece-white-stroke: var(--piece-white-stroke); }
@@ -930,8 +960,8 @@
     opacity: .92;
     font-variant-numeric: tabular-nums;
   }
-  .square.light { --coord-color: #29343d; }
-  .square.dark { --coord-color: #fffdf4; }
+  .square.light { --coord-color: var(--coord-light); }
+  .square.dark { --coord-color: var(--coord-dark); }
   .coordinate-rank { top: 4px; left: 5px; }
   .coordinate-file { right: 5px; bottom: 4px; }
   :root[data-coordinates="hidden"] .board-coordinate { display: none; }
@@ -1129,7 +1159,7 @@
     display: grid;
     place-items: center;
     padding: 20px;
-    background: rgba(5, 9, 14, .68);
+    background: var(--dialog-scrim);
     backdrop-filter: blur(4px);
   }
   .promotion-card {
@@ -1200,9 +1230,15 @@
   .button { padding-inline: 11px; }
 }
 @media (max-height: 780px) {
-  :root { --board-size: min(760px, calc(100vw - var(--sidebar-width) - var(--details-width) - 68px), calc(100dvh - 296px)); }
-  .workspace { padding-block: 14px; gap: 10px; }
-  .board-panel { padding: 10px 12px 8px; grid-template-rows: 28px minmax(0, 1fr) 40px 34px; }
+  :root { --board-size: min(760px, calc(100vw - var(--sidebar-width) - var(--details-width) - 68px), calc(100dvh - 286px)); }
+  .workspace { padding-block: 10px; gap: 8px; }
+  .page-heading { gap: 8px; }
+  .page-heading p { font-size: 12px; }
+  .title-input { min-height: 30px; font-size: 22px; }
+  .board-panel { padding: 8px 10px 6px; grid-template-rows: 24px minmax(0, 1fr) 34px 30px; gap: 2px; }
+  .board-navigation { gap: 4px; }
+  .board-control { width: 32px; height: 32px; flex-basis: 32px; }
+  .board-footer { min-height: 30px; padding-block: 4px; font-size: 12px; }
   .details-panel { gap: 8px; }
   .detail-card { padding: 11px; }
   .card-heading { margin-bottom: 7px; }
