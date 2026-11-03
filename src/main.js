@@ -992,15 +992,6 @@ function newPosition() {
   titleInput.value = "Nuova linea";
   setDirty(true);
   renderAll();
-if (!desktopApp) {
-  setEngineStatus("Disponibile nell'app desktop Windows, non nell'anteprima browser.", "error");
-}
-updateEngineControls();
-$("#engine-start").addEventListener("click", () => { void startStockfish(); });
-$("#engine-analyze").addEventListener("click", () => { void analyzeCurrentPosition(); });
-$("#engine-stop").addEventListener("click", () => { void stopStockfishAnalysis(); });
-$("#engine-shutdown").addEventListener("click", () => { void shutdownStockfish(); });
-void initializePersistence();
 }
 
 async function copyFen() {
@@ -1072,4 +1063,13 @@ document.addEventListener("keydown", (event) => {
 });
 
 renderAll();
+if (!desktopApp) {
+  setEngineStatus("Disponibile nell'app desktop Windows, non nell'anteprima browser.", "error");
+}
+renderEngineResults();
+updateEngineControls();
+$("#engine-start").addEventListener("click", () => { void startStockfish(); });
+$("#engine-analyze").addEventListener("click", () => { void analyzeCurrentPosition(); });
+$("#engine-stop").addEventListener("click", () => { void stopStockfishAnalysis(); });
+$("#engine-shutdown").addEventListener("click", () => { void shutdownStockfish(); });
 void initializePersistence();
