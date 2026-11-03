@@ -84,7 +84,6 @@ export function analyzeOpponentPreparation(pgn, opponentName = "", preferredSide
     gamesRead += 1;
     const openingName = String(headers.Opening || headers.ECO || "Apertura non indicata").trim();
     const result = String(headers.Result || "*");
-    const sideSet = new Set(targetColors);
 
     for (const color of targetColors) {
       const sideName = color === "w" ? "white" : "black";
@@ -236,8 +235,9 @@ export async function analyzeGameWithStockfish(pgn, engine, options = {}) {
     report.gamesRead += 1;
     const cache = new Map();
     const evaluate = async (fen, multiPv = 1) => {
-      const key = fen.trim();
-      if (!cache.has(key)) cache.set(key, engine.analyze(key, depth, multiPv));
+      const position = fen.trim();
+      const key = position + "|multipv:" + multiPv;
+      if (!cache.has(key)) cache.set(key, engine.analyze(position, depth, multiPv));
       return cache.get(key);
     };
 
@@ -252,12 +252,15 @@ export async function analyzeGameWithStockfish(pgn, engine, options = {}) {
         throw new Error("Analisi interrotta alla mossa " + (move.moveNumber || Math.floor(index / 2) + 1) + ": " + (error?.message || String(error)));
       }
       report.pliesAnalyzed += 1;
-      const lossCp = centipawnLoss(before, after);
+      // If Stockfish's best move is the move that was actually played, treat
+      // it as no loss even if shallow, separately searched scores drift.
+      const sameBestMove = before.bestSan === move.san;
+      const lossCp = sameBestMove ? 0 : centipawnLoss(before, after);
       if (lossCp === null) continue;
       evaluatedMoves += 1;
       totalLoss += lossCp;
       const category = classifyMoveLoss(lossCp);
-      if (category !== "good") {
+      if (category !== "good" && lossCp >= threshold) {
         const uci = move.from + move.to + (move.promotion || "");
         report.categories[category] += 1;
         report.mistakes.push({
