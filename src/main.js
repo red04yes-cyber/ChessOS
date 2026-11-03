@@ -89,7 +89,7 @@ let studioTree = new RepertoireTree(DEFAULT_FEN);
 let studioPath = [];
 let toastTimer = null;
 let pointerBoardGesture = null;
-let suppressBoardClickUntil = 0;
+let suppressNextBoardClick = false;
 
 const $ = (selector) => document.querySelector(selector);
 const boardElement = $("#chessboard");
@@ -2052,7 +2052,8 @@ document.addEventListener("pointerup", (event) => {
   }
 
   const destination = target.dataset.square;
-  suppressBoardClickUntil = Date.now() + 350;
+  suppressNextBoardClick = true;
+  window.setTimeout(() => { suppressNextBoardClick = false; }, 0);
   if (destination === gesture.from) {
     selectedSquare = null;
     renderBoard();
@@ -2071,7 +2072,8 @@ document.addEventListener("pointercancel", (event) => {
 });
 
 boardElement.addEventListener("click", (event) => {
-  if (Date.now() < suppressBoardClickUntil) {
+  if (suppressNextBoardClick) {
+    suppressNextBoardClick = false;
     event.preventDefault();
     return;
   }
