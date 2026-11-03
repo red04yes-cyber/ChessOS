@@ -17,7 +17,7 @@ test("Tauri CSP keeps scripts, workers, and connections on the local app and IPC
   assert.equal(directive(policy, "object-src"), "'none'");
   assert.equal(directive(policy, "script-src"), "'self' 'wasm-unsafe-eval'");
   assert.equal(directive(policy, "worker-src"), "'self'");
-  assert.equal(directive(policy, "connect-src"), "ipc: http://ipc.localhost");
+  assert.equal(directive(policy, "connect-src"), "'self' ipc: http://ipc.localhost");
   assert.doesNotMatch(directive(policy, "connect-src"), /\*|https?:\/\/(?!ipc\.localhost)/i);
 });
 
