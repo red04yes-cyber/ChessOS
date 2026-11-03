@@ -69,31 +69,69 @@
             </section>
 
             <aside class="details-panel">
-              <section class="detail-card line-card">
+              <section id="line-card" class="detail-card line-card">
                 <div class="card-heading"><span class="card-icon">⌘</span><span>LINEA ATTIVA</span></div>
                 <label class="field-label" for="line-title">Nome del repertorio</label>
                 <input id="line-title" class="text-input" maxlength="70" value="Nuova linea" />
                 <div class="line-meta"><span id="line-move-count">Ancora nessuna mossa</span><span class="saved-indicator" id="saved-indicator">NON SALVATA</span></div>
               </section>
 
-              <section class="detail-card moves-card">
+              <section id="moves-card" class="detail-card moves-card">
                 <div class="card-heading"><span class="card-icon">≋</span><span>NOTAZIONE</span></div>
                 <div id="move-list" class="move-list"><span class="empty-state">Le mosse appariranno qui.</span></div>
               </section>
 
-              <section class="detail-card variations-card">
+              <section id="variations-card" class="detail-card variations-card">
                 <div class="card-heading"><span class="card-icon">⑂</span><span>VARIANTI / CONTINUAZIONI</span></div>
                 <div id="variation-list" class="variation-list">
                   <span class="empty-state">Importa un PGN con varianti oppure seleziona una posizione.</span>
                 </div>
               </section>
 
-              <section class="detail-card import-card">
+              <section id="import-card" class="detail-card import-card">
                 <div class="card-heading"><span class="card-icon">⇧</span><span>IMPORTA PGN</span></div>
                 <textarea id="pgn-input" class="pgn-input" rows="3" placeholder="Incolla qui una partita o una linea in formato PGN…"></textarea>
                 <div class="import-actions">
                   <button class="button small ghost" id="import-pgn">Carica PGN</button>
                   <button class="button small ghost" id="export-pgn">Esporta PGN ↓</button>
+                </div>
+              </section>
+
+              <section id="review-panel" class="detail-card review-card" hidden>
+                <div class="card-heading"><span class="card-icon">◷</span><span>RIPASSO DILAZIONATO · FSRS-6</span></div>
+                <div class="review-stats" aria-live="polite">
+                  <div><strong id="review-stat-due">0</strong><small>Dovute</small></div>
+                  <div><strong id="review-stat-today">0</strong><small>Ripassate oggi</small></div>
+                  <div><strong id="review-stat-total">0</strong><small>Schede</small></div>
+                </div>
+                <div id="review-setup">
+                  <label class="field-label" for="review-side">Lato da allenare</label>
+                  <select id="review-side" class="text-input">
+                    <option value="both">Bianco e Nero</option>
+                    <option value="white">Solo Bianco</option>
+                    <option value="black">Solo Nero</option>
+                  </select>
+                  <p class="review-note">La sessione comprende tutte le carte scadute e fino a 20 nuove carte al giorno.</p>
+                  <button id="review-start" class="button primary review-start">Avvia sessione giornaliera</button>
+                </div>
+                <div id="review-active" hidden>
+                  <div id="review-card-meta" class="review-card-meta"></div>
+                  <p id="review-feedback" class="review-feedback">Trova la mossa del repertorio.</p>
+                  <button id="review-show-answer" class="button ghost review-action">Mostra soluzione</button>
+                  <button id="review-quick-again" class="button ghost review-action" data-rating="again" hidden>Non la ricordavo · Again</button>
+                  <div id="review-grades" class="review-grades" hidden>
+                    <p>Quanto è stato facile ricordarla?</p>
+                    <div class="review-grade-buttons">
+                      <button class="button grade-again" data-rating="again">Again</button>
+                      <button class="button grade-hard" data-rating="hard">Hard</button>
+                      <button class="button grade-good" data-rating="good">Good</button>
+                      <button class="button grade-easy" data-rating="easy">Easy</button>
+                    </div>
+                  </div>
+                </div>
+                <div id="review-complete" hidden>
+                  <p id="review-complete-summary" class="review-feedback"></p>
+                  <button id="review-exit" class="button primary review-start">Torna allo studio</button>
                 </div>
               </section>
             </aside>
