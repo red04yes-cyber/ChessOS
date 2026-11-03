@@ -14,7 +14,10 @@
     "tauri:build": "tauri build",
     "prepare:engine": "node scripts/prepare-engine.js",
     "predev": "npm run prepare:engine",
-    "prebuild": "npm run prepare:engine"
+    "prebuild": "npm run prepare:engine",
+    "test:e2e": "python -m unittest discover -s tests/e2e -p 'test_*.py' -v",
+    "audit": "npm audit --audit-level=high",
+    "lint:rust": "cargo fmt --manifest-path src-tauri/Cargo.toml -- --check && cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --all-features -- -D warnings"
   },
   "dependencies": {
     "chess.js": "1.4.0",
