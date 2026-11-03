@@ -2,11 +2,14 @@ import { Chess } from "chess.js";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { RepertoireTree } from "./repertoire-tree.js";
 import { initializeChessSuite } from "./chess-suite.js";
-import { analyzeOpponentPgn, buildWeaknessHeatmap, createErrorFlashcard, createMistakeFlashcards, getDueStudyCards, getTranspositionGroups, gradeStudyCard, readStudyCards, saveStudyCards, OPPONENT_REPORT_KEY } from "./study-tools.js";
+import { STUDY_CARDS_KEY, analyzeOpponentPgn, buildWeaknessHeatmap, createErrorFlashcard, createMistakeFlashcards, getDueStudyCards, getTranspositionGroups, gradeStudyCard, readStudyCards, saveStudyCards, OPPONENT_REPORT_KEY } from "./study-tools.js";
 import "./style.css";
 
 const STORAGE_KEY = "chess-os.repertoire.v1";
 const DEFAULT_FEN = new Chess().fen();
+const IMPORTED_GAMES_KEY = "chess-os.imported-games.v1";
+const ENDGAME_PROGRESS_KEY = "chess-os.endgame-progress.v1";
+const BACKUP_FORMAT = "chessos-backup";
 const files = "abcdefgh";
 const symbols = {
   w: { k: "♔", q: "♕", r: "♖", b: "♗", n: "♘", p: "♙" },
@@ -59,6 +62,16 @@ function readRepertoire() {
       : [];
   } catch {
     return [];
+  }
+}
+
+async function persistStudyCards() {
+  if (persistenceMode === "sqlite") {
+    if (!databaseReady) throw new Error("Database SQLite non pronto.");
+    await invoke("replace_study_cards", { cards: studyCards });
+    try { localStorage.removeItem(STUDY_CARDS_KEY); } catch { /* The SQLite copy is already durable. */ }
+  } else {
+    saveStudyCards(studyCards);
   }
 }
 
@@ -127,6 +140,13 @@ async function initializePersistence() {
     records = await invoke("list_repertoires");
     repertoire = records;
     databaseReady = true;
+    const storedCards = await invoke("list_study_cards");
+    if (Array.isArray(storedCards) && storedCards.length) {
+      studyCards = storedCards;
+      try { localStorage.removeItem(STUDY_CARDS_KEY); } catch { /* SQLite is authoritative in desktop mode. */ }
+    } else if (studyCards.length) {
+      await persistStudyCards();
+    }
     if (migrationErrors.length === 0) {
       try { localStorage.removeItem(STORAGE_KEY); } catch { /* Non bloccare l'avvio per storage non disponibile. */ }
       updateStorageLabel("Database SQLite", "Dati salvati sul dispositivo · " + records.length + " repertori");
@@ -487,7 +507,7 @@ function addStudyCard(card) {
   const exists = studyCards.some((item) => item.positionKey + "|" + (item.expectedSan || []).join(",") === fingerprint);
   if (exists) return false;
   studyCards = [card, ...studyCards];
-  try { saveStudyCards(studyCards); } catch (error) { showToast("Carta creata ma non salvata: " + error.message); }
+  void persistStudyCards().catch((error) => showToast("Carta creata ma non salvata: " + error.message));
   return true;
 }
 
@@ -546,7 +566,7 @@ function renderFlashcards() {
     button.addEventListener("click", () => {
       try {
         studyCards = studyCards.map((card) => card.id === current.id ? gradeStudyCard(card, grade) : card);
-        saveStudyCards(studyCards);
+        await persistStudyCards();
         reviewSessionSeen.add(current.id);
         const next = getDueStudyCards(studyCards).find((card) => !reviewSessionSeen.has(card.id));
         if (next) {
@@ -685,14 +705,14 @@ function renderAllTools() {
   renderTranspositions();
 }
 
-function generateMistakeCards() {
+async function generateMistakeCards() {
   const pgn = $("#mistake-pgn").value.trim();
   if (!pgn) { showToast("Incolla prima una partita PGN."); return; }
   try {
     const result = createMistakeFlashcards(studioTree, pgn, studyCards);
     if (result.cards.length) {
       studyCards = [...result.cards, ...studyCards];
-      saveStudyCards(studyCards);
+      await persistStudyCards();
     }
     $("#flashcard-summary").textContent = result.cards.length + " nuove carte generate da " + result.gamesRead + " partite. " + result.ignoredGames.length + " PGN ignorati.";
     renderAllTools();
@@ -1127,6 +1147,130 @@ async function copyFen() {
   }
 }
 
+async function exportFullBackup() {
+  const button = $("#backup-export");
+  if (button) { button.disabled = true; button.textContent = "Preparazione backup…"; }
+  try {
+    const backup = {
+      format: BACKUP_FORMAT,
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      appVersion: "0.1.0",
+      repertoires: repertoire.map((item) => ({
+        id: item.id,
+        title: item.title,
+        pgn: item.pgn,
+        sans: item.sans || [],
+        createdAt: item.createdAt || null,
+        updatedAt: item.updatedAt || null,
+        tree: item.tree || null,
+      })),
+      studyCards,
+      opponentReport,
+      importedGamesPgn: localStorage.getItem(IMPORTED_GAMES_KEY) || "",
+      endgameProgress: (() => {
+        try { return JSON.parse(localStorage.getItem(ENDGAME_PROGRESS_KEY) || "{}"); } catch { return {}; }
+      })(),
+    };
+    const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = "chessos-backup-" + new Date().toISOString().slice(0, 10) + ".json";
+    document.body.append(anchor);
+    anchor.click();
+    anchor.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1500);
+    messageBackupStatus("Backup esportato: " + backup.repertoires.length + " repertori e " + studyCards.length + " flashcard.");
+  } catch (error) {
+    messageBackupStatus("Backup non riuscito: " + error.message);
+  } finally {
+    if (button) { button.disabled = false; button.textContent = "Esporta backup completo"; }
+  }
+}
+
+function messageBackupStatus(text) {
+  const target = $("#backup-status");
+  if (target) target.textContent = text;
+}
+
+async function importFullBackup() {
+  const fileInput = $("#backup-file");
+  const button = $("#backup-import");
+  const file = fileInput?.files?.[0];
+  if (!file) { messageBackupStatus("Seleziona un file JSON di backup."); return; }
+  if (file.size > 50 * 1024 * 1024) {
+    messageBackupStatus("File troppo grande: il limite è 50 MB.");
+    return;
+  }
+  if (button) { button.disabled = true; button.textContent = "Verifica backup…"; }
+  try {
+    const backup = JSON.parse(await file.text());
+    if (backup.format !== BACKUP_FORMAT || backup.version !== 1) {
+      throw new Error("Formato o versione del backup non riconosciuti.");
+    }
+    if (!Array.isArray(backup.repertoires) || !Array.isArray(backup.studyCards || [])) {
+      throw new Error("Il backup non contiene gli elenchi di repertori e flashcard attesi.");
+    }
+    if (backup.repertoires.length > 10000 || (backup.studyCards || []).length > 100000) {
+      throw new Error("Il backup supera il numero massimo di record supportato.");
+    }
+
+    const validated = backup.repertoires.map((entry, index) => {
+      if (!entry || typeof entry.id !== "string" || !entry.id.trim()) throw new Error("ID repertorio non valido al record " + (index + 1) + ".");
+      const tree = entry.tree ? RepertoireTree.fromJSON(entry.tree) : RepertoireTree.fromPgn(entry.pgn || "");
+      return {
+        id: entry.id,
+        title: String(entry.title || "Repertorio importato").slice(0, 200),
+        pgn: typeof entry.pgn === "string" && entry.pgn ? entry.pgn : tree.toPgn({ Event: entry.title || "Imported repertoire" }),
+        sans: Array.isArray(entry.sans) ? entry.sans : tree.mainlinePath().map((edgeId) => tree.getEdge(edgeId).san),
+        createdAt: entry.createdAt || new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        tree,
+      };
+    });
+    const validCards = (backup.studyCards || []).filter((card) => (
+      card && typeof card.id === "string" && card.schedulerCard && card.fen
+    ));
+
+    if (persistenceMode === "sqlite" && !databaseReady) throw new Error("SQLite non è pronto: nessun dato è stato importato.");
+    for (const entry of validated) {
+      if (persistenceMode === "sqlite") {
+        const saved = await invoke("save_repertoire", { input: repertoirePayload(entry, entry.tree) });
+        repertoire = [saved, ...repertoire.filter((item) => item.id !== entry.id)];
+      } else {
+        repertoire = [entry, ...repertoire.filter((item) => item.id !== entry.id)];
+      }
+    }
+    if (persistenceMode === "browser") persistRepertoire();
+
+    const byId = new Map(studyCards.map((card) => [card.id, card]));
+    for (const card of validCards) byId.set(card.id, card);
+    studyCards = [...byId.values()];
+    await persistStudyCards();
+
+    if (backup.opponentReport) {
+      opponentReport = backup.opponentReport;
+      localStorage.setItem(OPPONENT_REPORT_KEY, JSON.stringify(opponentReport));
+    }
+    if (typeof backup.importedGamesPgn === "string" && backup.importedGamesPgn) {
+      localStorage.setItem(IMPORTED_GAMES_KEY, backup.importedGamesPgn);
+      chessSuite?.loadImportedPgn(backup.importedGamesPgn);
+    }
+    if (backup.endgameProgress && typeof backup.endgameProgress === "object" && !Array.isArray(backup.endgameProgress)) {
+      localStorage.setItem(ENDGAME_PROGRESS_KEY, JSON.stringify(backup.endgameProgress));
+    }
+    renderAll();
+    messageBackupStatus("Ripristino completato: " + validated.length + " repertori, " + validCards.length + " flashcard valide. I record esistenti con lo stesso ID sono stati aggiornati.");
+    showToast("Backup ChessOS importato.");
+  } catch (error) {
+    messageBackupStatus("Ripristino interrotto: " + error.message + ". I record già importati prima dell'errore restano salvati.");
+  } finally {
+    if (button) { button.disabled = false; button.textContent = "Importa backup"; }
+    if (fileInput) fileInput.value = "";
+  }
+}
+
 boardElement.addEventListener("click", (event) => {
   const squareButton = event.target.closest("button[data-square]");
   if (squareButton) handleSquareClick(squareButton.dataset.square);
@@ -1142,6 +1286,8 @@ $("#start-blindfold").addEventListener("click", () => startTraining({ blindfold:
 $("#submit-blindfold").addEventListener("click", submitBlindfoldAnswer);
 $("#blindfold-answer").addEventListener("keydown", (event) => { if (event.key === "Enter") submitBlindfoldAnswer(); });
 $("#analyze-opponent").addEventListener("click", runOpponentAnalysis);
+$("#backup-export").addEventListener("click", exportFullBackup);
+$("#backup-import").addEventListener("click", importFullBackup);
 $("#new-line").addEventListener("click", newPosition);
 $("#reset").addEventListener("click", newPosition);
 $("#undo").addEventListener("click", () => {
