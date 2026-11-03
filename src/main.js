@@ -802,7 +802,7 @@ function renderVariations() {
   if (!options.length) {
     const empty = document.createElement("span");
     empty.className = "empty-state";
-    empty.textContent = "Nessuna continuazione da questa posizione.";
+    empty.textContent = "Nessuna continuazione salvata da questa posizione.";
     list.append(empty);
     return;
   }
