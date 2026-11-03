@@ -53,6 +53,8 @@ jobs:
         run: npm install --no-audit --no-fund
       - name: Run chess logic tests
         run: npm test
+      - name: Run SQLite backend tests
+        run: cargo test --manifest-path src-tauri/Cargo.toml
       - name: Build Windows NSIS installer
         run: npm run tauri:build
       - name: Upload NSIS installer
