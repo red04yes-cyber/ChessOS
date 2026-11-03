@@ -137,3 +137,70 @@ h1 { margin: 9px 0 5px; font-size: clamp(24px, 2.2vw, 31px); line-height: 1.1; l
   .board-panel { max-width: 690px; margin-inline: auto; width: 100%; }
   .details-panel { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
 }
+
+
+/* Board interaction and move navigation */
+.square.last-move.light { background: #e4db8e; }
+.square.last-move.dark { background: #a4a35d; }
+.square.in-check { background: #d65b55 !important; box-shadow: inset 0 0 0 4px #7b1818; }
+.san-move {
+  border: 0;
+  padding: 3px 5px;
+  border-radius: 4px;
+  background: transparent;
+  color: #c8d1dc;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+.san-move:hover:not(:disabled) { background: #354354; color: #fff; }
+.san-move:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.san-move:disabled { cursor: default; opacity: 1; }
+.san-move.played { color: var(--green); }
+.san-move.current-move { background: #4a3b24; color: var(--accent-strong); font-weight: 800; }
+.promotion-dialog[hidden] { display: none; }
+.promotion-dialog {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: #070b10c9;
+  backdrop-filter: blur(5px);
+}
+.promotion-card {
+  width: min(100%, 390px);
+  padding: 22px;
+  border: 1px solid #485667;
+  border-radius: 12px;
+  background: #1b2532;
+  box-shadow: 0 20px 70px #000b;
+  text-align: center;
+}
+.promotion-card h2 { margin: 0; color: var(--text); font-size: 19px; }
+.promotion-card p { margin: 8px 0 17px; color: var(--muted); font-size: 12px; }
+.promotion-options { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 17px; }
+.promotion-choice {
+  min-width: 0;
+  padding: 10px 4px;
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  border: 1px solid #435165;
+  border-radius: 8px;
+  background: #273343;
+  cursor: pointer;
+}
+.promotion-choice:hover, .promotion-choice:focus-visible { border-color: var(--accent); background: #354456; outline: none; }
+.promotion-choice .piece { font-size: 39px; }
+.promotion-choice small { color: #c2ccda; font-size: 10px; }
+#flip-board, #copy-fen { padding-inline: 10px; }
+@media (max-width: 1120px) {
+  .page-heading { align-items: flex-start; }
+  .heading-actions { flex-wrap: wrap; justify-content: flex-end; }
+}
+@media (max-width: 850px) {
+  .heading-actions { width: 100%; justify-content: flex-start; }
+  .heading-actions .button { flex: 1 1 auto; }
+}
