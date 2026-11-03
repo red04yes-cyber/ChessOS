@@ -294,3 +294,24 @@ h1 { margin: 9px 0 5px; font-size: clamp(24px, 2.2vw, 31px); line-height: 1.1; l
 @media (max-width: 850px) {
   .tools-grid { grid-template-columns: 1fr; }
 }
+
+.transposition-path-button {
+  display: block;
+  width: 100%;
+  margin-top: 7px;
+  padding: 7px 9px;
+  border: 1px solid #354354;
+  border-radius: 5px;
+  background: #202a37;
+  color: #c2ccd8;
+  font: inherit;
+  font-size: 10px;
+  line-height: 1.5;
+  text-align: left;
+  cursor: pointer;
+}
+.transposition-path-button:hover, .transposition-path-button:focus-visible {
+  border-color: var(--accent);
+  background: #2a3747;
+  outline: none;
+}
