@@ -290,6 +290,7 @@ export function initializeChessSuite({ getCurrentTree, loadGeneratedTree, getCur
     }
     endgameLesson = selected.lessons[0] || ENDGAME_LESSONS[0];
     renderEndgameLesson();
+    loadEndgamePosition();
   }
   function renderEndgameLesson() {
     endgameLesson = selectedEndgameLesson();
@@ -637,5 +638,12 @@ export function initializeChessSuite({ getCurrentTree, loadGeneratedTree, getCur
     refreshEndgame() { updateEndgameSummary(); },
     loadImportedPgn(pgn) { importedPgn = pgn; fillPgnFields(pgn); persistGames(pgn); },
     getCurrentEndgameLesson() { return endgameLesson; },
+    loadEndgameProgress(progress) {
+      if (progress && typeof progress === "object" && !Array.isArray(progress)) {
+        endgameCards = progress;
+        saveEndgameProgress();
+        renderEndgameLesson();
+      }
+    },
   };
 }
