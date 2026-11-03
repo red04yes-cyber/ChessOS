@@ -3,6 +3,8 @@ import { invoke, isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { RepertoireTree } from "./repertoire-tree.js";
 import { formatUciScore, parseUciInfo, uciPvToSan } from "./engine-uci.js";
+import { initChessLab } from "./chess-lab.js";
+import { parsePgnCollection } from "./pgn-import.js";
 import "./style.css";
 
 const STORAGE_KEY = "chess-os.repertoire.v1";
@@ -46,6 +48,7 @@ let engineFen = "";
 let engineSideToMove = "w";
 const engineRows = new Map();
 let engineEventsError = null;
+let chessLab = null;
 
 const $ = (selector) => document.querySelector(selector);
 const boardElement = $("#chessboard");
@@ -770,6 +773,7 @@ function commitSelectedMove(selectedMove) {
   appendStudioMove(played);
   setDirty(true);
   renderAll();
+  chessLab?.onPositionChanged();
 }
 
 function handleSquareClick(square) {
@@ -943,6 +947,54 @@ function leaveTraining() {
   renderAll();
 }
 
+async function saveImportedGames(games) {
+  if (!databaseReady) return { saved: 0, errors: [{ index: 0, message: "Database non pronto." }] };
+  if (!confirmDiscardChanges("importare le partite selezionate")) {
+    return { saved: 0, errors: [{ index: 0, message: "Importazione annullata: modifiche non salvate." }] };
+  }
+
+  const savedEntries = [];
+  const errors = [];
+  for (const [offset, item] of games.entries()) {
+    try {
+      const tree = item.tree;
+      const now = new Date().toISOString();
+      const title = String(item.title || "Partita importata " + (offset + 1)).trim().slice(0, 70);
+      const entry = {
+        id: globalThis.crypto?.randomUUID?.() ?? "game-" + Date.now() + "-" + offset,
+        title,
+        pgn: tree.toPgn({ Event: title }),
+        sans: tree.mainlinePath().map((edgeId) => tree.getEdge(edgeId).san),
+        edgeCount: tree.edges.size,
+        nodeCount: tree.nodes.size,
+        createdAt: now,
+        updatedAt: now,
+        tree: tree.toJSON(),
+      };
+      let saved;
+      if (persistenceMode === "sqlite") {
+        saved = await invoke("save_repertoire", { input: repertoirePayload(entry, tree) });
+        repertoire = [saved, ...repertoire.filter((line) => line.id !== saved.id)];
+      } else {
+        saved = entry;
+        const next = [saved, ...repertoire.filter((line) => line.id !== saved.id)];
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+        repertoire = next;
+      }
+      savedEntries.push(saved);
+    } catch (error) {
+      errors.push({ index: item.index || offset + 1, message: error instanceof Error ? error.message : String(error) });
+    }
+  }
+
+  if (savedEntries.length) {
+    setDirty(false);
+    openLine(savedEntries[0].id);
+    renderAll();
+  }
+  return { saved: savedEntries.length, errors };
+}
+
 function importPgn() {
   const text = $("#pgn-input").value.trim();
   if (!text) {
@@ -1083,4 +1135,25 @@ $("#engine-start").addEventListener("click", () => { void startStockfish(); });
 $("#engine-analyze").addEventListener("click", () => { void analyzeCurrentPosition(); });
 $("#engine-stop").addEventListener("click", () => { void stopStockfishAnalysis(); });
 $("#engine-shutdown").addEventListener("click", () => { void shutdownStockfish(); });
+chessLab = initChessLab({
+  container: document.querySelector(".details-panel"),
+  desktopApp,
+  getGame: () => activeGame(),
+  getMode: () => mode,
+  getPositions: () => [...studioStates],
+  getMoves: () => [...studioMoveObjects],
+  startEngine: startStockfish,
+  playUciMove: (uci) => {
+    if (mode !== "studio" || !/^[a-h][1-8][a-h][1-8][qrbn]?$/.test(uci)) return false;
+    const move = game.moves({ verbose: true }).find((candidate) =>
+      candidate.from === uci.slice(0, 2)
+      && candidate.to === uci.slice(2, 4)
+      && (candidate.promotion || "") === (uci[4] || "")
+    );
+    if (!move) return false;
+    commitSelectedMove(move);
+    return true;
+  },
+  importGames: saveImportedGames,
+});
 void initializePersistence();

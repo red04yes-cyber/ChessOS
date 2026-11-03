@@ -19,6 +19,10 @@ Windows-first chess repertoire and training desktop app. This repository now con
 - PGN variation export with round-trip regression tests
 - Undo/redo by navigating the complete move timeline and reset in Studio mode
 - Training mode that asks the user to replay every move in a saved or current line
+- Stockfish 19 analysis of complete games with move-loss classification and explanatory chess principles
+- Chess Lab with Lichess Opening Explorer, alternative moves and opening statistics
+- Play against Stockfish from the current position or a selected repertoire variation
+- PGN import from local files, pasted collections, public Chess.com monthly archives and public Lichess game exports
 - Vite frontend and Tauri 2 desktop shell
 - Automated JavaScript tests for chess rules, PGN/RAV round-trips, transpositions and UCI parsing; Windows CI smoke-tests Stockfish and builds the NSIS installer
 
