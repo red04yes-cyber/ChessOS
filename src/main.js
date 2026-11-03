@@ -1574,16 +1574,28 @@ async function recordExamMove(selectedMove) {
       const attempt = examAttempts.find((entry) => entry.id === examAttemptId);
       if (attempt) attempt.correctCount = Number(attempt.correctCount || 0) + (correct ? 1 : 0);
     } else {
-      examAnswers.push(answer);
-      const attempt = examAttempts.find((entry) => entry.id === examAttemptId);
-      if (attempt) attempt.correctCount = Number(attempt.correctCount || 0) + (correct ? 1 : 0);
+      const nextAnswers = [...examAnswers, answer];
+      const nextAttempts = examAttempts.map((attempt) => attempt.id === examAttemptId
+        ? { ...attempt, correctCount: Number(attempt.correctCount || 0) + (correct ? 1 : 0) }
+        : attempt);
+      const previousAnswers = examAnswers;
+      const previousAttempts = examAttempts;
+      examAnswers = nextAnswers;
+      examAttempts = nextAttempts;
       if (!persistLocalReviewState()) {
+        examAnswers = previousAnswers;
+        examAttempts = previousAttempts;
+        trainingGame.undo();
         isSavingExamAnswer = false;
+        renderAll();
         return;
       }
     }
   } catch (error) {
+    // Revert the tentative answer so the player can safely retry after a storage error.
+    trainingGame.undo();
     isSavingExamAnswer = false;
+    renderAll();
     showToast("Non riesco a registrare la risposta: " + error.message);
     return;
   }
