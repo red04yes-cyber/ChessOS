@@ -24,6 +24,7 @@
           <button class="nav-item" id="nav-dashboard"><span>◫</span> Dashboard</button>
           <button class="nav-item active" id="nav-studio"><span>▦</span> Studio</button>
           <button class="nav-item" id="nav-training"><span>♟</span> Allenamento</button>
+          <button class="nav-item" id="nav-backups"><span>◈</span> Protezione dati</button>
           <div class="sidebar-heading">
             <span>IL MIO REPERTORIO</span>
             <button class="icon-button" id="new-line" title="Nuova partita">＋</button>
@@ -315,6 +316,38 @@
                 <div><h2>Panoramica dei repertori</h2><p>Copertura di studio e percentuale di richiamo per linea</p></div>
               </div>
               <div id="dashboard-repertoire-list" class="dashboard-repertoire-list"></div>
+            </section>
+          </section>
+
+          <section id="backup-panel" class="backup-panel" hidden aria-labelledby="backup-title">
+            <article class="dashboard-card backup-intro">
+              <div class="dashboard-card-heading">
+                <div>
+                  <h2 id="backup-title">Protezione dei dati</h2>
+                  <p>Backup e ripristino dell’archivio locale di ChessOS</p>
+                </div>
+                <span class="backup-shield" aria-hidden="true">◈</span>
+              </div>
+              <p class="backup-description">Il backup contiene una copia completa del database SQLite: repertori e varianti, partite importate da Chess.com e Lichess, carte di ripasso, stato FSRS, valutazioni, sessioni, obiettivi ed esami.</p>
+              <div class="backup-safety-notes">
+                <div><b>Snapshot coerente</b><span>Creato con l’API di backup online di SQLite, anche mentre il database è in uso.</span></div>
+                <div><b>Ripristino verificato</b><span>Controllo integrità e relazioni tra tabelle prima di sostituire i dati attivi.</span></div>
+                <div><b>Nessuna sovrascrittura</b><span>Ogni backup riceve un nome univoco. I precedenti restano disponibili finché non li elimini.</span></div>
+              </div>
+              <div class="backup-toolbar">
+                <button class="button primary" id="create-backup" type="button">＋ Crea backup completo</button>
+                <button class="button ghost" id="refresh-backups" type="button">Aggiorna elenco</button>
+              </div>
+              <p id="backup-status" class="backup-status" role="status" aria-live="polite">I backup vengono conservati nella cartella dati locale di ChessOS.</p>
+            </article>
+            <section class="dashboard-card backup-history-card">
+              <div class="dashboard-card-heading">
+                <div><h2>Backup precedenti</h2><p>Verifica un backup prima di abilitarne il ripristino</p></div>
+                <span id="backup-count" class="dashboard-card-total">0</span>
+              </div>
+              <div id="backup-list" class="backup-list">
+                <p class="backup-empty">Caricamento elenco backup…</p>
+              </div>
             </section>
           </section>
 

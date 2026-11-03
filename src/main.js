@@ -57,6 +57,9 @@ let examAttempts = [];
 let examAnswers = [];
 let importedGames = [];
 let onlineImportBusy = false;
+let databaseBackups = [];
+let verifiedBackups = new Set();
+let backupsBusy = false;
 let reviewQueue = [];
 let examQueue = [];
 let currentExamCard = null;
@@ -563,27 +566,33 @@ function renderMode() {
   const training = mode === "training";
   const exam = mode === "exam";
   const dashboard = mode === "dashboard";
-  const study = !dashboard;
+  const backups = mode === "backups";
+  const study = !dashboard && !backups;
   $("#nav-studio").classList.toggle("active", mode === "studio");
   $("#nav-training").classList.toggle("active", training);
   $("#nav-dashboard").classList.toggle("active", dashboard);
+  $("#nav-backups").classList.toggle("active", backups);
   $("#mode-eyebrow").textContent = dashboard
     ? "ATTIVITÀ / STATISTICHE"
-    : training ? "REPERTORIO / RIPASSO FSRS"
-      : exam ? "REPERTORIO / ESAME"
-        : "REPERTORIO / ANALISI";
+    : backups ? "SISTEMA / PROTEZIONE DATI"
+      : training ? "REPERTORIO / RIPASSO FSRS"
+        : exam ? "REPERTORIO / ESAME"
+          : "REPERTORIO / ANALISI";
   $("#page-title").textContent = dashboard
     ? "Dashboard e progressi"
-    : training ? "Ripasso giornaliero"
-      : exam ? "Esame del repertorio" : "Chess Studio";
+    : backups ? "Protezione dei dati"
+      : training ? "Ripasso giornaliero"
+        : exam ? "Esame del repertorio" : "Chess Studio";
   $("#page-subtitle").textContent = dashboard
     ? "Controlla i progressi, gli obiettivi e la preparazione dei tuoi repertori."
-    : training ? "Allena il richiamo delle mosse con intervalli adattivi."
-      : exam ? "Verifica quanto ricordi senza aiuti e registra il risultato."
-        : "Costruisci linee principali, varianti e transposizioni.";
-  $("#heading-actions").hidden = dashboard || exam;
+    : backups ? "Crea copie complete, verifica l’integrità e ripristina i tuoi dati."
+      : training ? "Allena il richiamo delle mosse con intervalli adattivi."
+        : exam ? "Verifica quanto ricordi senza aiuti e registra il risultato."
+          : "Costruisci linee principali, varianti e transposizioni.";
+  $("#heading-actions").hidden = dashboard || exam || backups;
   $("#study-grid").hidden = !study;
   $("#dashboard-panel").hidden = !dashboard;
+  $("#backup-panel").hidden = !backups;
   $("#save-line").disabled = mode !== "studio" || !databaseReady;
   $("#board-mark-tool").disabled = training;
   $("#board-mark-color").disabled = training;
@@ -595,7 +604,7 @@ function renderMode() {
   $("#review-panel").hidden = !training;
   $("#exam-panel").hidden = !exam;
   $("#chess-lab-tools").hidden = mode !== "studio";
-  $("#flip-board").disabled = dashboard;
+  $("#flip-board").disabled = dashboard || backups;
 }
 
 function renderVariations() {
@@ -1059,6 +1068,7 @@ function renderAll() {
   renderDashboard();
   renderExamPanel();
   renderImportedGames();
+  renderBackupList();
 }
 
 function renderImportedGames() {
@@ -2324,6 +2334,211 @@ async function showStudio() {
   renderAll();
 }
 
+function formatBackupSize(bytes) {
+  const size = Number(bytes) || 0;
+  if (size < 1024) return size + " B";
+  if (size < 1024 * 1024) return (size / 1024).toFixed(1) + " KB";
+  if (size < 1024 * 1024 * 1024) return (size / (1024 * 1024)).toFixed(2) + " MB";
+  return (size / (1024 * 1024 * 1024)).toFixed(2) + " GB";
+}
+
+function formatBackupDate(timestamp) {
+  const value = Number(timestamp);
+  if (!Number.isFinite(value) || value <= 0) return "Data non disponibile";
+  return new Date(value).toLocaleString("it-IT");
+}
+
+function setBackupStatus(message, isError = false) {
+  const status = $("#backup-status");
+  status.textContent = message;
+  status.classList.toggle("error", isError);
+}
+
+function renderBackupList() {
+  const list = $("#backup-list");
+  if (!list) return;
+  list.replaceChildren();
+  $("#backup-count").textContent = String(databaseBackups.length);
+
+  if (persistenceMode !== "sqlite") {
+    const empty = document.createElement("p");
+    empty.className = "backup-empty";
+    empty.textContent = "La gestione dei backup completi è disponibile nell’app desktop di ChessOS.";
+    list.append(empty);
+    $("#create-backup").disabled = true;
+    $("#refresh-backups").disabled = true;
+    return;
+  }
+
+  $("#create-backup").disabled = !databaseReady || backupsBusy;
+  $("#refresh-backups").disabled = backupsBusy;
+  if (!databaseBackups.length) {
+    const empty = document.createElement("p");
+    empty.className = "backup-empty";
+    empty.textContent = "Nessun backup ancora presente. Crea il primo backup completo per proteggere il tuo archivio.";
+    list.append(empty);
+    return;
+  }
+
+  for (const backup of databaseBackups) {
+    const row = document.createElement("article");
+    row.className = "backup-row";
+    const details = document.createElement("div");
+    details.className = "backup-row-details";
+    const name = document.createElement("strong");
+    name.textContent = backup.name;
+    const meta = document.createElement("small");
+    meta.textContent = formatBackupDate(backup.createdAt) + " · " + formatBackupSize(backup.sizeBytes);
+    const verification = document.createElement("span");
+    verification.className = verifiedBackups.has(backup.name) ? "backup-verification verified" : "backup-verification";
+    verification.textContent = verifiedBackups.has(backup.name) ? "Integrità verificata" : "Da verificare prima del ripristino";
+    details.append(name, meta, verification);
+
+    const actions = document.createElement("div");
+    actions.className = "backup-row-actions";
+    const verify = document.createElement("button");
+    verify.type = "button";
+    verify.className = "button small ghost";
+    verify.textContent = "Verifica";
+    verify.disabled = backupsBusy;
+    verify.addEventListener("click", () => { void verifyDatabaseBackup(backup.name); });
+
+    const restore = document.createElement("button");
+    restore.type = "button";
+    restore.className = "button small primary";
+    restore.textContent = "Ripristina";
+    restore.disabled = backupsBusy || !verifiedBackups.has(backup.name);
+    restore.addEventListener("click", () => { void restoreDatabaseBackup(backup.name); });
+
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "button small backup-delete";
+    remove.textContent = "Elimina";
+    remove.disabled = backupsBusy;
+    remove.addEventListener("click", () => { void deleteDatabaseBackup(backup.name); });
+
+    actions.append(verify, restore, remove);
+    row.append(details, actions);
+    list.append(row);
+  }
+}
+
+async function refreshDatabaseBackups() {
+  if (persistenceMode !== "sqlite") {
+    databaseBackups = [];
+    renderBackupList();
+    return;
+  }
+  try {
+    databaseBackups = await invoke("list_database_backups");
+    const available = new Set(databaseBackups.map((backup) => backup.name));
+    verifiedBackups = new Set([...verifiedBackups].filter((name) => available.has(name)));
+    renderBackupList();
+  } catch (error) {
+    setBackupStatus("Impossibile leggere l’elenco dei backup: " + (error?.message || String(error)), true);
+    showToast("Lettura backup non riuscita.");
+  }
+}
+
+async function createDatabaseBackup() {
+  if (persistenceMode !== "sqlite" || !databaseReady || backupsBusy) return;
+  backupsBusy = true;
+  renderBackupList();
+  setBackupStatus("Creazione e verifica del backup completo in corso…");
+  try {
+    const backup = await invoke("create_database_backup");
+    verifiedBackups.add(backup.name);
+    await refreshDatabaseBackups();
+    setBackupStatus("Backup creato e verificato: " + backup.name);
+    showToast("Backup completo creato.");
+  } catch (error) {
+    setBackupStatus("Creazione backup non riuscita: " + (error?.message || String(error)), true);
+    showToast("Backup non riuscito.");
+  } finally {
+    backupsBusy = false;
+    renderBackupList();
+  }
+}
+
+async function verifyDatabaseBackup(name) {
+  if (backupsBusy) return;
+  backupsBusy = true;
+  renderBackupList();
+  setBackupStatus("Verifica dell’integrità di " + name + "…");
+  try {
+    const result = await invoke("verify_database_backup", { name });
+    verifiedBackups.add(name);
+    setBackupStatus("Verifica completata: SQLite " + result.integrityCheck + ", relazioni " + result.foreignKeyCheck + ", schema v" + result.schemaVersion + ".");
+    showToast("Backup verificato. Il ripristino è ora disponibile.");
+  } catch (error) {
+    verifiedBackups.delete(name);
+    setBackupStatus("Backup non valido: " + (error?.message || String(error)), true);
+    showToast("Verifica del backup non riuscita.");
+  } finally {
+    backupsBusy = false;
+    renderBackupList();
+  }
+}
+
+async function restoreDatabaseBackup(name) {
+  if (backupsBusy || !verifiedBackups.has(name)) return;
+  const confirmed = confirm(
+    "Ripristinare " + name + "?\n\nI dati attuali saranno sostituiti. ChessOS creerà prima una copia di sicurezza automatica dello stato corrente e la conserverà nell’elenco."
+  );
+  if (!confirmed) return;
+
+  backupsBusy = true;
+  renderBackupList();
+  setBackupStatus("Ripristino in corso. Verifica nuovamente il backup e creazione della copia pre-ripristino…");
+  try {
+    const result = await invoke("restore_database_backup", { name });
+    repertoire = await invoke("list_repertoires");
+    await loadStudyData();
+    await refreshImportedGames();
+    databaseReady = true;
+    verifiedBackups.clear();
+    await refreshDatabaseBackups();
+    renderAll();
+    setBackupStatus("Ripristino completato da " + result.restoredFrom + ". Copia dello stato precedente: " + result.safetyBackup.name);
+    showToast("Database ripristinato. Copia pre-ripristino conservata.");
+  } catch (error) {
+    setBackupStatus("Ripristino non completato: " + (error?.message || String(error)), true);
+    showToast("Ripristino non riuscito.");
+  } finally {
+    backupsBusy = false;
+    renderBackupList();
+  }
+}
+
+async function deleteDatabaseBackup(name) {
+  if (backupsBusy) return;
+  if (!confirm("Eliminare definitivamente il backup " + name + "? Questa operazione non è reversibile.")) return;
+  backupsBusy = true;
+  renderBackupList();
+  try {
+    await invoke("delete_database_backup", { name });
+    verifiedBackups.delete(name);
+    await refreshDatabaseBackups();
+    setBackupStatus("Backup eliminato: " + name);
+  } catch (error) {
+    setBackupStatus("Eliminazione non riuscita: " + (error?.message || String(error)), true);
+    showToast("Eliminazione backup non riuscita.");
+  } finally {
+    backupsBusy = false;
+    renderBackupList();
+  }
+}
+
+async function showBackups() {
+  if (mode === "training") leaveTraining();
+  if (mode === "exam" && examAttemptId) {
+    await finishRepertoireExam(true);
+  }
+  mode = "backups";
+  renderAll();
+  await refreshDatabaseBackups();
+}
+
 function showDashboard() {
   if (mode === "training") leaveTraining();
   if (mode === "exam" && examAttemptId) {
@@ -2443,6 +2658,9 @@ $("#online-import-dialog").addEventListener("click", (event) => {
   if (event.target === $("#online-import-dialog")) closeOnlineImportDialog();
 });
 $("#nav-dashboard").addEventListener("click", showDashboard);
+$("#nav-backups").addEventListener("click", () => { void showBackups(); });
+$("#create-backup").addEventListener("click", () => { void createDatabaseBackup(); });
+$("#refresh-backups").addEventListener("click", () => { void refreshDatabaseBackups(); });
 $("#nav-studio").addEventListener("click", () => {
   if (mode === "training") {
     leaveTraining();

@@ -556,3 +556,35 @@ h1 { margin: 9px 0 5px; font-size: clamp(24px, 2.2vw, 31px); line-height: 1.1; l
 @media (max-width: 850px) {
   .tools-grid { grid-template-columns: 1fr; }
 }
+
+
+/* Full-database backup and restore */
+.backup-panel[hidden] { display: none !important; }
+.backup-panel { display: grid; gap: 16px; align-content: start; }
+.backup-intro, .backup-history-card { padding: 21px; }
+.backup-shield { display: grid; place-items: center; width: 38px; height: 38px; border: 1px solid #496451; border-radius: 9px; color: var(--green); background: #1d3029; font-size: 22px; }
+.backup-description { max-width: 850px; margin: 0 0 18px; color: #aab6c5; font-size: 12px; line-height: 1.7; }
+.backup-safety-notes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin: 0 0 18px; }
+.backup-safety-notes > div { min-width: 0; padding: 13px; border: 1px solid #344252; border-radius: 7px; background: #1a2430; }
+.backup-safety-notes b, .backup-safety-notes span { display: block; }
+.backup-safety-notes b { margin-bottom: 6px; color: #e0e7ef; font-size: 11px; }
+.backup-safety-notes span { color: #8795a7; font-size: 10px; line-height: 1.55; }
+.backup-toolbar { display: flex; flex-wrap: wrap; gap: 8px; }
+.backup-status { min-height: 16px; margin: 12px 0 0; color: #91a0b2; font-size: 10px; line-height: 1.5; }
+.backup-status.error { color: #e99b91; }
+.backup-list { display: grid; gap: 8px; }
+.backup-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 13px; border: 1px solid #344252; border-radius: 7px; background: #1a2430; }
+.backup-row-details { display: grid; min-width: 0; gap: 5px; }
+.backup-row-details strong { overflow-wrap: anywhere; color: #dce5ef; font-size: 11px; }
+.backup-row-details small { color: #8795a7; font-size: 10px; }
+.backup-verification { color: #d7b46e; font-size: 9px; font-weight: 700; }
+.backup-verification.verified { color: var(--green); }
+.backup-row-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+.backup-delete { border-color: #614048; color: #e7a09a; background: #2a2028; }
+.backup-delete:hover:not(:disabled) { border-color: #a35b61; background: #39252d; }
+.backup-empty { margin: 0; padding: 18px; border: 1px dashed #364252; border-radius: 7px; color: #8795a7; font-size: 11px; line-height: 1.6; }
+@media (max-width: 760px) {
+  .backup-safety-notes { grid-template-columns: 1fr; }
+  .backup-row { align-items: flex-start; flex-direction: column; }
+  .backup-row-actions { justify-content: flex-start; }
+}

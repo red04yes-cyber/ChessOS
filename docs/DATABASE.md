@@ -32,6 +32,7 @@ Le posizioni sono memorizzate in modo separato dalle mosse: due ordini di mosse 
 - `start_exam`, `record_exam_answer`, `finish_exam` e `list_exam_attempts`: gestiscono tentativi, risposte, punteggi e storico degli esami. Ogni risposta è validata contro FEN e mossa effettivi del repertorio e registrata nell'ordine previsto.
 - `import_online_games`: scarica in streaming gli archivi Chess.com o l'export PGN Lichess e inserisce i giochi in blocchi, senza tenere il database bloccato durante la rete.
 - `list_imported_games`, `get_imported_game`, `delete_imported_game`: leggono, aprono e rimuovono singole partite dalla libreria importata.
+- `create_database_backup`, `list_database_backups`, `verify_database_backup`, `restore_database_backup`, `delete_database_backup`: creano snapshot SQLite completi, gestiscono lo storico, verificano integrità e chiavi esterne e ripristinano soltanto backup verificati, creando prima una copia pre-ripristino.
 
 L'interfaccia valida il grafo ricostruendolo con `RepertoireTree.fromJSON` e controlla che ciascuna mossa sia legale e coerente con la posizione di destinazione.
 
@@ -50,6 +51,12 @@ I test Rust coprono:
 
 I test JavaScript coprono la serializzazione round-trip del grafo, il rifiuto di archi alterati o non legali e la logica FSRS: generazione delle carte, ripristino dello stato, quattro valutazioni, selezione delle scadenze, limiti giornalieri e statistiche di richiamo. I test SQLite verificano il salvataggio atomico della carta, del log e dei contatori sessione, il rollback in caso di errore e la lettura dello storico.
 
-## Limiti attuali
+## Backup e ripristino
 
-Le carte, le sessioni, gli obiettivi e gli esami sono ora usati dal ripasso e dalla dashboard. Le partite importate da Chess.com/Lichess sono conservate solo nella libreria locale; non esiste ancora sincronizzazione o backup cloud. L'esportazione PGN è disponibile come backup portabile; backup dell'intero database, ripristino da file e strumenti di migrazione con UI dedicata restano attività successive.
+La sezione **Protezione dati** dell'app desktop crea snapshot completi tramite l'API di backup online di SQLite. Il file contiene tutte le tabelle, inclusi repertori e varianti, partite importate, carte FSRS (stato serializzato), log di ripasso, sessioni, obiettivi ed esami. Gli snapshot sono conservati in `<app_data_dir>/backups`, separati dal database attivo.
+
+Ogni nome contiene un timestamp e viene riservato in modalità esclusiva: un backup precedente non viene mai sovrascritto. I backup restano disponibili fino all'eliminazione esplicita dall'interfaccia. Prima del ripristino, ChessOS esegue `PRAGMA quick_check`, `PRAGMA foreign_key_check` e controlla versione e tabelle dello schema. Il pulsante Ripristina si abilita solo dopo una verifica riuscita; il backend ripete comunque tutti i controlli prima di scrivere.
+
+Prima di sostituire il database attivo viene creato e verificato un backup `pre-restore`, che resta nell'elenco. Il ripristino usa nuovamente l'API SQLite Backup; in caso di errore tenta il recupero automatico dalla copia pre-ripristino. La preview browser non può creare backup SQLite perché usa `localStorage`, non il backend desktop.
+
+I backup sono locali al dispositivo: non esiste sincronizzazione cloud automatica. Conserva copie anche su un supporto esterno per proteggerti da guasti o perdita del dispositivo.

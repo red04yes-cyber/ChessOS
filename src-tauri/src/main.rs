@@ -1,5 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod backups;
 mod db;
 mod external_games;
 
@@ -18,6 +19,11 @@ fn main() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            backups::create_database_backup,
+            backups::list_database_backups,
+            backups::verify_database_backup,
+            backups::restore_database_backup,
+            backups::delete_database_backup,
             db::list_repertoires,
             db::save_repertoire,
             db::delete_repertoire,
