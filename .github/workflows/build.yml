@@ -51,9 +51,14 @@ jobs:
           targets: x86_64-pc-windows-msvc
       - name: Install dependencies
         run: npm install --no-audit --no-fund
-      - name: Run chess logic tests
+      - name: Install pinned Stockfish 19 binary and GPL notices
+        shell: powershell
+        run: ./scripts/install-stockfish.ps1
+      - name: Smoke test Stockfish UCI on Windows
+        run: npm run stockfish:smoke
+      - name: Run JavaScript tests
         run: npm test
-      - name: Run SQLite backend tests
+      - name: Run Rust tests
         run: cargo test --manifest-path src-tauri/Cargo.toml
       - name: Build Windows NSIS installer
         run: npm run tauri:build
