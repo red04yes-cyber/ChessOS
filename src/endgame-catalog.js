@@ -3,12 +3,12 @@ const FEN = {
   rook: "8/8/8/3k4/3P4/4K3/8/3Rr3 w - - 0 1",
   bishop: "8/8/8/3k4/3P4/4K3/4B3/8 w - - 0 1",
   knight: "8/8/8/3k4/3P4/4K3/4N3/8 w - - 0 1",
-  queen: "7k/8/5K2/8/8/8/8/7Q w - - 0 1",
-  queenRook: "7k/8/5K2/8/8/8/8/6RQ w - - 0 1",
+  queen: "7k/8/5K2/8/8/8/8/5Q2 w - - 0 1",
+  queenRook: "7k/8/5K2/8/8/8/8/2QR4 w - - 0 1",
   twoBishops: "7k/8/5K2/8/8/8/2B5/5B2 w - - 0 1",
   bishopKnight: "7k/8/5K2/8/8/8/2B5/5N2 w - - 0 1",
   twoKnights: "7k/8/5K2/8/8/8/6N1/7N w - - 0 1",
-  queenPawn: "7k/6P1/5K2/8/8/8/8/7q w - - 0 1",
+  queenPawn: "7k/8/5K2/6P1/8/8/8/7q w - - 0 1",
 };
 
 const lesson = (id, title, level, focus, objective, method, errors, fen) => ({
