@@ -1284,6 +1284,7 @@ async function importFullBackup() {
     }
     if (backup.endgameProgress && typeof backup.endgameProgress === "object" && !Array.isArray(backup.endgameProgress)) {
       localStorage.setItem(ENDGAME_PROGRESS_KEY, JSON.stringify(backup.endgameProgress));
+      chessSuite?.loadEndgameProgress(backup.endgameProgress);
     }
     renderAll();
     messageBackupStatus("Ripristino completato: " + validated.length + " repertori, " + validCards.length + " flashcard valide. I record esistenti con lo stesso ID sono stati aggiornati.");
