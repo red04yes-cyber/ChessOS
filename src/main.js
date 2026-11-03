@@ -5,6 +5,7 @@ import { RepertoireTree } from "./repertoire-tree.js";
 import { formatUciScore, parseUciInfo, uciPvToSan } from "./engine-uci.js";
 import { initChessLab } from "./chess-lab.js";
 import { parsePgnCollection } from "./pgn-import.js";
+import "@fontsource-variable/inter/wght.css";
 import "./style.css";
 
 const STORAGE_KEY = "chess-os.repertoire.v1";
