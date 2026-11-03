@@ -6,8 +6,8 @@ import { RepertoireTree } from "../src/repertoire-tree.js";
 import { analyzeOpeningExplorer, buildRepertoireFromPgn } from "../src/chess-suite.js";
 
 test("endgame curriculum has extensive coverage and every training FEN is parseable", () => {
-  assert.equal(ENDGAME_CATALOG.length, 9);
-  assert.ok(ENDGAME_LESSONS.length >= 100);
+  assert.equal(ENDGAME_CATALOG.length, 10);
+  assert.ok(ENDGAME_LESSONS.length >= 130);
   for (const section of ENDGAME_CATALOG) {
     assert.ok(section.lessons.length > 0);
     for (const lesson of section.lessons) {
