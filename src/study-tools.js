@@ -167,8 +167,8 @@ export function getDueStudyCards(cards, now = new Date()) {
 function buildShortestPathMap(tree) {
   const paths = new Map([[tree.rootId, []]]);
   const queue = [tree.rootId];
-  while (queue.length) {
-    const nodeId = queue.shift();
+  for (let cursor = 0; cursor < queue.length; cursor += 1) {
+    const nodeId = queue[cursor];
     for (const edge of tree.getOutgoing(nodeId)) {
       if (paths.has(edge.to)) continue;
       paths.set(edge.to, [...paths.get(nodeId), edge.id]);
@@ -249,7 +249,9 @@ export function analyzeOpponentPgn(pgn, side = "black") {
       moveSequences.set(sequence, (moveSequences.get(sequence) || 0) + 1);
     }
 
-    const result = headerValue(source, "Result");
+    const result = headerValue(source, "Result")
+      || source.match(/(?:1-0|0-1|1\/2-1\/2|\\*)\\s*$/)?.[0]?.trim()
+      || "";
     if (result === "1/2-1/2") results.draws += 1;
     else if (result === "1-0" || result === "0-1") {
       const whiteWon = result === "1-0";
