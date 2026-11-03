@@ -264,12 +264,27 @@ function activeGame() {
   return (mode === "training" || mode === "exam") && trainingGame ? trainingGame : game;
 }
 
-function showToast(message) {
+function hideToast() {
   const toast = $("#toast");
-  toast.textContent = message;
-  toast.classList.add("visible");
+  toast.classList.remove("visible");
   window.clearTimeout(toastTimer);
-  toastTimer = window.setTimeout(() => toast.classList.remove("visible"), 2600);
+  toastTimer = null;
+}
+
+function showToast(message, options = {}) {
+  const toast = $("#toast");
+  const content = $("#toast-message");
+  const type = ["success", "info", "warning", "error"].includes(options.type)
+    ? options.type
+    : "info";
+  content.textContent = String(message);
+  toast.classList.remove("success", "info", "warning", "error");
+  toast.classList.add(type, "visible");
+  toast.setAttribute("role", type === "error" ? "alert" : "status");
+  toast.setAttribute("aria-live", type === "error" ? "assertive" : "polite");
+  window.clearTimeout(toastTimer);
+  const duration = type === "error" ? 10_000 : type === "warning" ? 5_000 : 2_800;
+  toastTimer = window.setTimeout(hideToast, duration);
 }
 
 function setDirty(value = true) {
@@ -2274,6 +2289,7 @@ boardElement.addEventListener("click", (event) => {
   if (squareButton) handleSquareClick(squareButton.dataset.square);
 });
 
+$("#toast-close").addEventListener("click", hideToast);
 $("#open-online-import").addEventListener("click", openOnlineImportDialog);
 $("#import-online-games-sidebar").addEventListener("click", openOnlineImportDialog);
 $("#online-provider").addEventListener("change", updateOnlineImportProvider);
