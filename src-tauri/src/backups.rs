@@ -8,7 +8,7 @@ use tauri::{AppHandle, Manager, State};
 
 use crate::db::Database;
 
-const REQUIRED_SCHEMA_VERSION: i64 = 6;
+const REQUIRED_SCHEMA_VERSION: i64 = 7;
 const BACKUP_PREFIX: &str = "chessos-backup-";
 const PRE_RESTORE_PREFIX: &str = "chessos-pre-restore-";
 
