@@ -204,3 +204,29 @@ h1 { margin: 9px 0 5px; font-size: clamp(24px, 2.2vw, 31px); line-height: 1.1; l
   .heading-actions { width: 100%; justify-content: flex-start; }
   .heading-actions .button { flex: 1 1 auto; }
 }
+
+
+/* Repertoire graph and variation navigation */
+.variation-list { display: grid; gap: 6px; max-height: 220px; overflow: auto; }
+.variation-choice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 9px 10px;
+  border: 1px solid #354253;
+  border-radius: 6px;
+  background: #202a37;
+  color: #d7e0ea;
+  text-align: left;
+  cursor: pointer;
+}
+.variation-choice:hover { border-color: #75869b; background: #2a3747; }
+.variation-choice.selected { border-color: #a9823d; background: #3a3327; }
+.variation-choice strong { font-size: 12px; color: var(--accent-strong); }
+.variation-choice small { color: #8796a8; font-size: 9px; text-align: right; }
+.variations-card { min-width: 0; }
+@media (max-width: 850px) {
+  .variation-list { max-height: 180px; }
+}
