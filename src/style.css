@@ -88,6 +88,8 @@
     --piece-white-stroke: #28313a;
     --piece-black-fill: #26312e;
     --piece-black-stroke: #f5f1e6;
+    --board-coordinate-on-light: #29343e;
+    --board-coordinate-on-dark: #fffdf5;
 
     /* Board overlays */
     --hl-last: rgba(224, 173, 79, 0.38);
@@ -1410,22 +1412,67 @@
   .piece {
     position: relative;
     z-index: 1;
-    font-family: "Segoe UI Symbol", "Noto Sans Symbols 2", "DejaVu Sans", serif;
-    font-size: clamp(30px, 4vw, 56px);
-    line-height: 1;
+    width: 88%;
+    height: 88%;
+    overflow: visible;
+    flex: 0 0 auto;
+    pointer-events: none;
     user-select: none;
+  }
+
+  .piece use {
+    fill: currentColor;
+    stroke: var(--piece-outline);
+    stroke-width: 1.8px;
+    stroke-linecap: round;
+    stroke-linejoin: round;
   }
 
   .white-piece {
     color: var(--piece-white-fill);
-    -webkit-text-stroke: 0.45px var(--piece-white-stroke);
-    text-shadow: var(--piece-white-shadow);
+    --piece-outline: var(--piece-white-stroke);
+    filter: drop-shadow(0 1px 1px rgba(17, 24, 29, 0.28));
   }
 
   .black-piece {
     color: var(--piece-black-fill);
-    -webkit-text-stroke: 0.35px var(--piece-black-stroke);
-    text-shadow: var(--piece-black-shadow);
+    --piece-outline: var(--piece-black-stroke);
+    filter: drop-shadow(0 1px 1px rgba(255, 255, 255, 0.2));
+  }
+
+  .coord-label {
+    position: absolute;
+    z-index: 3;
+    pointer-events: none;
+    font-family: var(--font-ui);
+    font-size: clamp(10px, 0.85vw, 12px);
+    font-weight: 700;
+    line-height: 1;
+    opacity: 0.95;
+    user-select: none;
+  }
+
+  .coord-rank {
+    top: 4px;
+    left: 5px;
+  }
+
+  .coord-file {
+    right: 5px;
+    bottom: 4px;
+  }
+
+  .square.light .coord-label {
+    color: var(--board-coordinate-on-light);
+  }
+
+  .square.dark .coord-label {
+    color: var(--board-coordinate-on-dark);
+  }
+
+  .rank-labels,
+  .file-labels {
+    display: none;
   }
 
   .rank-labels {
@@ -1530,7 +1577,8 @@
   }
 
   .promotion-choice .piece {
-    font-size: 42px;
+    width: 56px;
+    height: 56px;
   }
 
   .promotion-choice small {
