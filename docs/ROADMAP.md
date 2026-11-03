@@ -1,30 +1,35 @@
 # Chess OS roadmap
 
-Questa roadmap distingue le funzionalità già presenti nell'MVP 0.1.0 dalle estensioni ancora da sviluppare. Le voci 6–10 riprendono le richieste aggiuntive del progetto.
+La roadmap riporta lo stato verificato dell'MVP 0.1.0 e delimita le parti già operative dalle estensioni future.
 
-## Funzionalità pianificate
-
-| # | Funzionalità | Obiettivo | Stato |
+| # | Funzionalità | Stato | Note |
 |---|---|---|---|
-| 1 | Analisi Stockfish | Valutazione delle posizioni, migliori mosse, analisi delle imprecisioni e confronto con le linee del repertorio. | Da sviluppare |
-| 2 | Ripetizione spaziata FSRS | Pianificazione dei ripassi, stati delle carte, cronologia e intervalli adattivi. | Da sviluppare |
-| 3 | Backup e ripristino | Esportazione e ripristino del database SQLite, oltre all'esportazione PGN già disponibile. | Da sviluppare |
-| 4 | Dashboard e statistiche | Progressi, obiettivi, sessioni, accuratezza e risultati degli allenamenti. | Da sviluppare |
-| 5 | Sincronizzazione cloud | Account, sincronizzazione dei repertori e backup tra dispositivi. | Da sviluppare |
-| 6 | Creazione automatica delle flashcard | Trasformare gli errori commessi nelle partite o durante il ripasso in carte collegate alla posizione e alla variante corretta, da pianificare con FSRS. | Da sviluppare |
-| 7 | Modalità Blindfold | Allenare il richiamo delle varianti senza mostrare la scacchiera; verificare la mossa inserita e rivelare la posizione dopo la risposta. | Da sviluppare |
-| 8 | Heatmap delle debolezze | Evidenziare aperture, varianti e posizioni meno conosciute usando errori, accuratezza e cronologia dei ripassi. | Da sviluppare |
-| 9 | Preparazione contro un avversario | Importare le partite PGN di un avversario e sintetizzarne aperture preferite, frequenze, risposte ricorrenti e abitudini. | Da sviluppare |
-| 10 | Gestione delle trasposizioni | Riconoscere sequenze differenti che raggiungono la stessa posizione e riunirle nel grafo del repertorio. | Già implementata nel grafo dei repertori |
- 
-## Dipendenze e note di progettazione
+| 1 | Analisi Stockfish | Da sviluppare | Motore di valutazione, migliori mosse e riconoscimento di imprecisioni/blunder. È il passo necessario per identificare errori oggettivi di gioco, oltre alle deviazioni dal repertorio. |
+| 2 | Ripetizione spaziata FSRS | Parzialmente implementata | Le flashcard usano `ts-fsrs` con valutazioni Again/Hard/Good/Easy e stato/cronologia per carta. Persistenza attuale in localStorage/WebView; resta l'integrazione con le tabelle SQLite `study_cards` e `review_logs`. |
+| 3 | Backup e ripristino | Da sviluppare | Backup e ripristino dell'intero database SQLite; l'export PGN è già disponibile. |
+| 4 | Dashboard e statistiche | Parzialmente implementata | La heatmap mostra lo stato delle posizioni misurate; restano dashboard aggregate, obiettivi, sessioni e statistiche complete. |
+| 5 | Sincronizzazione cloud | Da sviluppare | Account, sincronizzazione e backup tra dispositivi. |
+| 6 | Creazione automatica delle flashcard | Implementata (MVP) | Genera carte quando una partita PGN devia da una continuazione salvata in una posizione conosciuta; anche gli errori nel ripasso/Blindfold possono creare carte. Non equivale ancora al rilevamento di blunder tramite motore. |
+| 7 | Modalità Blindfold | Implementata (MVP) | Nasconde i pezzi e la notazione, richiede l'inserimento SAN e registra gli errori come carte. |
+| 8 | Heatmap delle debolezze | Implementata (MVP) | Classifica le posizioni in deboli, in apprendimento, stabili o non valutate in base a scadenze FSRS e cronologia. L'assenza di dati non viene interpretata come padronanza. |
+| 9 | Preparazione contro un avversario | Implementata (MVP) | Analizza una o più partite PGN: aperture/varianti (header PGN o prime 8 semimosse), prime mosse del colore selezionato, risultati e dimensione del campione. Restano analisi più profonde per posizione e fase di partita. |
+| 10 | Gestione delle trasposizioni | Implementata | Il grafo unifica posizioni equivalenti e l'explorer mostra i diversi percorsi di mosse che conducono alla stessa posizione. |
 
-- La generazione automatica delle carte (6) si appoggia al motore di ripasso FSRS (2). Per identificare gli errori in modo più robusto, l'analisi Stockfish (1) può essere aggiunta come fonte opzionale, distinta dagli errori rispetto al repertorio.
-- La modalità Blindfold (7) può riutilizzare il motore di allenamento e la navigazione delle varianti esistenti.
-- La heatmap (8) richiede dati di allenamento e cronologia FSRS; prima di questi dati, può mostrare soltanto copertura e dimensione del repertorio, non una misura attendibile della conoscenza.
-- La preparazione avversario (9) può riutilizzare l'importazione PGN e il grafo delle varianti. Le statistiche dovranno distinguere colore, apertura, campione di partite e periodo analizzato.
-- Le trasposizioni (10) sono già gestite nel grafo: la chiave confronta disposizione dei pezzi, tratto, diritti di arrocco e possibilità en passant. I contatori di mezza mossa e numero della mossa non identificano una posizione diversa. Il codice evita inoltre fusioni che introdurrebbero cicli; in quel caso mantiene un nodo separato.
+## Come usare le nuove funzioni
 
-## Criteri di completamento suggeriti
+- **Flashcard automatiche:** aprire una linea/repertorio in Studio, incollare una partita nella sezione Flashcard automatiche e scegliere Genera carte dagli errori. Vengono considerate soltanto le deviazioni in posizioni già presenti nel grafo, dove esiste almeno una continuazione salvata.
+- **Ripasso FSRS:** usare Ripassa carte dovute, rivelare la soluzione e valutare il ricordo con Again, Hard, Good o Easy. La schedulazione è eseguita dalla libreria `ts-fsrs`.
+- **Blindfold:** avviare la modalità sulla linea attiva e inserire la mossa in notazione SAN (ad esempio `Nf3` o `O-O`). La scacchiera resta senza pezzi e la notazione viene nascosta durante il tentativo.
+- **Heatmap:** controllare lo stato delle posizioni del repertorio attualmente aperto. Le posizioni senza flashcard associate sono marcate come non valutate.
+- **Preparazione avversario:** incollare uno o più PGN con intestazioni `[Event "..."]`, selezionare il colore dell'avversario e avviare l'analisi. Le percentuali sono descrittive del campione importato, non previsioni.
+- **Trasposizioni:** consultare la sezione Trasposizioni in fondo allo Studio per confrontare le sequenze che convergono sullo stesso nodo.
 
-Ogni nuova funzione dovrebbe includere test automatici, gestione dei dati persistenti e una breve verifica manuale nell'app desktop Windows. Le funzionalità che dipendono dai dati di ripasso dovrebbero essere sviluppate dopo l'introduzione di FSRS e della relativa cronologia.
+## Limiti e prossimi passi
+
+1. Integrare le flashcard e i log FSRS con il database SQLite già predisposto, invece di usare localStorage.
+2. Collegare Stockfish alla revisione PGN per distinguere deviazioni di repertorio, errori e imprecisioni valutative.
+3. Arricchire la heatmap con statistiche aggregate per apertura/variante e con metriche di accuratezza quando saranno disponibili valutazioni affidabili.
+4. Estendere la preparazione avversario con risposte per posizione, frequenze per fase e filtri temporali.
+5. Aggiungere test end-to-end UI e una verifica manuale in Tauri/Windows oltre ai test unitari JavaScript.
+
+Le posizioni transposte sono identificate nel grafo usando disposizione dei pezzi, tratto, diritti di arrocco e campo en passant della FEN. I contatori di mezza mossa e numero della mossa non fanno parte della chiave. Il codice evita fusioni che introdurrebbero cicli; in quel caso conserva un nodo separato.
