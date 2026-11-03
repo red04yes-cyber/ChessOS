@@ -3037,3 +3037,46 @@
     }
   }
 }
+
+@layer utilities {
+  .square.training-success {
+    background-image: linear-gradient(var(--hl-hint), var(--hl-hint));
+  }
+
+  .square.training-success::before {
+    position: absolute;
+    z-index: 4;
+    right: 4px;
+    bottom: 3px;
+    color: var(--success);
+    content: "✓";
+    font-size: clamp(12px, 1.2vw, 17px);
+    font-weight: 800;
+    line-height: 1;
+    text-shadow: 0 1px 2px color-mix(in srgb, var(--bg-0) 60%, transparent);
+    pointer-events: none;
+  }
+
+  .training-session-card .training-actions #training-restart {
+    border-color: var(--border-strong);
+  }
+
+  .training-session-card .training-actions #training-exit {
+    min-height: 38px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .training-progress span {
+      transition: none;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    :root[data-motion="active"] *,
+    :root[data-motion="active"] *::before,
+    :root[data-motion="active"] *::after {
+      animation-duration: var(--dur) !important;
+      transition-duration: var(--dur-fast) !important;
+    }
+  }
+}
