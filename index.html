@@ -29,6 +29,13 @@
             <button class="icon-button" id="new-line" title="Nuova partita">＋</button>
           </div>
           <div id="repertoire-list" class="repertoire-list"></div>
+          <div class="sidebar-heading imported-games-heading">
+            <span>PARTITE IMPORTATE</span>
+            <button class="icon-button" id="import-online-games-sidebar" title="Importa partite online">＋</button>
+          </div>
+          <div id="imported-games-list" class="imported-games-list">
+            <div class="repertoire-empty">Nessuna partita importata.</div>
+          </div>
           <div class="sidebar-note">
             <span class="note-icon">◈</span>
             <div><b id="storage-title">Salvataggio locale</b><small id="storage-description">Le linee restano su questo dispositivo.</small></div>
@@ -48,6 +55,7 @@
               <button class="button ghost" id="flip-board">Vista Nero</button>
               <button class="button ghost" id="copy-fen">Copia FEN</button>
               <button class="button ghost" id="reset">Nuova posizione</button>
+              <button class="button ghost" id="open-online-import">Importa partite online</button>
               <button class="button primary" id="save-line">Salva linea <span>＋</span></button>
             </div>
           </div>
@@ -250,6 +258,30 @@
           <div class="workspace-footer"><span>CHESS OS <b>·</b> I tuoi dati restano sul dispositivo</span><span>LEGAL MOVES <i>ON</i></span></div>
         </section>
       </main>
+      <div id="online-import-dialog" class="promotion-dialog online-import-dialog" hidden role="dialog" aria-modal="true" aria-labelledby="online-import-title">
+        <div class="promotion-card online-import-card">
+          <h2 id="online-import-title">Importa partite online</h2>
+          <p>Scarica le partite pubbliche del tuo account e conservale nella libreria locale. I repertori esistenti non verranno modificati.</p>
+          <label class="field-label" for="online-provider">Piattaforma</label>
+          <select id="online-provider" class="text-input">
+            <option value="chess_com">Chess.com</option>
+            <option value="lichess">Lichess</option>
+          </select>
+          <label class="field-label" for="online-username">Username</label>
+          <input id="online-username" class="text-input" maxlength="50" autocomplete="off" placeholder="Il tuo username" />
+          <div id="lichess-token-field" hidden>
+            <label class="field-label" for="lichess-api-token">Token API Lichess</label>
+            <input id="lichess-api-token" class="text-input" type="password" autocomplete="off" placeholder="Token con permesso games:read" />
+            <small class="online-import-help">Crea un <a href="https://lichess.org/account/oauth/token" target="_blank" rel="noreferrer">token API personale Lichess</a>. ChessOS lo usa solo per questa richiesta e non lo salva.</small>
+          </div>
+          <div id="online-import-progress" class="online-import-progress" role="status" aria-live="polite">Chess.com usa gli archivi pubblici. Su Lichess serve un token API di sola lettura.</div>
+          <div class="import-actions online-import-actions">
+            <button class="button ghost" id="cancel-online-import" type="button">Chiudi</button>
+            <button class="button primary" id="start-online-import" type="button">Importa tutte le partite</button>
+          </div>
+          <small class="online-import-help">API ufficiali: <a href="https://www.chess.com/news/view/published-data-api" target="_blank" rel="noreferrer">Chess.com PubAPI</a> · <a href="https://lichess.org/api" target="_blank" rel="noreferrer">Lichess API</a></small>
+        </div>
+      </div>
       <div id="promotion-dialog" class="promotion-dialog" hidden role="dialog" aria-modal="true" aria-labelledby="promotion-title">
         <div class="promotion-card">
           <h2 id="promotion-title">Promozione del pedone</h2>

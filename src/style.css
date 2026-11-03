@@ -385,3 +385,92 @@ h1 { margin: 9px 0 5px; font-size: clamp(24px, 2.2vw, 31px); line-height: 1.1; l
   .dashboard-exam-options { grid-template-columns: 1fr 1fr; }
   .dashboard-exam-options label:first-child { grid-column: 1 / -1; }
 }
+
+
+/* Online game import and local game library */
+.imported-games-heading { margin-top: 22px; }
+.imported-games-list {
+  display: grid;
+  gap: 5px;
+  max-height: 260px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+.imported-game-row {
+  display: flex;
+  align-items: stretch;
+  min-width: 0;
+  border: 1px solid #2e3a49;
+  border-radius: 6px;
+  background: #1a2430;
+}
+.imported-game-open {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 8px;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+.imported-game-open:hover { background: #263342; }
+.imported-game-title {
+  display: block;
+  overflow: hidden;
+  color: #d8e1eb;
+  font-size: 9px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.imported-game-open small {
+  display: block;
+  margin-top: 4px;
+  color: #8190a2;
+  font-size: 8px;
+}
+.imported-game-delete {
+  flex: 0 0 27px;
+  border: 0;
+  border-left: 1px solid #2e3a49;
+  background: transparent;
+  color: #8390a1;
+  font-size: 15px;
+  cursor: pointer;
+}
+.imported-game-delete:hover { color: #f08c82; background: #3a2930; }
+.online-import-card {
+  width: min(100%, 500px);
+  max-height: min(90vh, 760px);
+  overflow-y: auto;
+  display: grid;
+  gap: 10px;
+  text-align: left;
+}
+.online-import-card h2 { margin-bottom: 0; }
+.online-import-card p { margin: 0 0 3px; line-height: 1.55; }
+.online-import-card .field-label { margin: 2px 0 -5px; }
+.online-import-card .text-input { width: 100%; min-width: 0; }
+.online-import-help {
+  color: #8998aa;
+  font-size: 10px;
+  line-height: 1.5;
+}
+.online-import-help a { color: var(--accent-strong); }
+.online-import-progress {
+  min-height: 44px;
+  padding: 10px 11px;
+  border: 1px solid #344355;
+  border-radius: 6px;
+  background: #151e29;
+  color: #aeb9c8;
+  font-size: 11px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.online-import-actions { justify-content: flex-end; margin-top: 2px; }
+.online-import-actions .button:disabled { opacity: .55; cursor: wait; }
+@media (max-width: 850px) {
+  .imported-games-list { max-height: 170px; }
+  .online-import-card { padding: 18px; }
+}
