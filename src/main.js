@@ -1411,7 +1411,7 @@ function openPromotionChooser(from, to, legalMoves) {
 function commitSelectedMove(selectedMove) {
   if (mode === "training") {
     const expected = trainingMoves[trainingIndex];
-    if (!expected) return;
+    if (!expected || trainingErrorAnimating) return;
     const animation = captureMoveAnimation(selectedMove);
     let played;
     try {
@@ -1427,7 +1427,6 @@ function commitSelectedMove(selectedMove) {
     if (!played) {
       selectedSquare = null;
       renderBoard();
-      showToast("Mossa non legale.");
       return;
     }
 
@@ -1435,18 +1434,57 @@ function commitSelectedMove(selectedMove) {
       && played.to === expected.to
       && (played.promotion || undefined) === (expected.promotion || undefined);
     if (!correct) {
-      trainingGame.undo();
+      addTrainingError(trainingIndex + 1);
+      trainingHintLevel = 0;
+      $("#training-hint-text").textContent = "";
+      setTrainingStatus("Non è la mossa del repertorio. Riprova.", "error");
       selectedSquare = null;
-      renderBoard();
-      showToast("Non è la mossa della linea. Riprova.");
+      const target = played.to;
+      const reduced = document.documentElement.dataset.motion === "reduced"
+        || window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      if (reduced) {
+        trainingGame.undo();
+        renderBoard();
+        const square = boardElement.querySelector('[data-square="' + target + '"]');
+        square?.classList.add("training-error");
+        window.setTimeout(() => square?.classList.remove("training-error"), 600);
+      } else {
+        trainingErrorAnimating = true;
+        renderBoard();
+        animateBoardMove(animation);
+        window.setTimeout(() => {
+          trainingGame.undo();
+          renderBoard();
+          const square = boardElement.querySelector('[data-square="' + target + '"]');
+          square?.classList.add("training-error");
+          window.setTimeout(() => square?.classList.remove("training-error"), 600);
+          trainingErrorAnimating = false;
+          renderTrainingSession();
+        }, 200);
+      }
       return;
     }
 
+    const revealed = trainingRevealPending;
+    trainingRevealPending = false;
     trainingIndex += 1;
+    trainingHintLevel = 0;
     selectedSquare = null;
+    $("#training-hint-text").textContent = "";
     renderAll();
     animateBoardMove(animation);
-    showToast(trainingIndex === trainingMoves.length ? "Linea completata. Ottimo lavoro!" : "Mossa corretta.");
+    if (revealed) {
+      setTrainingStatus("Mossa mostrata: " + played.san + ".", "error");
+    } else {
+      setTrainingStatus(trainingIndex === trainingMoves.length ? "Linea completata." : "Mossa corretta.", "success");
+    }
+    const destination = boardElement.querySelector('[data-square="' + played.to + '"]');
+    destination?.classList.add("training-success");
+    window.setTimeout(() => destination?.classList.remove("training-success"), 350);
+    if (trainingIndex >= trainingMoves.length) {
+      stopTrainingTimer();
+      renderTrainingSession();
+    }
     return;
   }
 
