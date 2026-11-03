@@ -665,13 +665,17 @@ pub fn record_study_review(
     ).map_err(|error| error.to_string())?;
 
     if let Some(session_id) = log.session_id.as_deref() {
+        let recalled = serde_json::from_str::<serde_json::Value>(&log.state_json)
+            .ok()
+            .and_then(|metadata| metadata.get("recalled").and_then(serde_json::Value::as_bool))
+            .unwrap_or(log.rating > 1);
         let updated = transaction.execute(
             "UPDATE training_sessions
              SET cards_reviewed = cards_reviewed + 1,
                  correct_count = correct_count + ?1,
                  again_count = again_count + ?2
              WHERE id = ?3",
-            params![if log.rating > 1 { 1 } else { 0 }, if log.rating == 1 { 1 } else { 0 }, session_id],
+            params![if recalled { 1 } else { 0 }, if log.rating == 1 { 1 } else { 0 }, session_id],
         ).map_err(|error| error.to_string())?;
         if updated != 1 {
             return Err("La sessione di ripasso non esiste più.".into());
