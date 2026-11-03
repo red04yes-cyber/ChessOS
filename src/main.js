@@ -710,6 +710,7 @@ function handleSquareClick(square) {
 }
 
 function openLine(id) {
+  extendedTraining?.stopBlindfold();
   const line = repertoire.find((item) => item.id === id);
   if (!line || !confirmDiscardChanges("aprire un'altra linea")) return;
   if (mode === "training" && reviewSessionId && !reviewSessionFinished) {
@@ -1179,6 +1180,7 @@ function renderReviewPanel() {
 }
 
 function leaveTraining() {
+  extendedTraining?.stopBlindfold();
   if (reviewSessionId && !reviewSessionFinished) {
     void markReviewSessionFinished().catch((error) => {
       showToast("Non riesco a chiudere la sessione: " + error.message);
@@ -1238,6 +1240,7 @@ function exportPgn() {
 }
 
 function newPosition() {
+  extendedTraining?.stopBlindfold();
   if (mode === "training") {
     leaveTraining();
     return;
