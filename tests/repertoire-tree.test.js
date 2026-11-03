@@ -83,6 +83,20 @@ test("preserves a non-standard starting FEN", () => {
   assert.equal(restored.edges.size, 1);
 });
 
+test("preserves branch ordering when serializing and restoring a repertoire", () => {
+  const original = RepertoireTree.fromPgn(sampleWithVariations);
+  const restored = RepertoireTree.fromJSON(original.toJSON());
+
+  assert.deepEqual(
+    [...restored.edges.values()].map((edge) => [edge.id, edge.from, edge.to, edge.uci, edge.san, edge.nags, edge.comment]),
+    [...original.edges.values()].map((edge) => [edge.id, edge.from, edge.to, edge.uci, edge.san, edge.nags, edge.comment]),
+  );
+  assert.deepEqual(
+    restored.getOutgoing(restored.rootId).map((edge) => edge.san),
+    original.getOutgoing(original.rootId).map((edge) => edge.san),
+  );
+});
+
 test("rejects unbalanced and illegal PGN variations", () => {
   assert.throws(() => RepertoireTree.fromPgn("1. e4 (1. d4 d5"), /parentesi/i);
   assert.throws(() => RepertoireTree.fromPgn("1. e4 (1. Qh5) e5"), /mossa PGN non valida/i);
