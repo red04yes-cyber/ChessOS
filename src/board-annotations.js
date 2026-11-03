@@ -16,8 +16,8 @@ function cleanMarks(value) {
 
 export function parseBoardMarks(comment = "") {
   const marks = emptyBoardMarks();
-  const squareTag = String(comment).match(/\\[%csl\\s+([^\\]]+)\\]/i);
-  const arrowTag = String(comment).match(/\\[%cal\\s+([^\\]]+)\\]/i);
+  const squareTag = String(comment).match(/\[%csl\s+([^\]]+)\]/i);
+  const arrowTag = String(comment).match(/\[%cal\s+([^\]]+)\]/i);
   if (squareTag) {
     for (const token of squareTag[1].split(",")) {
       const match = token.trim().match(/^([GRYB])([a-h][1-8])$/i);
@@ -34,7 +34,7 @@ export function parseBoardMarks(comment = "") {
 }
 
 export function stripBoardMarkTags(comment = "") {
-  return String(comment).replace(/\\s*\\[%csl\\s+[^\\]]+\\]/gi, "").replace(/\\s*\\[%cal\\s+[^\\]]+\\]/gi, "").trim();
+  return String(comment).replace(/\s*\[%csl\s+[^\]]+\]/gi, "").replace(/\s*\[%cal\s+[^\]]+\]/gi, "").trim();
 }
 
 export function encodeBoardMarks(comment = "", value = emptyBoardMarks()) {
