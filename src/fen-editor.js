@@ -5,7 +5,7 @@ const PIECES = new Set(["wK","wQ","wR","wB","wN","wP","bK","bQ","bR","bB","bN","
 
 export function fenToEditorState(fen) {
   const chess = new Chess(fen);
-  const fields = chess.fen().split(/\\s+/);
+  const fields = chess.fen().split(/\s+/);
   const pieces = {};
   chess.board().forEach((rank, row) => rank.forEach((piece, col) => {
     if (piece) {
