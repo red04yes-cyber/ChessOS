@@ -24,7 +24,7 @@ Le posizioni sono memorizzate in modo separato dalle mosse: due ordini di mosse 
 - `list_study_cards`: restituisce carte, posizione FEN, UCI/SAN, lato, scadenza e stato FSRS.
 - `list_review_logs`: restituisce le ultime 10.000 valutazioni.
 - `start_training_session` e `finish_training_session`: aprono e chiudono una sessione giornaliera.
-- `record_study_review`: in un'unica transazione aggiorna la carta, aggiunge il review log e aggiorna i contatori della sessione.
+- `record_study_review`: in un'unica transazione aggiorna la carta, aggiunge il review log (incluso l'esito del richiamo prima della rivelazione) e aggiorna i contatori della sessione.
 
 L'interfaccia valida il grafo ricostruendolo con `RepertoireTree.fromJSON` e controlla che ciascuna mossa sia legale e coerente con la posizione di destinazione.
 
