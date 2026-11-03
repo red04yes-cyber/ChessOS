@@ -912,9 +912,31 @@ export function initializeChessSuite({ getCurrentTree, loadGeneratedTree, getCur
     }
   }
 
+  function revealBlindfoldPosition(entry) {
+    const element = $("#blindfold-board");
+    if (!entry || !element) return;
+    try {
+      const position = new Chess(entry.fen);
+      position.move({
+        from: entry.uci.slice(0, 2),
+        to: entry.uci.slice(2, 4),
+        ...(entry.uci.length > 4 ? { promotion: entry.uci[4] } : {}),
+      });
+      element.hidden = false;
+      renderMiniBoard(element, position, null, () => {});
+    } catch (error) {
+      message("#blindfold-feedback", "Mossa salvata non valida: " + error.message);
+    }
+  }
+
   function renderBlindfoldPrompt() {
     const entry = blindfoldQueue[blindfoldIndex];
     const input = $("#blindfold-answer");
+    const solutionBoard = $("#blindfold-board");
+    if (solutionBoard) {
+      solutionBoard.hidden = true;
+      solutionBoard.replaceChildren();
+    }
     if (!entry) {
       message("#blindfold-prompt", "Percorso Blindfold completato.");
       message("#blindfold-feedback", "Hai terminato tutte le mosse selezionate.");
@@ -974,7 +996,8 @@ export function initializeChessSuite({ getCurrentTree, loadGeneratedTree, getCur
       blindfoldAnswered = true;
       $("#blindfold-next").disabled = false;
       $("#blindfold-check").disabled = true;
-      message("#blindfold-feedback", "Corretto: " + entry.san + ". Premi Avanti per continuare.");
+      revealBlindfoldPosition(entry);
+      message("#blindfold-feedback", "Corretto: " + entry.san + ". La posizione dopo la mossa è stata rivelata. Premi Avanti per continuare.");
     } else {
       message("#blindfold-feedback", "Mossa non corretta. Riprova oppure rivela la soluzione.");
     }
@@ -986,7 +1009,8 @@ export function initializeChessSuite({ getCurrentTree, loadGeneratedTree, getCur
     blindfoldAnswered = true;
     $("#blindfold-next").disabled = false;
     $("#blindfold-check").disabled = true;
-    message("#blindfold-feedback", "Soluzione: " + entry.san + " · UCI " + entry.uci + " · FEN prima della mossa: " + entry.fen);
+    revealBlindfoldPosition(entry);
+    message("#blindfold-feedback", "Soluzione: " + entry.san + " · UCI " + entry.uci + " · posizione dopo la mossa rivelata.");
   }
 
   function nextBlindfoldMove() {
