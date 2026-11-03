@@ -550,7 +550,7 @@ export function initializeChessSuite({ getCurrentTree, loadGeneratedTree, getCur
         const moves = chess.history({ verbose: true });
         for (let index = 4; index < moves.length - 2 && candidates.length < 18; index += 2) {
           const move = moves[index];
-          const key = move.before.trim().split(/\\s+/).slice(0, 4).join(" ");
+          const key = move.before.trim().split(/\s+/).slice(0, 4).join(" ");
           if (seenPositions.has(key)) continue;
           seenPositions.add(key);
           candidates.push({
@@ -899,7 +899,7 @@ export function initializeChessSuite({ getCurrentTree, loadGeneratedTree, getCur
     }
     const position = new Chess(entry.fen);
     const turn = position.turn() === "w" ? "Bianco" : "Nero";
-    const moveNo = position.fen().split(/\\s+/)[5] || "1";
+    const moveNo = position.fen().split(/\s+/)[5] || "1";
     message("#blindfold-prompt", "Mossa " + moveNo + (position.turn() === "w" ? "." : "…") + " · " + turn + " al tratto · " + (blindfoldIndex + 1) + "/" + blindfoldQueue.length);
     message("#blindfold-feedback", "Richiama la prossima mossa senza guardare la scacchiera. Sono accettate SAN e UCI.");
     if (input) {
