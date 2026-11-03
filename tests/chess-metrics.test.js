@@ -41,3 +41,23 @@ test("review produces both-color accuracy, move rows and puzzles for the account
   assert.equal(typeof result.whiteAccuracy, "number");
   assert.equal(result.puzzles.length, 0);
 });
+
+test("turns a large account-side mistake into a one-move training puzzle", () => {
+  const pgn = [
+    '[Event "Puzzle source"]',
+    '[SetUp "1"]',
+    '[FEN "2r1k3/8/8/8/8/8/8/1N2K3 w - - 0 1"]',
+    '[White "myuser"]',
+    '[Black "opponent"]',
+    "",
+    "1. Nc3 *",
+  ].join("\n");
+  const timeline = timelineFromPgn(pgn);
+  const result = buildMoveReview(timeline.positions, timeline.moves, [
+    { info: { scoreType: "cp", score: 300, pv: ["e1f2"] } },
+    { info: { scoreType: "cp", score: 0, pv: ["c8c3"] } },
+  ], { headers: timeline.headers, playerNames: ["myuser"] });
+  assert.equal(result.puzzles.length, 1);
+  assert.equal(result.puzzles[0].solutionUci, "e1f2");
+  assert.equal(result.puzzles[0].quality, "Svista");
+});
