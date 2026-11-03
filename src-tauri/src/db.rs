@@ -942,7 +942,7 @@ pub fn restore_database(
         })();
 
         if let Err(error) = restore_result {
-            let rollback_result = (|| {
+            let rollback_result: Result<(), String> = (|| {
                 let rollback = Connection::open(&safety_path).map_err(|error| error.to_string())?;
                 copy_database(&rollback, &mut current)?;
                 current.execute_batch("PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;")
