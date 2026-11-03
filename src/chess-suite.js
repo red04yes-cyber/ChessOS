@@ -205,10 +205,11 @@ export function renderMiniBoard(element, chess, selectedSquare, onSquare) {
   }
 }
 
-function createBoardController(element, getGame, onChange) {
+function createBoardController(element, getGame, onChange, canInteract = () => true) {
   let selected = null;
   const render = () => renderMiniBoard(element, getGame(), selected, onSquare);
   const onSquare = (square) => {
+    if (!canInteract()) return;
     const chess = getGame();
     if (chess.isGameOver()) return;
     const piece = chess.get(square);
@@ -362,7 +363,7 @@ export function initializeChessSuite({ getCurrentTree, loadGeneratedTree, getCur
       progress.lastWdl = data.category || null;
       progress.lastProbedAt = new Date().toISOString();
       progress.completed = true;
-      progress.mastered = ["win", "draw", "cursedWin", "blessedLoss", "loss"].includes(data.category);
+      progress.mastered = Boolean(progress.mastered);
       endgameCards[endgameLesson.id] = progress;
       saveEndgameProgress();
       renderEndgameLesson();
@@ -510,7 +511,6 @@ export function initializeChessSuite({ getCurrentTree, loadGeneratedTree, getCur
         try { chess.loadPgn(source); } catch { continue; }
         for (const move of chess.history({ verbose: true })) {
           if (candidates.length >= 18) break;
-          if (chess.moves().length === 0) continue;
           candidates.push({ fen: move.before, played: move.san, color: move.color, playedFen: move.after });
         }
         if (candidates.length >= 18) break;
@@ -560,6 +560,8 @@ export function initializeChessSuite({ getCurrentTree, loadGeneratedTree, getCur
     const lastMove = chess.history({ verbose: true }).at(-1);
     const uci = lastMove.from + lastMove.to + (lastMove.promotion || "");
     if (uci !== currentPuzzle.expectedUci) {
+      chess.undo();
+      tacticsBoard.render();
       message("#tactics-answer", "Non è la migliore mossa candidata. Soluzione: " + currentPuzzle.expectedSan + " · linea: " + currentPuzzle.pv.join(" "));
       return;
     }
@@ -586,7 +588,7 @@ export function initializeChessSuite({ getCurrentTree, loadGeneratedTree, getCur
     $("#endgame-topic")?.addEventListener("change", renderEndgameLesson);
     $("#endgame-load")?.addEventListener("click", loadEndgamePosition);
     endgameBoard = createBoardController($("#endgame-board"), () => endgameGame, endgameMoveChanged);
-    sparringBoard = createBoardController($("#sparring-board"), () => sparringGame, onSparringMove);
+    sparringBoard = createBoardController($("#sparring-board"), () => sparringGame, onSparringMove, () => !sparringBusy && sparringGame.turn() === sparringColor);
     tacticsBoard = createBoardController($("#tactics-board"), () => tacticsGame || new Chess(), onTacticMove);
     populateEndgameTopics();
     loadEndgamePosition();
