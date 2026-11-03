@@ -1,7 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod db;
-mod external_games;
 
 use std::sync::Mutex;
 use tauri::Manager;
@@ -32,11 +31,7 @@ fn main() {
             db::list_exam_attempts,
             db::start_exam,
             db::record_exam_answer,
-            db::finish_exam,
-            external_games::import_online_games,
-            external_games::list_imported_games,
-            external_games::get_imported_game,
-            external_games::delete_imported_game
+            db::finish_exam
         ])
         .run(tauri::generate_context!())
         .expect("error while running Chess OS");

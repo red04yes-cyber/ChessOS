@@ -14,7 +14,6 @@ Le migrazioni sono registrate in `schema_migrations` e vengono eseguite in ordin
 - **v2**: indici per repertori aggiornati, ricerca delle posizioni, navigazione delle mosse e selezione delle carte dovute.
 - **v3**: aggiunge `study_cards.fsrs_json` per conservare l'intero stato serializzato di `ts-fsrs` e un indice composto per lato e scadenza.
 - **v4**: aggiunge `study_goals`, `exam_attempts` ed `exam_answers`, con indici e vincoli per obiettivi e verifiche dei repertori.
-- **v5**: aggiunge `imported_games`, archivio locale separato per le partite scaricate da Chess.com e Lichess; ogni partita è identificata dalla coppia provider/ID remoto e ha un indice per data e account.
 
 Le posizioni sono memorizzate in modo separato dalle mosse: due ordini di mosse che arrivano alla stessa posizione possono puntare allo stesso nodo e conservare più archi entranti. Le mosse sono archiviate con l'ordine delle continuazioni del nodo, così la linea principale e le varianti non cambiano al riavvio.
 
@@ -30,8 +29,6 @@ Le posizioni sono memorizzate in modo separato dalle mosse: due ordini di mosse 
 - `record_study_review`: in un'unica transazione aggiorna la carta, aggiunge il review log (incluso l'esito del richiamo prima della rivelazione) e aggiorna i contatori della sessione.
 - `list_study_goals` e `save_study_goal`: leggono e salvano obiettivi giornalieri e settimanali.
 - `start_exam`, `record_exam_answer`, `finish_exam` e `list_exam_attempts`: gestiscono tentativi, risposte, punteggi e storico degli esami. Ogni risposta è validata contro FEN e mossa effettivi del repertorio e registrata nell'ordine previsto.
-- `import_online_games`: scarica in streaming gli archivi Chess.com o l'export PGN Lichess e inserisce i giochi in blocchi, senza tenere il database bloccato durante la rete.
-- `list_imported_games`, `get_imported_game`, `delete_imported_game`: leggono, aprono e rimuovono singole partite dalla libreria importata.
 
 L'interfaccia valida il grafo ricostruendolo con `RepertoireTree.fromJSON` e controlla che ciascuna mossa sia legale e coerente con la posizione di destinazione.
 
@@ -42,7 +39,7 @@ Al primo avvio desktop vengono letti gli elementi di `chess-os.repertoire.v1`. L
 ## Verifiche
 
 I test Rust coprono:
-- esecuzione idempotente delle migrazioni fino alla versione 5;
+- esecuzione idempotente delle migrazioni fino alla versione 4;
 - salvataggio e lettura di un albero con mosse;
 - aggiornamento senza duplicazione;
 - cancellazione con cascade su nodi, archi, tentativi e risposte d'esame;
@@ -52,4 +49,4 @@ I test JavaScript coprono la serializzazione round-trip del grafo, il rifiuto di
 
 ## Limiti attuali
 
-Le carte, le sessioni, gli obiettivi e gli esami sono ora usati dal ripasso e dalla dashboard. Le partite importate da Chess.com/Lichess sono conservate solo nella libreria locale; non esiste ancora sincronizzazione o backup cloud. L'esportazione PGN è disponibile come backup portabile; backup dell'intero database, ripristino da file e strumenti di migrazione con UI dedicata restano attività successive.
+Le carte, le sessioni, gli obiettivi e gli esami sono ora usati dal ripasso e dalla dashboard; non esiste ancora sincronizzazione o backup cloud. L'esportazione PGN è disponibile come backup portabile; backup dell'intero database, ripristino da file e strumenti di migrazione con UI dedicata restano attività successive.
