@@ -440,8 +440,16 @@ mod tests {
                 root_fen: root_fen.clone(),
                 headers: BTreeMap::new(),
                 nodes: vec![
-                    PositionNode { id: root_id.clone(), key: "initial".into(), fen: root_fen },
-                    PositionNode { id: child_id.clone(), key: "after-e4".into(), fen: after_e4 },
+                    PositionNode {
+                        id: root_id.clone(),
+                        key: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -".into(),
+                        fen: root_fen,
+                    },
+                    PositionNode {
+                        id: child_id.clone(),
+                        key: "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq -".into(),
+                        fen: after_e4,
+                    },
                 ],
                 edges: vec![MoveEdge {
                     id: "root|e2e4".into(), from: root_id, to: child_id,
