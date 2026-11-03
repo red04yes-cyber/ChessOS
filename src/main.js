@@ -348,11 +348,25 @@ function stopAnalysisForChangedPosition() {
   updateEngineControls();
 }
 
+function updateTopbarStatus() {
+  const title = $("#topbar-title");
+  const status = $("#topbar-save-status");
+  if (title) title.textContent = titleInput?.value.trim() || "Nuovo repertorio";
+  if (status) {
+    const label = dirty ? "Modifiche non salvate" : activeLineId ? "Salvato" : "Non ancora salvato";
+    status.textContent = label;
+    status.dataset.state = dirty ? "dirty" : activeLineId ? "saved" : "new";
+  }
+}
+
 function setDirty(value = true) {
   dirty = value;
   const indicator = $("#saved-indicator");
-  indicator.textContent = dirty ? "MODIFICHE NON SALVATE" : "SALVATA";
-  indicator.classList.toggle("unsaved", dirty);
+  if (indicator) {
+    indicator.textContent = dirty ? "MODIFICHE NON SALVATE" : activeLineId ? "SALVATA" : "NON SALVATA";
+    indicator.classList.toggle("unsaved", dirty);
+  }
+  updateTopbarStatus();
 }
 
 function confirmDiscardChanges(action) {
@@ -585,19 +599,20 @@ function renderMode() {
   const training = mode === "training";
   $("#nav-studio").classList.toggle("active", !training);
   $("#nav-training").classList.toggle("active", training);
-  $("#mode-eyebrow").textContent = training ? "REPERTORIO / RIPASSO" : "REPERTORIO / ANALISI";
-  $("#page-title").textContent = training ? "Allenamento" : "Chess Studio";
+  $("#nav-studio").setAttribute("aria-current", training ? "false" : "page");
+  $("#nav-training").setAttribute("aria-current", training ? "page" : "false");
+  $("#mode-eyebrow").textContent = training ? "ALLENAMENTO" : "STUDIO";
+  $("#page-title").dataset.mode = training ? "training" : "studio";
+  titleInput.readOnly = training;
+  titleInput.setAttribute("aria-label", training ? "Repertorio in allenamento" : "Nome del repertorio");
   $("#page-subtitle").textContent = training
-    ? "Ripeti la linea e trova le mosse nell’ordine corretto."
-    : "Costruisci le tue linee, una mossa alla volta.";
+    ? "Rigioca la linea dall'inizio. Ogni mossa sbagliata viene annullata."
+    : "Costruisci il tuo repertorio una mossa alla volta, con varianti e trasposizioni.";
   $("#save-line").disabled = training || !databaseReady;
-  $("#reset").textContent = training ? "Esci dal ripasso" : "Nuova posizione";
-  $("#page-subtitle").textContent = training
-    ? "Ripeti la linea selezionata e trova le mosse nell’ordine corretto."
-    : "Costruisci linee principali, varianti e transposizioni.";
+  $("#reset").textContent = training ? "Esci dall'allenamento" : "Nuovo";
+  document.body.dataset.mode = training ? "training" : "studio";
   $("#flip-board").disabled = false;
 }
-
 function renderVariations() {
   const list = $("#variation-list");
   if (!list) return;
@@ -1140,6 +1155,12 @@ $("#undo").addEventListener("click", () => {
 $("#redo").addEventListener("click", () => {
   if (mode === "studio" && studioPly < studioSans.length) positionForPly(studioPly + 1);
 });
+$("#to-start").addEventListener("click", () => {
+  if (mode === "studio") positionForPly(0);
+});
+$("#to-end").addEventListener("click", () => {
+  if (mode === "studio") positionForPly(studioSans.length);
+});
 $("#flip-board").addEventListener("click", () => {
   boardFlipped = !boardFlipped;
   renderBoard();
@@ -1148,6 +1169,8 @@ $("#copy-fen").addEventListener("click", copyFen);
 $("#save-line").addEventListener("click", saveLine);
 $("#import-pgn").addEventListener("click", importPgn);
 $("#export-pgn").addEventListener("click", exportPgn);
+$("#import-pgn-inline").addEventListener("click", importPgn);
+$("#export-pgn-inline").addEventListener("click", exportPgn);
 $("#promotion-cancel").addEventListener("click", () => {
   closePromotionChooser();
   selectedSquare = null;
@@ -1160,7 +1183,7 @@ promotionDialog.addEventListener("click", (event) => {
     renderBoard();
   }
 });
-titleInput.addEventListener("input", () => setDirty(true));
+titleInput.addEventListener("input", () => { setDirty(true); updateTopbarStatus(); });
 
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && pendingPromotion) {
