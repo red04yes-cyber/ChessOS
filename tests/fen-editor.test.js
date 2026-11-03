@@ -19,7 +19,7 @@ test("accepts a custom legal position with black to move and no castling rights"
 test("rejects missing kings, pawns on promotion ranks and castling without the rook", () => {
   const base = fenToEditorState(new Chess().fen());
   const missingKing = { ...base, pieces: { ...base.pieces, e1: undefined } };
-  assert.throws(() => editorStateToFen(missingKing), /re e nero/i);
+  assert.throws(() => editorStateToFen(missingKing), /un re bianco e un re nero/i);
   const invalidPawn = { ...base, pieces: { ...base.pieces, a8: "wP" } };
   assert.throws(() => editorStateToFen(invalidPawn), /pedone/i);
   const noRook = { ...base, pieces: { ...base.pieces, h1: undefined } };
