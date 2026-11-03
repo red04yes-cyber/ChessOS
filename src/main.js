@@ -7,7 +7,6 @@ import {
   countReviewsToday,
   gradeFsrsCard,
   parseUci,
-  ratingLabel,
   selectDailyCards,
 } from "./fsrs-review.js";
 import "./style.css";
@@ -695,6 +694,13 @@ function handleSquareClick(square) {
 }
 
 function openLine(id) {
+  if (mode === "training" && reviewSessionId && !reviewSessionFinished) {
+    void markReviewSessionFinished().catch((error) => {
+      showToast("Non riesco a chiudere la sessione: " + error.message);
+    });
+    reviewSessionId = null;
+    reviewSessionFinished = false;
+  }
   const line = repertoire.find((item) => item.id === id);
   if (!line) return;
   try {
@@ -788,6 +794,11 @@ async function saveLine() {
 }
 
 function startTraining() {
+  if (reviewSessionId && !reviewSessionFinished) {
+    void markReviewSessionFinished().catch((error) => {
+      showToast("Non riesco a chiudere la sessione precedente: " + error.message);
+    });
+  }
   if (!databaseReady) {
     showToast("Archivio non pronto: riprova tra qualche istante.");
     return;
