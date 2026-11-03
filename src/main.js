@@ -1215,6 +1215,7 @@ chessLab = initChessLab({
   },
   importGames: saveImportedGames,
   getArchive: () => [...repertoire],
+  getHeaders: () => ({ ...(studioTree.headers || {}) }),
   getPlayerNames: () => {
     try {
       const profiles = JSON.parse(localStorage.getItem("chess-os.connected-accounts.v1") || "{}");
@@ -1224,6 +1225,9 @@ chessLab = initChessLab({
     }
   },
   openPuzzle: openGeneratedPuzzle,
-  openArchiveGame: (id) => openLine(id),
+  openArchiveGame: (id) => {
+    openLine(id);
+    return activeLineId === id;
+  },
 });
 void initializePersistence();
