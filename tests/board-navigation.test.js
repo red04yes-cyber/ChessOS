@@ -21,7 +21,7 @@ test("does not wrap focus around board edges", () => {
   assert.equal(getAdjacentSquare("a8", "ArrowLeft"), null);
   assert.equal(getAdjacentSquare("h1", "ArrowDown"), null);
   assert.equal(getAdjacentSquare("h1", "ArrowRight"), null);
-  assert.equal(getAdjacentSquare("h8", "ArrowRight", true), null);
+  assert.equal(getAdjacentSquare("h8", "ArrowDown", true), null);
 });
 
 test("rejects invalid squares and unrelated keys", () => {
