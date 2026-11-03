@@ -3,137 +3,163 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#10151d" />
-    <meta name="description" content="Chess OS — repertorio, studio e allenamento scacchistico." />
+    <meta name="theme-color" content="#0d1218" />
+    <meta name="description" content="Chess OS — studio e allenamento dei repertori scacchistici." />
     <title>Chess OS</title>
   </head>
   <body>
     <div id="app">
       <header class="topbar">
-        <a class="brand" href="#" aria-label="Chess OS home">
-          <span class="brand-mark">♞</span>
-          <span>CHESS <b>OS</b><small>STUDY DESK</small></span>
+        <a class="brand" href="#" aria-label="Chess OS">
+          <span class="brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M6.2 19.2h12.1M7.1 16.8c1.8-1.1 2.3-2.6 1.9-4.3-.4-1.7.2-3.4 1.6-4.3l1.6-1.1 1.1 2.1 2.7.5 1.5 2.2-1.5 1.7-1.2 4.1H7.1Z" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="m10.2 8.4-1.4-2.1 2.3-.5m4.3 1.7 1.4-1.1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+              <circle cx="14.7" cy="9.7" r=".7" fill="currentColor"/>
+            </svg>
+          </span>
+          <span>Chess <b>OS</b><small>STUDY DESK</small></span>
         </a>
-        <div class="topbar-center"><span class="status-dot"></span> WORKSPACE LOCALE</div>
-        <div class="topbar-right"><span class="version">PREVIEW 0.1.0</span></div>
+        <div class="topbar-center" aria-live="polite">
+          <span id="topbar-title" class="topbar-repertoire">Nuovo repertorio</span>
+          <span id="topbar-save-status" class="topbar-state" data-state="new">Non ancora salvato</span>
+        </div>
+        <div class="topbar-right">
+          <button class="button ghost small" id="appearance-toggle" type="button" aria-haspopup="dialog" aria-expanded="false" title="Aspetto">Aspetto</button>
+          <span class="version" title="Versione applicazione">0.1.0</span>
+        </div>
       </header>
 
       <main class="app-shell">
-        <aside class="sidebar">
+        <aside class="sidebar" aria-label="Navigazione e repertori">
           <div class="section-kicker">WORKSPACE</div>
-          <button class="nav-item active" id="nav-studio"><span>▦</span> Studio</button>
-          <button class="nav-item" id="nav-training"><span>♟</span> Allenamento</button>
+          <nav class="primary-nav" aria-label="Sezioni">
+            <button class="nav-item active" id="nav-studio" type="button" aria-current="page">
+              <span aria-hidden="true">▦</span> Studio
+            </button>
+            <button class="nav-item" id="nav-training" type="button">
+              <span aria-hidden="true">♟</span> Allenamento
+            </button>
+          </nav>
           <div class="sidebar-heading">
-            <span>IL MIO REPERTORIO</span>
-            <button class="icon-button" id="new-line" title="Nuova partita">＋</button>
+            <span>REPERTORI</span>
+            <button class="icon-button" id="new-line" type="button" title="Nuovo repertorio (Ctrl+N)" aria-label="Nuovo repertorio">＋</button>
           </div>
-          <div id="repertoire-list" class="repertoire-list"></div>
-          <div class="sidebar-note">
-            <span class="note-icon">◈</span>
-            <div><b id="storage-title">Salvataggio locale</b><small id="storage-description">Le linee restano su questo dispositivo.</small></div>
+          <div id="repertoire-list" class="repertoire-list" aria-label="Repertori salvati"></div>
+          <div class="sidebar-note" aria-live="polite">
+            <span class="note-icon" aria-hidden="true">◈</span>
+            <div><b id="storage-title">Salvataggio locale</b><small id="storage-description">I dati restano su questo dispositivo.</small></div>
           </div>
         </aside>
 
         <section class="workspace">
           <div class="page-heading">
-            <div>
-              <div class="eyebrow" id="mode-eyebrow">REPERTORIO / ANALISI</div>
-              <h1 id="page-title">Chess Studio</h1>
-              <p id="page-subtitle">Costruisci le tue linee, una mossa alla volta.</p>
+            <div class="heading-copy">
+              <div class="eyebrow" id="mode-eyebrow">STUDIO</div>
+              <label class="visually-hidden" for="line-title">Nome del repertorio</label>
+              <h1><input id="line-title" class="title-input" maxlength="70" value="Nuovo repertorio" spellcheck="false" /></h1>
+              <p id="page-subtitle">Costruisci il tuo repertorio una mossa alla volta, con varianti e trasposizioni.</p>
             </div>
-            <div class="heading-actions">
-              <button class="button ghost" id="undo" aria-label="Vai alla mossa precedente">← Indietro</button>
-              <button class="button ghost" id="redo" aria-label="Vai alla mossa successiva" disabled>Avanti →</button>
-              <button class="button ghost" id="flip-board">Vista Nero</button>
-              <button class="button ghost" id="copy-fen">Copia FEN</button>
-              <button class="button ghost" id="reset">Nuova posizione</button>
-              <button class="button primary" id="save-line">Salva linea <span>＋</span></button>
+            <div class="heading-actions" aria-label="Azioni repertorio">
+              <button class="button ghost" id="reset" type="button" title="Nuovo repertorio (Ctrl+N)">Nuovo</button>
+              <details class="action-menu">
+                <summary class="button ghost" aria-label="Altre azioni" title="Altre azioni">Altro <span aria-hidden="true">⋯</span></summary>
+                <div class="action-menu-panel">
+                  <button class="button ghost" id="copy-fen" type="button">Copia FEN</button>
+                  <button class="button ghost" id="import-pgn" type="button">Importa PGN…</button>
+                  <button class="button ghost" id="export-pgn" type="button">Esporta PGN</button>
+                </div>
+              </details>
+              <button class="button primary" id="save-line" type="button" title="Salva il repertorio (Ctrl+S)">Salva</button>
             </div>
           </div>
 
           <div class="study-grid">
-            <section class="board-panel">
+            <section class="board-panel" aria-label="Studio sulla scacchiera">
               <div class="board-topline">
-                <div><span class="live-dot"></span><span id="board-label">PARTITA IN CORSO</span></div>
-                <span class="turn-label" id="turn-label">Bianco al tratto</span>
+                <div class="side-to-move"><span class="live-dot" aria-hidden="true"></span><span id="turn-label">Bianco al tratto</span></div>
+                <span class="board-view-label" id="board-label">STUDIO</span>
               </div>
               <div class="board-wrap">
                 <div class="rank-labels" aria-hidden="true"><span>8</span><span>7</span><span>6</span><span>5</span><span>4</span><span>3</span><span>2</span><span>1</span></div>
                 <div id="chessboard" class="chessboard" role="group" aria-label="Scacchiera"></div>
                 <div class="file-labels" aria-hidden="true"><span>a</span><span>b</span><span>c</span><span>d</span><span>e</span><span>f</span><span>g</span><span>h</span></div>
               </div>
+              <div class="board-navigation" aria-label="Navigazione della linea">
+                <button class="button icon-button" id="to-start" type="button" title="Prima posizione (Home)" aria-label="Prima posizione">|‹</button>
+                <button class="button icon-button" id="undo" type="button" aria-label="Mossa precedente (freccia sinistra)" title="Mossa precedente (←)">‹</button>
+                <button class="button icon-button" id="redo" type="button" aria-label="Mossa successiva (freccia destra)" title="Mossa successiva (→)" disabled>›</button>
+                <button class="button icon-button" id="to-end" type="button" title="Ultima posizione (End)" aria-label="Ultima posizione">›|</button>
+                <span class="board-nav-divider" aria-hidden="true"></span>
+                <button class="button icon-button" id="flip-board" type="button" title="Ruota la scacchiera (F)" aria-label="Ruota la scacchiera">↻</button>
+              </div>
               <div class="board-footer">
-                <span id="game-status">Partita pronta</span>
-                <span id="move-count">0 mosse</span>
+                <span id="game-status" role="status" aria-live="polite">Partita pronta</span>
+                <span id="move-count">0 semimosse</span>
               </div>
             </section>
 
-            <aside class="details-panel">
+            <aside class="details-panel" aria-label="Linea e strumenti">
               <section class="detail-card line-card">
-                <div class="card-heading"><span class="card-icon">⌘</span><span>LINEA ATTIVA</span></div>
-                <label class="field-label" for="line-title">Nome del repertorio</label>
-                <input id="line-title" class="text-input" maxlength="70" value="Nuova linea" />
+                <div class="card-heading"><span class="card-icon" aria-hidden="true">⌘</span><span>REPERTORIO ATTIVO</span></div>
                 <div class="line-meta"><span id="line-move-count">Ancora nessuna mossa</span><span class="saved-indicator" id="saved-indicator">NON SALVATA</span></div>
               </section>
 
               <section class="detail-card moves-card">
-                <div class="card-heading"><span class="card-icon">≋</span><span>NOTAZIONE</span></div>
-                <div id="move-list" class="move-list"><span class="empty-state">Le mosse appariranno qui.</span></div>
+                <div class="card-heading"><span class="card-icon" aria-hidden="true">≋</span><span>NOTAZIONE</span></div>
+                <div id="move-list" class="move-list"><span class="empty-state">Gioca una mossa sulla scacchiera per iniziare.</span></div>
               </section>
 
               <section class="detail-card variations-card">
-                <div class="card-heading"><span class="card-icon">⑂</span><span>VARIANTI / CONTINUAZIONI</span></div>
+                <div class="card-heading"><span class="card-icon" aria-hidden="true">⑂</span><span>VARIANTI E CONTINUAZIONI</span></div>
                 <div id="variation-list" class="variation-list">
-                  <span class="empty-state">Importa un PGN con varianti oppure seleziona una posizione.</span>
+                  <span class="empty-state">Nessuna continuazione salvata da questa posizione.</span>
                 </div>
               </section>
 
-              <section class="detail-card engine-card">
-                <div class="card-heading"><span class="card-icon">♟</span><span>ANALISI STOCKFISH</span></div>
-                <div class="engine-status" id="engine-status" role="status" aria-live="polite">Motore non avviato</div>
-                <div class="engine-controls">
-                  <button class="button small ghost" id="engine-start">Avvia motore</button>
-                  <button class="button small primary" id="engine-analyze" disabled>Analizza posizione</button>
-                  <button class="button small ghost" id="engine-stop" disabled>Interrompi</button>
-                  <button class="button small ghost" id="engine-shutdown" disabled>Spegni</button>
-                </div>
-                <div class="engine-settings">
-                  <label for="engine-depth">Profondità
-                    <select id="engine-depth" class="text-input">
-                      <option value="12">12</option>
-                      <option value="16" selected>16</option>
-                      <option value="20">20</option>
-                      <option value="24">24</option>
-                      <option value="28">28</option>
-                    </select>
-                  </label>
-                  <label for="engine-multipv">Linee
-                    <select id="engine-multipv" class="text-input">
-                      <option value="1">1</option>
-                      <option value="3" selected>3</option>
-                      <option value="5">5</option>
-                    </select>
-                  </label>
-                </div>
-                <div class="engine-results" id="engine-results">
-                  <span class="empty-state">Avvia Stockfish e analizza la posizione corrente.</span>
-                </div>
-                <p class="engine-footnote">Analisi locale sul dispositivo. L'anteprima browser non avvia processi esterni.</p>
-              </section>
-
-              <section class="detail-card import-card">
-                <div class="card-heading"><span class="card-icon">⇧</span><span>IMPORTA PGN</span></div>
-                <textarea id="pgn-input" class="pgn-input" rows="3" placeholder="Incolla qui una partita o una linea in formato PGN…"></textarea>
-                <div class="import-actions">
-                  <button class="button small ghost" id="import-pgn">Carica PGN</button>
-                  <button class="button small ghost" id="export-pgn">Esporta PGN ↓</button>
-                </div>
-              </section>
+              <details class="detail-card tools-card">
+                <summary class="card-heading"><span class="card-icon" aria-hidden="true">⚙</span><span>STRUMENTI</span></summary>
+                <section class="engine-card">
+                  <div class="card-heading"><span>ANALISI STOCKFISH</span></div>
+                  <div class="engine-status" id="engine-status" role="status" aria-live="polite">Motore non avviato</div>
+                  <div class="engine-controls">
+                    <button class="button small ghost" id="engine-start" type="button">Avvia motore</button>
+                    <button class="button small primary" id="engine-analyze" type="button" disabled>Analizza posizione</button>
+                    <button class="button small ghost" id="engine-stop" type="button" disabled>Interrompi</button>
+                    <button class="button small ghost" id="engine-shutdown" type="button" disabled>Spegni</button>
+                  </div>
+                  <div class="engine-settings">
+                    <label for="engine-depth">Profondità
+                      <select id="engine-depth" class="text-input">
+                        <option value="12">12</option><option value="16" selected>16</option><option value="20">20</option><option value="24">24</option><option value="28">28</option>
+                      </select>
+                    </label>
+                    <label for="engine-multipv">Linee
+                      <select id="engine-multipv" class="text-input">
+                        <option value="1">1</option><option value="3" selected>3</option><option value="5">5</option>
+                      </select>
+                    </label>
+                  </div>
+                  <div class="engine-results" id="engine-results">
+                    <span class="empty-state">Avvia Stockfish e analizza la posizione corrente.</span>
+                  </div>
+                  <p class="engine-footnote">Analisi locale sul dispositivo. L'anteprima browser non avvia processi esterni.</p>
+                </section>
+                <section class="import-card">
+                  <div class="card-heading"><span>IMPORTA ED ESPORTA PGN</span></div>
+                  <textarea id="pgn-input" class="pgn-input" rows="3" placeholder="Incolla un PGN: partite, linee o varianti tra parentesi."></textarea>
+                  <div class="import-actions">
+                    <button class="button small ghost" id="import-pgn-inline" type="button">Carica PGN</button>
+                    <button class="button small ghost" id="export-pgn-inline" type="button">Esporta PGN</button>
+                  </div>
+                </section>
+              </details>
             </aside>
           </div>
-          <div class="workspace-footer"><span>CHESS OS <b>·</b> I tuoi dati restano sul dispositivo</span><span>LEGAL MOVES <i>ON</i></span></div>
+          <div class="workspace-footer"><span>CHESS OS <b>·</b> I tuoi dati restano sul dispositivo</span><span>APP LOCALE</span></div>
         </section>
       </main>
+
       <div id="promotion-dialog" class="promotion-dialog" hidden role="dialog" aria-modal="true" aria-labelledby="promotion-title">
         <div class="promotion-card">
           <h2 id="promotion-title">Promozione del pedone</h2>
@@ -143,6 +169,7 @@
         </div>
       </div>
       <div id="toast" class="toast" role="status" aria-live="polite"></div>
+      <div id="live-region" class="visually-hidden" aria-live="polite" aria-atomic="true"></div>
       <script type="module" src="/src/main.js"></script>
     </div>
   </body>
