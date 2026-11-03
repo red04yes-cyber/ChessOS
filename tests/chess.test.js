@@ -45,7 +45,7 @@ test("supports en passant captures", () => {
   for (const san of ["e4", "a6", "e5", "d5"]) chess.move(san);
   const capture = chess.move({ from: "e5", to: "d6" });
   assert.equal(capture.flags.includes("e"), true);
-  assert.equal(chess.get("d5"), null);
+  assert.equal(chess.get("d5"), undefined);
   assert.equal(chess.get("d6").type, "p");
 });
 
