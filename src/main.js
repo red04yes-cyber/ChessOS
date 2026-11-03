@@ -904,6 +904,29 @@ $("#flip-board").addEventListener("click", () => {
 });
 $("#copy-fen").addEventListener("click", copyFen);
 $("#save-line").addEventListener("click", saveLine);
+$("#select-pgn-file").addEventListener("click", () => $("#pgn-file").click());
+$("#pgn-file").addEventListener("change", async (event) => {
+  const file = event.currentTarget.files?.[0];
+  if (!file) return;
+  if (file.size > 10_000_000) {
+    showToast("Il file PGN supera il limite di 10 MB.");
+    event.currentTarget.value = "";
+    return;
+  }
+  try {
+    const contents = await file.text();
+    if (!contents.trim()) {
+      showToast("Il file selezionato è vuoto.");
+      return;
+    }
+    $("#pgn-input").value = contents;
+    showToast("File PGN caricato. Premi “Carica PGN” per importarlo.");
+  } catch (error) {
+    showToast("Impossibile leggere il file PGN: " + error.message);
+  } finally {
+    event.currentTarget.value = "";
+  }
+});
 $("#import-pgn").addEventListener("click", importPgn);
 $("#export-pgn").addEventListener("click", exportPgn);
 $("#promotion-cancel").addEventListener("click", () => {
