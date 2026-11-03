@@ -318,6 +318,64 @@
             </section>
           </section>
 
+          <section id="chess-lab-tools" class="tools-grid suite-grid">
+            <section class="detail-card feature-card" id="engine-analysis-tool">
+              <div class="card-heading"><span class="card-icon">⚙</span><span>STOCKFISH 19 · ANALISI LOCALE</span></div>
+              <p class="tool-description">Analizza la posizione corrente dello Studio direttamente sul dispositivo. Mostra valutazione, profondità, migliore mossa e variante principale.</p>
+              <button class="button small primary" id="analyze-current" type="button">Analizza posizione dello Studio</button>
+              <div id="current-analysis" class="tool-output" aria-live="polite">Pronto per analizzare la posizione corrente.</div>
+              <small class="tool-description">Il motore viene caricato localmente come WebAssembly. La prima analisi può richiedere qualche secondo.</small>
+            </section>
+
+            <section class="detail-card feature-card" id="opening-explorer-tool">
+              <div class="card-heading"><span class="card-icon">⌘</span><span>OPENING EXPLORER · GAP FINDER</span></div>
+              <p class="tool-description">Confronta le mosse delle partite importate o di un PGN incollato con il repertorio attivo. Le percentuali sono calcolate sul campione caricato, non su statistiche globali.</p>
+              <label class="field-label" for="opening-pgn">Partite PGN (precompilate dalla libreria importata)</label>
+              <textarea id="opening-pgn" class="pgn-input" rows="4" placeholder="Importa partite da Chess.com / Lichess oppure incolla una raccolta PGN…"></textarea>
+              <div class="tool-actions">
+                <label class="field-label" for="opening-max-ply">Semimosse iniziali</label>
+                <input id="opening-max-ply" class="text-input" type="number" min="4" max="60" value="24" />
+                <label class="field-label" for="opening-minimum">Visite minime</label>
+                <input id="opening-minimum" class="text-input" type="number" min="1" max="100" value="2" />
+                <button class="button small primary" id="opening-analyze" type="button">Esplora aperture e trova gap</button>
+              </div>
+              <div id="opening-summary" class="tool-output" aria-live="polite">Seleziona una raccolta PGN e avvia l'esplorazione.</div>
+              <div id="opening-report" class="suite-report"></div>
+            </section>
+
+            <section class="detail-card feature-card" id="repertoire-generator-tool">
+              <div class="card-heading"><span class="card-icon">⑂</span><span>GENERA REPERTORIO DALLE PARTITE</span></div>
+              <p class="tool-description">Costruisce un albero di varianti dalle partite caricate, annota la frequenza di ogni mossa e lo apre nello Studio. Il repertorio esistente non viene sovrascritto: salva il nuovo albero con il nome che preferisci.</p>
+              <label class="field-label" for="generator-pgn">Partite PGN</label>
+              <textarea id="generator-pgn" class="pgn-input" rows="3" placeholder="Usa la libreria importata o incolla partite PGN…"></textarea>
+              <div class="tool-actions">
+                <label class="field-label" for="generator-side">Colore del repertorio</label>
+                <select id="generator-side" class="text-input"><option value="white">Bianco</option><option value="black">Nero</option></select>
+                <label class="field-label" for="generator-frequency">Frequenza minima</label>
+                <input id="generator-frequency" class="text-input" type="number" min="1" max="100" value="1" />
+                <label class="field-label" for="generator-depth">Profondità (semimosse)</label>
+                <input id="generator-depth" class="text-input" type="number" min="4" max="60" value="24" />
+                <button class="button small primary" id="generator-build" type="button">Genera e apri nello Studio</button>
+              </div>
+              <p id="generator-status" class="tool-output" aria-live="polite"></p>
+            </section>
+
+            <section class="detail-card feature-card" id="tactics-tool">
+              <div class="card-heading"><span class="card-icon">✧</span><span>TACTICS TRAINER · ESERCIZI DALLE TUE PARTITE</span></div>
+              <p class="tool-description">Stockfish cerca posizioni in cui una mossa giocata perde una possibilità tattica e crea esercizi sulla migliore risposta. I candidati sono indicativi e puoi verificarli sulla scacchiera.</p>
+              <label class="field-label" for="tactics-pgn">Partite PGN da analizzare</label>
+              <textarea id="tactics-pgn" class="pgn-input" rows="3" placeholder="Usa la libreria importata o incolla partite PGN…"></textarea>
+              <div class="tool-actions">
+                <button class="button small primary" id="tactics-create" type="button">Genera esercizi tattici</button>
+                <button class="button small ghost" id="tactics-next" type="button">Salta esercizio</button>
+              </div>
+              <div id="tactics-prompt" class="tool-output" aria-live="polite">Importa partite o incolla un PGN per generare esercizi.</div>
+              <div id="tactics-board" class="mini-board" aria-label="Scacchiera Tactics Trainer"></div>
+              <p id="tactics-answer" class="tool-output" aria-live="polite"></p>
+              <p id="tactics-status" class="tool-description" aria-live="polite"></p>
+            </section>
+          </section>
+
           <div class="workspace-footer"><span>CHESS OS <b>·</b> I tuoi dati restano sul dispositivo</span><span>LEGAL MOVES <i>ON</i></span></div>
         </section>
       </main>
