@@ -1269,6 +1269,7 @@ async function copyFen() {
 }
 
 async function exportFullBackup() {
+  await Promise.all([chessSuite?.ready, extendedTraining?.ready].filter(Boolean));
   const button = $("#backup-export");
   button.disabled = true;
   const original = button.textContent;
@@ -1320,6 +1321,7 @@ function mergeById(existing, incoming) {
 }
 
 async function importFullBackup() {
+  await Promise.all([chessSuite?.ready, extendedTraining?.ready].filter(Boolean));
   const button = $("#backup-import");
   const fileInput = $("#backup-file");
   const file = fileInput.files?.[0];
