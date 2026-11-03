@@ -527,14 +527,19 @@ export function initializeChessSuite({ getCurrentTree, loadGeneratedTree, getCur
     let analyzed = 0;
     try {
       const candidates = [];
+      const seenPositions = new Set();
       for (const source of games) {
+        if (candidates.length >= 18) break;
         const chess = new Chess();
         try { chess.loadPgn(source); } catch { continue; }
-        for (const move of chess.history({ verbose: true })) {
-          if (candidates.length >= 18) break;
+        const moves = chess.history({ verbose: true });
+        // Sample the full game rather than exhausting the opening of the first PGN.
+        for (let index = 4; index < moves.length - 2 && candidates.length < 18; index += 4) {
+          const move = moves[index];
+          if (seenPositions.has(move.before)) continue;
+          seenPositions.add(move.before);
           candidates.push({ fen: move.before, played: move.san, color: move.color, playedFen: move.after });
         }
-        if (candidates.length >= 18) break;
       }
       for (const [index, candidate] of candidates.entries()) {
         message("#tactics-status", `Analisi delle opportunità tattiche: ${index + 1}/${candidates.length}…`);
