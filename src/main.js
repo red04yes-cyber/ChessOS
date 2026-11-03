@@ -865,3 +865,4 @@ document.addEventListener("keydown", (event) => {
 });
 
 renderAll();
+void initializePersistence();
