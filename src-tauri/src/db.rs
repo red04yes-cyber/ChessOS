@@ -209,6 +209,23 @@ pub fn migrate(connection: &mut Connection) -> rusqlite::Result<()> {
         )?;
         transaction.commit()?;
     }
+    let version_after_v2: i64 = connection.query_row(
+        "SELECT COALESCE(MAX(version), 0) FROM schema_migrations",
+        [],
+        |row| row.get(0),
+    )?;
+    if version_after_v2 < 3 {
+        let transaction = connection.transaction()?;
+        transaction.execute_batch(
+            "ALTER TABLE study_cards ADD COLUMN fsrs_json TEXT NOT NULL DEFAULT '{}';
+             CREATE INDEX idx_study_cards_due_side ON study_cards(side, due_at);"
+        )?;
+        transaction.execute(
+            "INSERT INTO schema_migrations (version, applied_at) VALUES (3, ?1)",
+            params![now_timestamp()],
+        )?;
+        transaction.commit()?;
+    }
     Ok(())
 }
 
@@ -326,6 +343,15 @@ fn save_with_connection(connection: &mut Connection, input: SaveRepertoireInput)
         }
     }
 
+    transaction.execute(
+        "DELETE FROM study_cards
+         WHERE repertoire_id = ?1
+           AND edge_id NOT IN (
+             SELECT edge_id FROM repertoire_moves WHERE repertoire_id = ?1
+           )",
+        params![input.id],
+    ).map_err(|error| error.to_string())?;
+
     transaction.commit().map_err(|error| error.to_string())?;
     load_one(connection, &input.id)?.ok_or_else(|| "Il repertorio salvato non è stato trovato.".into())
 }
@@ -418,6 +444,256 @@ pub fn delete_repertoire(database: State<'_, Database>, id: String) -> Result<bo
     Ok(deleted > 0)
 }
 
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StudyCardRecord {
+    pub id: String,
+    pub repertoire_id: String,
+    pub repertoire_title: String,
+    pub edge_id: String,
+    pub side: String,
+    pub fen: String,
+    pub uci: String,
+    pub san: String,
+    pub due_at: String,
+    pub stability: f64,
+    pub difficulty: f64,
+    pub reps: i64,
+    pub lapses: i64,
+    pub state: String,
+    pub fsrs_json: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StudyCardInput {
+    pub id: String,
+    pub repertoire_id: String,
+    pub edge_id: String,
+    pub side: String,
+    pub due_at: String,
+    pub stability: f64,
+    pub difficulty: f64,
+    pub reps: i64,
+    pub lapses: i64,
+    pub state: String,
+    pub fsrs_json: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StudyReviewLogInput {
+    pub id: String,
+    pub card_id: String,
+    pub session_id: Option<String>,
+    pub rating: i64,
+    pub reviewed_at: String,
+    pub elapsed_ms: Option<i64>,
+    pub scheduled_days: f64,
+    pub state_json: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StudyReviewLogRecord {
+    pub id: String,
+    pub card_id: String,
+    pub session_id: Option<String>,
+    pub rating: i64,
+    pub reviewed_at: String,
+    pub elapsed_ms: Option<i64>,
+    pub scheduled_days: f64,
+    pub state_json: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecordStudyReviewInput {
+    pub card: StudyCardInput,
+    pub review_log: StudyReviewLogInput,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TrainingSessionInput {
+    pub id: String,
+    pub started_at: String,
+    pub side: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FinishTrainingSessionInput {
+    pub id: String,
+    pub finished_at: String,
+}
+
+#[tauri::command]
+pub fn list_study_cards(database: State<'_, Database>) -> Result<Vec<StudyCardRecord>, String> {
+    let connection = database.0.lock().map_err(|_| "Database non disponibile.".to_string())?;
+    let mut statement = connection.prepare(
+        "SELECT c.id, c.repertoire_id, r.title, c.edge_id, c.side,
+                p.fen, m.uci, m.san, c.due_at, c.stability, c.difficulty,
+                c.reps, c.lapses, c.state, c.fsrs_json, c.created_at, c.updated_at
+         FROM study_cards c
+         JOIN repertoires r ON r.id = c.repertoire_id
+         JOIN repertoire_moves m
+           ON m.repertoire_id = c.repertoire_id AND m.edge_id = c.edge_id
+         JOIN repertoire_positions p
+           ON p.repertoire_id = m.repertoire_id AND p.position_id = m.from_position_id
+         ORDER BY c.due_at ASC, c.updated_at DESC"
+    ).map_err(|error| error.to_string())?;
+    let rows = statement.query_map([], |row| Ok(StudyCardRecord {
+        id: row.get(0)?,
+        repertoire_id: row.get(1)?,
+        repertoire_title: row.get(2)?,
+        edge_id: row.get(3)?,
+        side: row.get(4)?,
+        fen: row.get(5)?,
+        uci: row.get(6)?,
+        san: row.get(7)?,
+        due_at: row.get(8)?,
+        stability: row.get(9)?,
+        difficulty: row.get(10)?,
+        reps: row.get(11)?,
+        lapses: row.get(12)?,
+        state: row.get(13)?,
+        fsrs_json: row.get(14)?,
+        created_at: row.get(15)?,
+        updated_at: row.get(16)?,
+    })).map_err(|error| error.to_string())?;
+    let records = rows.collect::<Result<Vec<_>, _>>().map_err(|error| error.to_string())?;
+    Ok(records)
+}
+
+#[tauri::command]
+pub fn list_review_logs(database: State<'_, Database>) -> Result<Vec<StudyReviewLogRecord>, String> {
+    let connection = database.0.lock().map_err(|_| "Database non disponibile.".to_string())?;
+    let mut statement = connection.prepare(
+        "SELECT id, card_id, session_id, rating, reviewed_at, elapsed_ms, scheduled_days, state_json
+         FROM review_logs ORDER BY reviewed_at DESC LIMIT 10000"
+    ).map_err(|error| error.to_string())?;
+    let rows = statement.query_map([], |row| Ok(StudyReviewLogRecord {
+        id: row.get(0)?,
+        card_id: row.get(1)?,
+        session_id: row.get(2)?,
+        rating: row.get(3)?,
+        reviewed_at: row.get(4)?,
+        elapsed_ms: row.get(5)?,
+        scheduled_days: row.get(6)?,
+        state_json: row.get(7)?,
+    })).map_err(|error| error.to_string())?;
+    let records = rows.collect::<Result<Vec<_>, _>>().map_err(|error| error.to_string())?;
+    Ok(records)
+}
+
+#[tauri::command]
+pub fn start_training_session(
+    database: State<'_, Database>,
+    input: TrainingSessionInput,
+) -> Result<bool, String> {
+    if input.id.trim().is_empty() || !["white", "black", "both"].contains(&input.side.as_str()) {
+        return Err("Sessione di ripasso non valida.".into());
+    }
+    let connection = database.0.lock().map_err(|_| "Database non disponibile.".to_string())?;
+    connection.execute(
+        "INSERT INTO training_sessions (id, started_at, side) VALUES (?1, ?2, ?3)",
+        params![input.id, input.started_at, input.side],
+    ).map_err(|error| error.to_string())?;
+    Ok(true)
+}
+
+#[tauri::command]
+pub fn record_study_review(
+    database: State<'_, Database>,
+    input: RecordStudyReviewInput,
+) -> Result<bool, String> {
+    let card = input.card;
+    let log = input.review_log;
+    if card.id.trim().is_empty()
+        || card.repertoire_id.trim().is_empty()
+        || card.edge_id.trim().is_empty()
+        || !["white", "black"].contains(&card.side.as_str())
+        || log.card_id != card.id
+        || !(1..=4).contains(&log.rating)
+        || !card.stability.is_finite()
+        || !card.difficulty.is_finite()
+        || !log.scheduled_days.is_finite()
+    {
+        return Err("Dati del ripasso non validi.".into());
+    }
+
+    let mut connection = database.0.lock().map_err(|_| "Database non disponibile.".to_string())?;
+    let transaction = connection.transaction().map_err(|error| error.to_string())?;
+    transaction.execute(
+        "INSERT INTO study_cards
+            (id, repertoire_id, edge_id, side, due_at, stability, difficulty,
+             reps, lapses, state, created_at, updated_at, fsrs_json)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
+         ON CONFLICT(id) DO UPDATE SET
+            repertoire_id = excluded.repertoire_id,
+            edge_id = excluded.edge_id,
+            side = excluded.side,
+            due_at = excluded.due_at,
+            stability = excluded.stability,
+            difficulty = excluded.difficulty,
+            reps = excluded.reps,
+            lapses = excluded.lapses,
+            state = excluded.state,
+            updated_at = excluded.updated_at,
+            fsrs_json = excluded.fsrs_json",
+        params![
+            card.id, card.repertoire_id, card.edge_id, card.side, card.due_at,
+            card.stability, card.difficulty, card.reps, card.lapses, card.state,
+            card.created_at, card.updated_at, card.fsrs_json
+        ],
+    ).map_err(|error| error.to_string())?;
+
+    transaction.execute(
+        "INSERT INTO review_logs
+            (id, card_id, session_id, rating, reviewed_at, elapsed_ms, scheduled_days, state_json)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+        params![
+            log.id, log.card_id, log.session_id, log.rating, log.reviewed_at,
+            log.elapsed_ms, log.scheduled_days, log.state_json
+        ],
+    ).map_err(|error| error.to_string())?;
+
+    if let Some(session_id) = log.session_id.as_deref() {
+        let updated = transaction.execute(
+            "UPDATE training_sessions
+             SET cards_reviewed = cards_reviewed + 1,
+                 correct_count = correct_count + ?1,
+                 again_count = again_count + ?2
+             WHERE id = ?3",
+            params![if log.rating > 1 { 1 } else { 0 }, if log.rating == 1 { 1 } else { 0 }, session_id],
+        ).map_err(|error| error.to_string())?;
+        if updated != 1 {
+            return Err("La sessione di ripasso non esiste più.".into());
+        }
+    }
+    transaction.commit().map_err(|error| error.to_string())?;
+    Ok(true)
+}
+
+#[tauri::command]
+pub fn finish_training_session(
+    database: State<'_, Database>,
+    input: FinishTrainingSessionInput,
+) -> Result<bool, String> {
+    let connection = database.0.lock().map_err(|_| "Database non disponibile.".to_string())?;
+    let updated = connection.execute(
+        "UPDATE training_sessions SET finished_at = ?1 WHERE id = ?2",
+        params![input.finished_at, input.id],
+    ).map_err(|error| error.to_string())?;
+    Ok(updated == 1)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -473,7 +749,7 @@ mod tests {
         let version: i64 = connection.query_row(
             "SELECT MAX(version) FROM schema_migrations", [], |row| row.get(0)
         ).unwrap();
-        assert_eq!(version, 2);
+        assert_eq!(version, 3);
     }
 
     #[test]
