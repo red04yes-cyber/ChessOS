@@ -546,7 +546,7 @@ pub fn list_study_cards(database: State<'_, Database>) -> Result<Vec<StudyCardRe
            ON p.repertoire_id = m.repertoire_id AND p.position_id = m.from_position_id
          ORDER BY c.due_at ASC, c.updated_at DESC"
     ).map_err(|error| error.to_string())?;
-    statement.query_map([], |row| Ok(StudyCardRecord {
+    let rows = statement.query_map([], |row| Ok(StudyCardRecord {
         id: row.get(0)?,
         repertoire_id: row.get(1)?,
         repertoire_title: row.get(2)?,
@@ -564,8 +564,9 @@ pub fn list_study_cards(database: State<'_, Database>) -> Result<Vec<StudyCardRe
         fsrs_json: row.get(14)?,
         created_at: row.get(15)?,
         updated_at: row.get(16)?,
-    })).map_err(|error| error.to_string())?
-      .collect::<Result<Vec<_>, _>>().map_err(|error| error.to_string())
+    })).map_err(|error| error.to_string())?;
+    let records = rows.collect::<Result<Vec<_>, _>>().map_err(|error| error.to_string())?;
+    Ok(records)
 }
 
 #[tauri::command]
@@ -575,7 +576,7 @@ pub fn list_review_logs(database: State<'_, Database>) -> Result<Vec<StudyReview
         "SELECT id, card_id, session_id, rating, reviewed_at, elapsed_ms, scheduled_days, state_json
          FROM review_logs ORDER BY reviewed_at DESC LIMIT 10000"
     ).map_err(|error| error.to_string())?;
-    statement.query_map([], |row| Ok(StudyReviewLogRecord {
+    let rows = statement.query_map([], |row| Ok(StudyReviewLogRecord {
         id: row.get(0)?,
         card_id: row.get(1)?,
         session_id: row.get(2)?,
@@ -584,8 +585,9 @@ pub fn list_review_logs(database: State<'_, Database>) -> Result<Vec<StudyReview
         elapsed_ms: row.get(5)?,
         scheduled_days: row.get(6)?,
         state_json: row.get(7)?,
-    })).map_err(|error| error.to_string())?
-      .collect::<Result<Vec<_>, _>>().map_err(|error| error.to_string())
+    })).map_err(|error| error.to_string())?;
+    let records = rows.collect::<Result<Vec<_>, _>>().map_err(|error| error.to_string())?;
+    Ok(records)
 }
 
 #[tauri::command]
