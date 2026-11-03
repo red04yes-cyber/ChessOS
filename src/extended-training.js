@@ -345,6 +345,7 @@ export function initializeExtendedTraining({ getCurrentTree, getCurrentMoves, ge
     ready: initializePromise,
     addErrorCard,
     addConceptCard,
+    stopBlindfold,
     loadImportedPgn: updateImportedPgn,
     exportState: () => ({ cards, opponentReport, importedPgn }),
     async importState(state) {
