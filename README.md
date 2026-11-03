@@ -19,6 +19,12 @@ Windows-first chess repertoire and training desktop app. This repository now con
 - PGN variation export with round-trip regression tests
 - Undo/redo by navigating the complete move timeline and reset in Studio mode
 - Training mode that asks the user to replay every move in a saved or current line
+- Blindfold training with SAN input, hidden pieces and move notation, and automatic error capture
+- Automatic repertoire-miss flashcards from imported game PGNs and mistakes in training
+- FSRS scheduling (Again / Hard / Good / Easy) with per-card review history via `ts-fsrs`
+- Weakness heatmap that distinguishes weak, learning, stable and not-yet-measured positions
+- Opponent preparation from one or more PGNs: opening frequencies, first moves, results and sample size
+- Transposition explorer showing distinct move sequences that converge on the same graph position
 - Vite frontend and Tauri 2 desktop shell
 - Automated JavaScript tests for legal moves, castling, en passant, promotion, PGN and terminal positions; Windows NSIS installer workflow
 
@@ -26,15 +32,14 @@ Windows-first chess repertoire and training desktop app. This repository now con
 
 This is **not** the recovered 0.7.0 application and is not yet feature-complete against the original roadmap. The following are not implemented in this rebuild:
 
-- FSRS scheduling and review history
-- SQLite database backup/export and restore UI
-- Stockfish analysis / evaluation
-- Dashboard, analytics, goals and exams
+- Stockfish engine evaluation and tactical blunder detection (automatic cards currently detect departures from the saved repertoire, not engine-proven mistakes)
+- Full SQLite backup/export and restore UI
+- Full dashboard, goals and exams
 - Cloud sync, account system and backups
 
 The old archive fragments remain under `recovery/` for provenance only. They are not build inputs.
 
-The feature roadmap, including the additional training and opponent-preparation ideas, is tracked in [docs/ROADMAP.md](docs/ROADMAP.md). It also records that transposition handling is already implemented in the repertoire graph.
+The feature roadmap and implementation boundaries are tracked in [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## Requirements
 
@@ -71,7 +76,7 @@ The latest completed Windows CI run (#134) generated the NSIS installer, install
 
 ## Data and SQLite
 
-The Tauri desktop app stores repertoire data in `chess-os.sqlite3` inside the application data directory managed by Tauri. The database has versioned migrations (`schema_migrations`), a repertoire table, normalized position and move-edge tables (so branches and transpositions are retained), app settings, and the tables reserved for training cards and review history. Foreign keys and cascading deletes keep each repertoire graph consistent. The browser preview uses `localStorage` only as a development fallback.
+The Tauri desktop app stores repertoire data in `chess-os.sqlite3` inside the application data directory managed by Tauri. The database has versioned migrations (`schema_migrations`), a repertoire table, normalized position and move-edge tables (so branches and transpositions are retained), app settings, and tables reserved for training cards and review history. Repertoire graphs use SQLite in desktop mode. FSRS cards, their review history and the latest opponent report are currently stored in WebView/browser `localStorage`; moving these records into the existing SQLite training tables is a follow-up persistence task.
 
 On first desktop startup, Chess OS imports legacy `chess-os.repertoire.v1` entries from WebView `localStorage` that are not already in SQLite. The legacy key is removed only after all entries have imported successfully. To back up a repertoire today, export it as PGN; a full SQLite backup/restore interface is still planned. See [docs/DATABASE.md](docs/DATABASE.md) for the schema and migration details.
 
