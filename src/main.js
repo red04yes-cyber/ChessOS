@@ -625,6 +625,8 @@ function renderBoard() {
   $("#board-view-label").textContent = "Vista: " + (boardFlipped ? "Nero" : "Bianco");
   $("#flip-board").setAttribute("aria-pressed", String(boardFlipped));
   $("#flip-board").title = "Ruota la scacchiera (F)";
+  $("#to-start").disabled = mode !== "studio" || studioPly <= 0;
+  $("#to-end").disabled = mode !== "studio" || studioPly >= studioSans.length;
   $("#game-status").textContent = gameStatus(chess);
   playPendingBoardAnimation();
   const currentCount = mode === "training" ? reviewCompleted : mode === "exam" ? examQuestionIndex + (examAnswered ? 1 : 0) : studioPly;
@@ -2527,12 +2529,22 @@ promotionDialog.addEventListener("click", (event) => {
     renderBoard();
   }
 });
+document.addEventListener("click", (event) => {
+  document.querySelectorAll(".appearance-menu[open], .more-actions[open], .repertoire-menu[open]")
+    .forEach((menu) => {
+      if (!menu.contains(event.target)) menu.open = false;
+    });
+});
 titleInput.addEventListener("input", () => {
   setDirty(true);
   $("#topbar-active-title").textContent = titleInput.value.trim() || "Nuovo repertorio";
 });
 
 document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") {
+    document.querySelectorAll(".appearance-menu[open], .more-actions[open], .repertoire-menu[open]")
+      .forEach((menu) => { menu.open = false; });
+  }
   if (event.key === "Escape" && !$("#online-import-dialog").hidden) {
     closeOnlineImportDialog();
     return;
