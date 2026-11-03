@@ -26,7 +26,7 @@ Questa roadmap descrive le funzioni disponibili nel branch di sviluppo e separa 
 
 ## Endgame Lab: copertura didattica
 
-Il catalogo contiene 111 lezioni in nove capitoli:
+Il catalogo contiene 131 lezioni in dieci capitoli:
 
 1. **Re e pedone:** opposizione, case chiave, regola del quadrato, zugzwang, triangolazione, tempi di riserva, breakthroughs, pedoni passati, pedone di torre, alfiere di colore sbagliato e case corrispondenti.
 2. **Finali di torre:** attività, torre dietro il passato, taglio del re, Lucena, ponte, Philidor, Vancura, scacchi laterali/da dietro, torre contro pedoni, maggioranze, controgioco.
