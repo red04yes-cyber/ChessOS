@@ -442,7 +442,7 @@ function renderBoard() {
       const isLight = (displayRow + displayCol) % 2 === 0;
       button.type = "button";
       button.dataset.square = square;
-      button.tabIndex = square === (selectedSquare || boardFocusSquare || (boardFlipped ? "h1" : "a8")) ? 0 : -1;
+      button.tabIndex = square === (boardFocusSquare || selectedSquare || (boardFlipped ? "h1" : "a8")) ? 0 : -1;
       button.className = "square " + (isLight ? "light" : "dark");
       if (selectedSquare === square) button.classList.add("selected");
       if (lastSquares.has(square)) button.classList.add("last-move");
