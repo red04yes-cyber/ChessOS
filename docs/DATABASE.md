@@ -4,7 +4,7 @@
 
 Nel desktop Tauri la connessione viene aperta una volta all'avvio. Il file `chess-os.sqlite3` viene creato nella directory dati applicazione indicata da `app.path().app_data_dir()`; non viene scritto nel repository né nella cartella Desktop dell'utente. SQLite usa foreign key, WAL e un timeout di lock di 5 secondi.
 
-La preview Vite nel browser continua a usare `localStorage` perché non ha accesso al backend Rust. Il programma desktop usa invece esclusivamente i comandi Tauri per leggere e scrivere sul database; se SQLite non si inizializza, i pulsanti di salvataggio/eliminazione vengono bloccati anziché fingere di aver scritto su SQLite.
+La preview Vite nel browser continua a usare `localStorage` perché non ha accesso al backend Rust. Il programma desktop usa i comandi Tauri/SQLite per i repertori; le nuove flashcard FSRS, i log per carta e l'ultimo report avversario usano invece le chiavi WebView `chess-os.study-cards.v1` e `chess-os.opponent-report.v1`. Se SQLite non si inizializza, i pulsanti di salvataggio/eliminazione dei repertori vengono bloccati anziché fingere di aver scritto su SQLite.
 
 ## Schema
 
@@ -39,4 +39,4 @@ I test JavaScript coprono la serializzazione round-trip del grafo e il rifiuto d
 
 ## Limiti attuali
 
-Le tabelle per carte e sessioni sono predisposte ma non ancora usate dall'allenamento. L'esportazione PGN è disponibile come backup portabile; backup dell'intero database, ripristino da file e migrazione tra versioni dell'app con UI dedicata restano attività successive. Non c'è sincronizzazione cloud.
+Le tabelle `study_cards`, `training_sessions` e `review_logs` sono predisposte ma l'MVP delle nuove funzioni salva temporaneamente carte e cronologia FSRS in WebView `localStorage`; il successivo passaggio è collegarle alle tabelle SQLite esistenti. L'esportazione PGN è disponibile come backup portabile; backup dell'intero database, ripristino da file e migrazione tra versioni dell'app con UI dedicata restano attività successive. Non c'è sincronizzazione cloud.
