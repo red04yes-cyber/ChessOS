@@ -28,7 +28,6 @@ import {
 } from "./dashboard.js";
 import "./style.css";
 
-const APP_UPDATER_ENABLED = import.meta.env.VITE_ENABLE_APP_UPDATER === "true";
 const STORAGE_KEY = "chess-os.repertoire.v1";
 const REVIEW_STORAGE_KEY = "chess-os.fsrs.review-state.v1";
 const DEFAULT_FEN = new Chess().fen();
@@ -359,7 +358,7 @@ async function maybeInstallPendingAppUpdate() {
 }
 
 async function checkForAppUpdate() {
-  if (!isTauri() || !APP_UPDATER_ENABLED || appUpdateCheckRunning || pendingAppUpdate) return;
+  if (!isTauri() || appUpdateCheckRunning || pendingAppUpdate) return;
   appUpdateCheckRunning = true;
   try {
     const { check } = await import("@tauri-apps/plugin-updater");
@@ -2657,7 +2656,7 @@ void initializePersistence().then(() => {
   void checkForAppUpdate();
 });
 
-if (isTauri() && APP_UPDATER_ENABLED) {
+if (isTauri()) {
   // Recheck the stable channel periodically and install as soon as the app is idle.
   window.setInterval(() => {
     if (pendingAppUpdate) void maybeInstallPendingAppUpdate();
