@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main, feature/fsrs-daily-review-final]
+    branches: [main, feature/fsrs-daily-review-final, feature/dashboard-progress-exams-final2]
   workflow_dispatch:
 
 permissions:
