@@ -762,6 +762,10 @@ function handleSquareClick(square) {
 }
 
 function openLine(id) {
+  if (mode === "exam" && examAttemptId) {
+    void finishRepertoireExam(true).then(() => openLine(id));
+    return;
+  }
   if (mode === "training" && reviewSessionId && !reviewSessionFinished) {
     void markReviewSessionFinished().catch((error) => {
       showToast("Non riesco a chiudere la sessione: " + error.message);
@@ -815,7 +819,7 @@ async function deleteLine(id) {
 }
 
 async function saveLine() {
-  if (mode === "training") return;
+  if (mode !== "studio") return;
   if (!databaseReady) {
     showToast("Database non pronto: il salvataggio è disattivato.");
     return;
@@ -862,6 +866,10 @@ async function saveLine() {
 }
 
 function startTraining() {
+  if (mode === "exam" && examAttemptId) {
+    void finishRepertoireExam(true).then(() => startTraining());
+    return;
+  }
   if (reviewSessionId && !reviewSessionFinished) {
     void markReviewSessionFinished().catch((error) => {
       showToast("Non riesco a chiudere la sessione precedente: " + error.message);
@@ -1325,6 +1333,16 @@ function renderDashboard() {
   }
 }
 
+function nextExamQuestion() {
+  if (!currentExamCard || !examAnswered || isSavingExamAnswer) return;
+  if (examQuestionIndex + 1 >= examTotalQuestions) {
+    void finishRepertoireExam(false);
+    return;
+  }
+  examQuestionIndex += 1;
+  openNextExamQuestion();
+}
+
 function renderExamPanel() {
   const active = $("#exam-active");
   if (!active) return;
@@ -1610,6 +1628,15 @@ function leaveExam() {
   }
 }
 
+async function showStudio() {
+  if (mode === "training") leaveTraining();
+  if (mode === "exam" && examAttemptId) {
+    await finishRepertoireExam(true);
+  }
+  mode = "studio";
+  renderAll();
+}
+
 function showDashboard() {
   if (mode === "training") leaveTraining();
   if (mode === "exam" && examAttemptId) {
@@ -1661,7 +1688,7 @@ function importPgn() {
 }
 
 function exportPgn() {
-  const pgn = mode === "training" || !studioTree.edges.size ? "" : timelinePgn();
+  const pgn = mode !== "studio" || !studioTree.edges.size ? "" : timelinePgn();
   if (!pgn) {
     showToast("Non ci sono mosse da esportare.");
     return;
@@ -1679,6 +1706,13 @@ function exportPgn() {
 }
 
 function newPosition() {
+  if (mode === "exam") {
+    leaveExam();
+    return;
+  }
+  if (mode === "dashboard") {
+    mode = "studio";
+  }
   if (mode === "training") {
     leaveTraining();
     return;
@@ -1711,10 +1745,21 @@ boardElement.addEventListener("click", (event) => {
   if (squareButton) handleSquareClick(squareButton.dataset.square);
 });
 
+$("#nav-dashboard").addEventListener("click", showDashboard);
 $("#nav-studio").addEventListener("click", () => {
-  if (mode === "training") leaveTraining();
+  if (mode === "training") {
+    leaveTraining();
+  } else if (mode === "exam" && examAttemptId) {
+    void finishRepertoireExam(true).then(() => { mode = "studio"; renderAll(); });
+  } else {
+    mode = "studio";
+    renderAll();
+  }
 });
 $("#nav-training").addEventListener("click", () => startTraining());
+$("#dashboard-goals-form").addEventListener("submit", (event) => { void saveDashboardGoals(event); });
+$("#dashboard-exam-form").addEventListener("submit", (event) => { void startRepertoireExam(event); });
+$("#exam-next").addEventListener("click", nextExamQuestion);
 $("#review-side").addEventListener("change", renderReviewPanel);
 $("#review-start").addEventListener("click", () => { void beginDailyReviewSession(); });
 $("#review-show-answer").addEventListener("click", showReviewAnswer);
