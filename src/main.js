@@ -1,6 +1,7 @@
 import { Chess } from "chess.js";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { RepertoireTree } from "./repertoire-tree.js";
+import { analyzeOpponentPgn, buildWeaknessHeatmap, createErrorFlashcard, createMistakeFlashcards, getDueStudyCards, getTranspositionGroups, gradeStudyCard, readStudyCards, saveStudyCards, OPPONENT_REPORT_KEY } from "./study-tools.js";
 import "./style.css";
 
 const STORAGE_KEY = "chess-os.repertoire.v1";
@@ -34,6 +35,12 @@ let studioPly = 0;
 let studioTree = new RepertoireTree(DEFAULT_FEN);
 let studioPath = [];
 let toastTimer = null;
+let blindfoldMode = false;
+let studyCards = readStudyCards();
+let reviewActive = false;
+let activeReviewCardId = null;
+let reviewSessionSeen = new Set();
+let opponentReport = (() => { try { return JSON.parse(localStorage.getItem(OPPONENT_REPORT_KEY) || "null"); } catch { return null; } })();
 
 const $ = (selector) => document.querySelector(selector);
 const boardElement = $("#chessboard");
@@ -265,7 +272,7 @@ function renderBoard() {
       if (checkedKingSquare === square) button.classList.add("in-check");
       if (legalTargets.has(square)) button.classList.add(piece ? "capture-target" : "legal-target");
 
-      if (piece) {
+      if (piece && !(mode === "training" && blindfoldMode)) {
         const pieceSpan = document.createElement("span");
         pieceSpan.className = "piece " + (piece.color === "w" ? "white-piece" : "black-piece");
         pieceSpan.textContent = symbols[piece.color][piece.type];
@@ -297,6 +304,14 @@ function renderMoves() {
   const moves = mode === "training" ? trainingMoves : studioMoveObjects;
   const cursor = mode === "training" ? trainingIndex : studioPly;
   moveListElement.replaceChildren();
+
+  if (mode === "training" && blindfoldMode) {
+    const masked = document.createElement("span");
+    masked.className = "empty-state";
+    masked.textContent = "Notazione nascosta · richiama la prossima mossa a memoria.";
+    moveListElement.append(masked);
+    return;
+  }
 
   if (!moves.length) {
     const empty = document.createElement("span");
@@ -394,6 +409,9 @@ function renderMode() {
     ? "Ripeti la linea selezionata e trova le mosse nell’ordine corretto."
     : "Costruisci linee principali, varianti e transposizioni.";
   $("#flip-board").disabled = false;
+  $("#blindfold-input-wrap").hidden = !(training && blindfoldMode);
+  $("#start-blindfold").textContent = training && blindfoldMode ? "Blindfold in corso" : "Avvia Blindfold sulla linea attiva";
+  $("#start-blindfold").disabled = training && blindfoldMode;
 }
 
 function renderVariations() {
@@ -460,12 +478,268 @@ function selectVariation(edgeId) {
   }
 }
 
+
+function addStudyCard(card) {
+  const fingerprint = card.positionKey + "|" + (card.expectedSan || []).join(",");
+  const exists = studyCards.some((item) => item.positionKey + "|" + (item.expectedSan || []).join(",") === fingerprint);
+  if (exists) return false;
+  studyCards = [card, ...studyCards];
+  try { saveStudyCards(studyCards); } catch (error) { showToast("Carta creata ma non salvata: " + error.message); }
+  return true;
+}
+
+function makeElement(tag, className, value) {
+  const element = document.createElement(tag);
+  if (className) element.className = className;
+  if (value !== undefined) element.textContent = value;
+  return element;
+}
+
+function renderFlashcards() {
+  const summary = $("#flashcard-summary");
+  const review = $("#flashcard-review");
+  if (!summary || !review) return;
+  const due = getDueStudyCards(studyCards);
+  summary.textContent = studyCards.length + " carte totali · " + due.length + " da ripassare oggi.";
+  review.replaceChildren();
+
+  if (!reviewActive) {
+    const note = makeElement("p", "empty-state", studyCards.length
+      ? "Le carte generate dagli errori sono salvate localmente e programmate con FSRS."
+      : "Nessuna carta ancora. Importa un PGN sopra o commetti un errore durante il Blindfold.");
+    review.append(note);
+    return;
+  }
+
+  const current = studyCards.find((card) => card.id === activeReviewCardId);
+  if (!current) {
+    reviewActive = false;
+    activeReviewCardId = null;
+    review.append(makeElement("p", "empty-state", "Sessione terminata."));
+    return;
+  }
+
+  review.append(makeElement("div", "flashcard-face", current.front));
+  if (!reviewAnswerVisible) {
+    const reveal = makeElement("button", "button small primary", "Mostra risposta");
+    reveal.type = "button";
+    reveal.addEventListener("click", () => { reviewAnswerVisible = true; renderFlashcards(); });
+    review.append(reveal);
+    return;
+  }
+
+  review.append(makeElement("div", "flashcard-answer", current.back));
+  review.append(makeElement("p", "tool-description", "Quanto è stato facile ricordare la continuazione?"));
+  const grades = [
+    ["again", "Di nuovo"],
+    ["hard", "Difficile"],
+    ["good", "Bene"],
+    ["easy", "Facile"],
+  ];
+  const actions = makeElement("div", "tool-actions");
+  for (const [grade, label] of grades) {
+    const button = makeElement("button", "button small ghost grade-" + grade, label);
+    button.type = "button";
+    button.addEventListener("click", () => {
+      try {
+        studyCards = studyCards.map((card) => card.id === current.id ? gradeStudyCard(card, grade) : card);
+        saveStudyCards(studyCards);
+        reviewSessionSeen.add(current.id);
+        const next = getDueStudyCards(studyCards).find((card) => !reviewSessionSeen.has(card.id));
+        if (next) {
+          activeReviewCardId = next.id;
+          reviewAnswerVisible = false;
+        } else {
+          reviewActive = false;
+          activeReviewCardId = null;
+          showToast("Sessione di ripasso completata.");
+        }
+        renderAllTools();
+      } catch (error) { showToast("Errore FSRS: " + error.message); }
+    });
+    actions.append(button);
+  }
+  review.append(actions);
+  const finish = makeElement("button", "button small ghost", "Termina ripasso");
+  finish.type = "button";
+  finish.addEventListener("click", () => { reviewActive = false; activeReviewCardId = null; renderFlashcards(); });
+  review.append(finish);
+}
+
+let reviewAnswerVisible = false;
+
+function startCardReview() {
+  const next = getDueStudyCards(studyCards).find((card) => !reviewSessionSeen.has(card.id));
+  if (!next) {
+    showToast(studyCards.length ? "Non ci sono carte dovute al momento." : "Genera prima alcune flashcard da un PGN.");
+    return;
+  }
+  reviewActive = true;
+  activeReviewCardId = next.id;
+  reviewAnswerVisible = false;
+  renderFlashcards();
+}
+
+function renderHeatmap() {
+  const summary = $("#heatmap-summary");
+  const list = $("#heatmap-list");
+  if (!summary || !list) return;
+  const rows = buildWeaknessHeatmap(studioTree, studyCards);
+  const count = (status) => rows.filter((item) => item.status === status).length;
+  summary.textContent = rows.length + " posizioni · " + count("weak") + " deboli · " + count("learning") + " in apprendimento · " + count("stable") + " stabili · " + count("unmeasured") + " non valutate.";
+  list.replaceChildren();
+  for (const item of rows.slice(0, 14)) {
+    const row = makeElement("div", "heatmap-row");
+    const marker = makeElement("span", "heatmap-marker " + item.status);
+    const label = makeElement("div", "heatmap-position");
+    const chess = new Chess(item.fen);
+    const fenPlacement = item.fen.split(/\s+/)[0];
+    label.append(makeElement("strong", "", fenPlacement));
+    label.append(makeElement("small", "", item.cardCount
+      ? item.reviews + " ripassi · " + item.lapses + " dimenticanze"
+      : chess.turn() === "w" ? "Bianco al tratto · nessun dato" : "Nero al tratto · nessun dato"));
+    row.append(marker, label, makeElement("span", "heatmap-state", ({
+      weak: "Debole",
+      learning: "In apprendimento",
+      stable: "Stabile",
+      unmeasured: "Non valutata",
+    })[item.status]));
+    list.append(row);
+  }
+}
+
+function renderOpponentReport() {
+  const target = $("#opponent-report");
+  if (!target) return;
+  target.replaceChildren();
+  if (!opponentReport) {
+    target.append(makeElement("p", "empty-state", "Nessuna analisi ancora."));
+    return;
+  }
+  const report = opponentReport;
+  target.append(makeElement("p", "report-summary",
+    report.gameCount + " partite analizzate · " + (report.side === "white" ? "Bianco" : "Nero") + " · media " + report.averagePlies + " semimosse."));
+  const result = report.results;
+  target.append(makeElement("p", "report-results",
+    "Risultati: " + result.wins + " vittorie · " + result.draws + " patte · " + result.losses + " sconfitte · " + result.unknown + " ignoti."));
+  target.append(makeElement("strong", "report-heading", "Aperture più frequenti"));
+  for (const item of report.openings) {
+    target.append(makeElement("div", "report-row", item.count + "× (" + item.percentage + "%)  " + item.label));
+  }
+  target.append(makeElement("strong", "report-heading", "Prima mossa del colore analizzato"));
+  for (const item of report.firstMoves) {
+    target.append(makeElement("div", "report-row", item.count + "× (" + item.percentage + "%)  " + item.label));
+  }
+  if (report.ignoredGames?.length) target.append(makeElement("p", "tool-warning", report.ignoredGames.length + " PGN non validi ignorati."));
+}
+
+function renderTranspositions() {
+  const summary = $("#transposition-summary");
+  const list = $("#transposition-list");
+  if (!summary || !list) return;
+  const groups = getTranspositionGroups(studioTree);
+  summary.textContent = groups.length + " posizioni transposte · " + groups.reduce((sum, group) => sum + group.paths.length, 0) + " percorsi in ingresso.";
+  list.replaceChildren();
+  if (!groups.length) {
+    list.append(makeElement("p", "empty-state", "Nessuna trasposizione nel repertorio attivo."));
+    return;
+  }
+  for (const group of groups) {
+    const card = makeElement("div", "transposition-entry");
+    card.append(makeElement("strong", "", group.paths.length + " sequenze → stessa posizione"));
+    card.append(makeElement("small", "", group.fen.split(/\s+/)[0]));
+    for (const path of group.paths) card.append(makeElement("p", "transposition-path", path.moves));
+    list.append(card);
+  }
+}
+
+function renderAllTools() {
+  renderFlashcards();
+  renderHeatmap();
+  renderOpponentReport();
+  renderTranspositions();
+}
+
+function generateMistakeCards() {
+  const pgn = $("#mistake-pgn").value.trim();
+  if (!pgn) { showToast("Incolla prima una partita PGN."); return; }
+  try {
+    const result = createMistakeFlashcards(studioTree, pgn, studyCards);
+    if (result.cards.length) {
+      studyCards = [...result.cards, ...studyCards];
+      saveStudyCards(studyCards);
+    }
+    $("#flashcard-summary").textContent = result.cards.length + " nuove carte generate da " + result.gamesRead + " partite. " + result.ignoredGames.length + " PGN ignorati.";
+    renderAllTools();
+    showToast(result.cards.length ? "Flashcard create e salvate." : "Nessuna deviazione rilevata nelle posizioni conosciute.");
+  } catch (error) { showToast("Analisi PGN non riuscita: " + error.message); }
+}
+
+function runOpponentAnalysis() {
+  const pgn = $("#opponent-pgn").value.trim();
+  if (!pgn) { showToast("Incolla le partite PGN dell'avversario."); return; }
+  try {
+    opponentReport = analyzeOpponentPgn(pgn, $("#opponent-side").value);
+    if (!opponentReport.gameCount) {
+      opponentReport = null;
+      showToast("Nessuna partita PGN valida trovata.");
+    } else {
+      localStorage.setItem(OPPONENT_REPORT_KEY, JSON.stringify(opponentReport));
+      showToast("Report avversario aggiornato.");
+    }
+    renderOpponentReport();
+  } catch (error) { showToast("Analisi avversario non riuscita: " + error.message); }
+}
+
+function submitBlindfoldAnswer() {
+  if (mode !== "training" || !blindfoldMode || !trainingGame) return;
+  const expected = trainingMoves[trainingIndex];
+  const answer = $("#blindfold-answer").value.trim();
+  if (!expected) { showToast("Linea completata."); return; }
+  if (!answer) { showToast("Scrivi una mossa in notazione SAN."); return; }
+
+  const before = trainingGame.fen();
+  const probe = new Chess(before);
+  let parsed;
+  try { parsed = probe.move(answer); } catch { parsed = null; }
+  const correct = parsed
+    && parsed.from === expected.from
+    && parsed.to === expected.to
+    && (parsed.promotion || undefined) === (expected.promotion || undefined);
+  if (!correct) {
+    const added = addStudyCard(createErrorFlashcard({
+      fen: before,
+      expectedSan: expected.san,
+      actualSan: answer,
+      source: "blindfold",
+    }));
+    $("#blindfold-answer").value = "";
+    $("#blindfold-status").textContent = "Mossa non corretta. Riprova: " + (added ? "ho creato una flashcard sull'errore." : "la carta per questo errore esiste già.");
+    showToast("Risposta errata: prova ancora.");
+    return;
+  }
+
+  trainingGame.move({
+    from: parsed.from,
+    to: parsed.to,
+    ...(parsed.promotion ? { promotion: parsed.promotion } : {}),
+  });
+  trainingIndex += 1;
+  $("#blindfold-answer").value = "";
+  $("#blindfold-status").textContent = trainingIndex === trainingMoves.length
+    ? "Linea completata senza vedere la scacchiera."
+    : "Corretto. Continua richiamando la prossima mossa.";
+  renderAll();
+  showToast(trainingIndex === trainingMoves.length ? "Blindfold completato!" : "Mossa corretta.");
+}
+
 function renderAll() {
   renderBoard();
   renderMoves();
   renderVariations();
   renderRepertoire();
   renderMode();
+  renderAllTools();
 }
 
 function closePromotionChooser() {
@@ -533,6 +807,12 @@ function commitSelectedMove(selectedMove) {
       && (played.promotion || undefined) === (expected.promotion || undefined);
     if (!correct) {
       trainingGame.undo();
+      addStudyCard(createErrorFlashcard({
+        fen: trainingGame.fen(),
+        expectedSan: expected.san,
+        actualSan: played.san,
+        source: "repertoire-training",
+      }));
       selectedSquare = null;
       renderBoard();
       showToast("Non è la mossa della linea. Riprova.");
@@ -574,6 +854,10 @@ function commitSelectedMove(selectedMove) {
 }
 
 function handleSquareClick(square) {
+  if (mode === "training" && blindfoldMode) {
+    showToast("Blindfold attivo: inserisci la mossa in notazione SAN.");
+    return;
+  }
   const chess = activeGame();
   if (pendingPromotion) return;
   if (chess.isGameOver()) {
@@ -631,6 +915,7 @@ function openLine(id) {
     setDirty(false);
     mode = "studio";
     trainingGame = null;
+    blindfoldMode = false;
     closePromotionChooser();
     renderAll();
   } catch (error) {
@@ -713,7 +998,8 @@ async function saveLine() {
   }
 }
 
-function startTraining() {
+function startTraining({ blindfold = false } = {}) {
+  blindfoldMode = blindfold;
   trainingMoves = studioMoveObjects.map((move) => ({
     from: move.from,
     to: move.to,
@@ -736,6 +1022,7 @@ function startTraining() {
 
 function leaveTraining() {
   mode = "studio";
+  blindfoldMode = false;
   trainingGame = null;
   trainingMoves = [];
   trainingIndex = 0;
@@ -821,6 +1108,12 @@ $("#nav-studio").addEventListener("click", () => {
   if (mode === "training") leaveTraining();
 });
 $("#nav-training").addEventListener("click", () => startTraining());
+$("#generate-cards").addEventListener("click", generateMistakeCards);
+$("#review-cards").addEventListener("click", startCardReview);
+$("#start-blindfold").addEventListener("click", () => startTraining({ blindfold: true }));
+$("#submit-blindfold").addEventListener("click", submitBlindfoldAnswer);
+$("#blindfold-answer").addEventListener("keydown", (event) => { if (event.key === "Enter") submitBlindfoldAnswer(); });
+$("#analyze-opponent").addEventListener("click", runOpponentAnalysis);
 $("#new-line").addEventListener("click", newPosition);
 $("#reset").addEventListener("click", newPosition);
 $("#undo").addEventListener("click", () => {
