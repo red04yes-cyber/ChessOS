@@ -380,7 +380,7 @@ async function confirmDiscardChanges(action) {
       { value: "cancel", label: "Continua a modificare", className: "button", safe: true },
     ],
   });
-  if (choice === "save") return await saveLine();
+  if (choice === "save") return await saveLine({ allowInactiveMode: true });
   return choice === "discard";
 }
 
@@ -1353,8 +1353,8 @@ async function deleteLine(id) {
   }
 }
 
-async function saveLine() {
-  if (mode !== "studio") return false;
+async function saveLine({ allowInactiveMode = false } = {}) {
+  if (mode !== "studio" && !allowInactiveMode) return false;
   if (!databaseReady) {
     showToast("Database non pronto: il salvataggio è disattivato.", { type: "error" });
     return false;
