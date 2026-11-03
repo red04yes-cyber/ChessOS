@@ -294,6 +294,9 @@ export function initChessLab(options) {
       playBusy = false;
       $("#lab-play-toggle").disabled = false;
       $("#lab-play-toggle").textContent = playActive ? "Termina partita" : "Inizia partita";
+      if (playActive && getMode() === "studio" && getGame().turn() !== playerColor && !getGame().isGameOver()) {
+        window.setTimeout(onPositionChanged, 0);
+      }
     }
   }
 
