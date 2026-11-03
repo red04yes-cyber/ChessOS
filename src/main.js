@@ -451,10 +451,10 @@ function captureMoveAnimation(move) {
   const snapshot = (square) => {
     const piece = boardElement.querySelector('[data-square="' + square + '"] .piece');
     if (!piece) return null;
-    return { square, rect: piece.getBoundingClientRect() };
+    return { square, rect: piece.getBoundingClientRect(), clone: piece.cloneNode(true) };
   };
   const from = snapshot(move.from);
-  if (from) moving.push(from);
+  if (from) { from.to = move.to; moving.push(from); }
 
   const flags = String(move.flags || "");
   if (flags.includes("k") || flags.includes("q")) {
@@ -480,8 +480,7 @@ function captureMoveAnimation(move) {
 function animateBoardMove(snapshot) {
   if (!snapshot || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
   for (const item of snapshot.moving) {
-    const square = item.to || (item.square === snapshot.moving[0].square ? item.square : item.square);
-    const newPiece = boardElement.querySelector('[data-square="' + (item.to || (item === snapshot.moving[0] ? snapshot.moving[0].square : item.square)) + '"] .piece');
+    const newPiece = boardElement.querySelector('[data-square="' + (item.to || item.square) + '"] .piece');
     if (!newPiece) continue;
     const nextRect = newPiece.getBoundingClientRect();
     const dx = item.rect.left - nextRect.left;
@@ -493,10 +492,8 @@ function animateBoardMove(snapshot) {
     ], { duration: 190, easing: "cubic-bezier(0.2, 0.8, 0.2, 1)" });
   }
   for (const item of snapshot.captured) {
-    const ghost = createPieceElement("b", "p");
-    const original = boardElement.querySelector('[data-square="' + item.square + '"] .piece');
-    if (!original) continue;
-    const clone = original.cloneNode(true);
+    const clone = item.clone;
+    if (!clone) continue;
     clone.classList.add("board-capture-ghost");
     clone.style.position = "fixed";
     clone.style.left = item.rect.left + "px";
