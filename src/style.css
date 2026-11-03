@@ -1194,6 +1194,13 @@
     text-align: center;
   }
   .promotion-card h2 { margin: 0; color: var(--text-1); font-size: 20px; }
+  .confirm-card { width: min(100%, 440px); text-align: left; }
+  .confirm-card h2 { margin-bottom: 8px; }
+  .confirm-message { margin: 0; color: var(--text-2); font-size: 14px; line-height: 1.55; overflow-wrap: anywhere; }
+  .confirm-actions { display: flex; justify-content: flex-end; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 22px; }
+  .confirm-actions .button.danger { border-color: var(--danger); background: var(--danger); color: #24100d; }
+  .confirm-actions .button.danger:hover:not(:disabled) { filter: brightness(1.08); }
+
   .promotion-card p { margin: 8px 0 18px; color: var(--text-2); font-size: 14px; }
   .promotion-options { display: grid; grid-template-columns: repeat(4, 1fr); gap: 9px; margin-bottom: 17px; }
   .promotion-choice {
