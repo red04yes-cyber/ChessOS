@@ -53,3 +53,13 @@ Accettazione scacchistica manuale ancora necessaria:
 3. Provare Opening Explorer / Gap Finder con un piccolo campione PGN e verificare frequenze e rami mancanti.
 4. Confermare che Tactical Trainer presenti gli esercizi come candidati euristici, non come puzzle certificati.
 5. Disconnettere la rete e verificare che il worker Stockfish locale funzioni quando gli asset sono installati.
+
+
+## Aggiornamenti e pubblicazione
+
+- Il plugin Tauri updater viene inizializzato con la capability `updater:default`.
+- I test frontend verificano check senza update, download, chiusura dopo errore e installazione solo quando l'app è sicura da riavviare.
+- Le release firmate usano `src-tauri/tauri.release.conf.json`, il bundle NSIS e il manifest statico `latest.json`.
+- La chiave privata è richiesta esclusivamente tramite secret GitHub Actions; la chiave pubblica resta nella configurazione di release.
+- Il push di un tag esegue solo CI. La pubblicazione richiede un avvio manuale su quel tag e la conferma esatta `PUBBLICA vX.Y.Z`.
+- Le installazioni precedenti al plugin updater richiedono una prima installazione manuale della build aggiornata; gli aggiornamenti successivi sono automatici.
