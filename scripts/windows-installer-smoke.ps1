@@ -14,7 +14,6 @@ if ($versionParts.Count -ne 3 -or $versionParts[2] -notmatch "^\d+$") {
     throw "Versione Tauri non semver a tre componenti: $originalVersion"
 }
 $upgradeVersion = "$($versionParts[0]).$($versionParts[1]).$([int]$versionParts[2] + 1)"
-$installerRestored = $false
 $baselineInstallerName = $null
 $appProcess = $null
 
@@ -151,7 +150,7 @@ try {
     if ($candidateConfig -eq $originalConfigText) {
         throw "Impossibile impostare la versione candidata $upgradeVersion in tauri.conf.json."
     }
-    Set-Content -Path $tauriConfigPath -Value $candidateConfig -Encoding UTF8
+    [System.IO.File]::WriteAllText($tauriConfigPath, $candidateConfig, [System.Text.UTF8Encoding]::new($false))
 
     Get-ChildItem -Path $nsisDir -Filter "*.exe" -File -ErrorAction SilentlyContinue |
         Remove-Item -Force
@@ -208,7 +207,7 @@ finally {
     if ($appProcess -and -not $appProcess.HasExited) {
         Stop-Process -Id $appProcess.Id -Force -ErrorAction SilentlyContinue
     }
-    Set-Content -Path $tauriConfigPath -Value $originalConfigText -Encoding UTF8
+    [System.IO.File]::WriteAllText($tauriConfigPath, $originalConfigText, [System.Text.UTF8Encoding]::new($false))
     if ((Test-Path -LiteralPath $baselineInstallerBackup) -and $baselineInstallerName) {
         if (-not (Test-Path -LiteralPath $nsisDir)) {
             New-Item -Path $nsisDir -ItemType Directory -Force | Out-Null
