@@ -8,8 +8,8 @@ This document describes the remaining owner-controlled steps for a public Chess 
 - [x] Rust/SQLite tests pass on Windows CI.
 - [x] NSIS installer builds and is uploaded by GitHub Actions.
 - [x] CI actions are pinned to Node 24-compatible releases.
-- [x] Windows installer smoke test is automated: baseline install, app launch, test-only patch upgrade, SQLite sentinel preservation, uninstall and data-retention check.
-- [x] CI retains installer artifacts for 90 days and emits a separate SHA-256 file.
+- [ ] Windows installer smoke test is automated: baseline install, app launch, test-only patch upgrade, SQLite sentinel preservation, uninstall and data-retention check; first run pending.
+- [ ] Verify the 90-day installer artifact and separate SHA-256 file on the next successful CI run.
 - [ ] Re-run and confirm the new install/upgrade/uninstall smoke test on the latest `main`.
 - [ ] Test on a separate clean Windows 10/11 VM or physical PC, including WebView2 bootstrapper behavior.
 - [ ] Choose and add the project licence.
