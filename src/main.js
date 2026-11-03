@@ -58,7 +58,6 @@ let studioMoveObjects = [];
 let studioPly = 0;
 let studioTree = new RepertoireTree(DEFAULT_FEN);
 let studioPath = [];
-let toastTimer = null;
 const desktopApp = isTauri();
 let engineStarted = false;
 let engineStarting = false;
@@ -1668,7 +1667,7 @@ document.addEventListener("keydown", (event) => {
       return;
     }
     if (event.key === "Tab") {
-      const options = [...promotionOptions.querySelectorAll("button:not(:disabled)")];
+      const options = [...promotionDialog.querySelectorAll("button:not(:disabled)")];
       const first = options[0];
       const last = options[options.length - 1];
       if (event.shiftKey && document.activeElement === first) {
