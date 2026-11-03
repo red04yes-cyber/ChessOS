@@ -2,6 +2,8 @@ import { Chess } from "chess.js";
 import { RepertoireTree } from "./repertoire-tree.js";
 import { ENDGAME_CATALOG, ENDGAME_LESSONS } from "./endgame-catalog.js";
 import { stockfish } from "./stockfish-engine.js";
+import { analyzeGameWithStockfish, analyzeOpponentPreparation, buildWeaknessHeatmap, centipawnLoss, isForcingTacticalMove } from "./chess-improvements.js";
+import { gradeMistakeFlashcard, selectDueMistakeFlashcards, upsertMistakeFlashcards } from "./mistake-flashcards.js";
 
 const GAME_IMPORT_KEY = "chess-os.imported-games.v1";
 const MAX_IMPORT_GAMES = 300;
@@ -38,7 +40,7 @@ function persistGames(pgn) {
   try { localStorage.setItem(GAME_IMPORT_KEY, pgn); } catch { throw new Error("Archivio locale pieno: esporta le partite o riduci il numero importato."); }
 }
 function fillPgnFields(pgn) {
-  for (const selector of ["#mistake-pgn", "#opponent-pgn", "#opening-pgn", "#generator-pgn", "#tactics-pgn"]) {
+  for (const selector of ["#mistake-pgn", "#opponent-pgn", "#opponent-prep-pgn", "#game-report-pgn", "#opening-pgn", "#generator-pgn", "#tactics-pgn"]) {
     const field = $(selector);
     if (field) field.value = pgn;
   }
@@ -244,7 +246,7 @@ function formatEngineResult(result) {
   return { evaluation, best: result.bestSan || "—", pv: result.pvSan.join(" ") || "—", depth: result.depth };
 }
 
-export function initializeChessSuite({ getCurrentTree, loadGeneratedTree, getCurrentFen, getCurrentEdge, onAnnotationSaved, onError }) {
+export function initializeChessSuite({ getCurrentTree, loadGeneratedTree, getCurrentFen, getCurrentEdge, getStudyMetrics = () => ({ reviewCards: [], reviewLogs: [] }), onAnnotationSaved, onError }) {
   const engine = stockfish;
   let endgameGame = new Chess();
   let endgameBoard;
@@ -257,6 +259,14 @@ export function initializeChessSuite({ getCurrentTree, loadGeneratedTree, getCur
   let tacticsBoard;
   let tacticsGame = null;
   let tacticsLoading = false;
+  let latestGameReport = null;
+  let mistakeCards = readMistakeFlashcards();
+  let mistakeQueue = [];
+  let currentMistakeCard = null;
+  let mistakeCardRevealed = false;
+  let blindfoldQueue = [];
+  let blindfoldIndex = 0;
+  let blindfoldAnswered = false;
   let importedPgn = getStoredGames();
   let endgameLesson = ENDGAME_LESSONS[0];
   let endgameCards = readEndgameProgress();
@@ -526,9 +536,10 @@ export function initializeChessSuite({ getCurrentTree, loadGeneratedTree, getCur
     if (!games.length) { message("#tactics-status", "Importa partite PGN prima di creare esercizi."); return; }
     const button = $("#tactics-create");
     tacticsLoading = true;
-    setButtonBusy(button, true, "Analisi motore…");
+    setButtonBusy(button, true, "Verifica tattiche…");
     puzzleQueue = [];
     let analyzed = 0;
+    let rejected = 0;
     try {
       const candidates = [];
       const seenPositions = new Set();
@@ -537,38 +548,60 @@ export function initializeChessSuite({ getCurrentTree, loadGeneratedTree, getCur
         const chess = new Chess();
         try { chess.loadPgn(source); } catch { continue; }
         const moves = chess.history({ verbose: true });
-        // Sample the full game rather than exhausting the opening of the first PGN.
-        for (let index = 4; index < moves.length - 2 && candidates.length < 18; index += 4) {
+        for (let index = 4; index < moves.length - 2 && candidates.length < 18; index += 2) {
           const move = moves[index];
-          if (seenPositions.has(move.before)) continue;
-          seenPositions.add(move.before);
-          candidates.push({ fen: move.before, played: move.san, color: move.color, playedFen: move.after });
+          const key = move.before.trim().split(/\\s+/).slice(0, 4).join(" ");
+          if (seenPositions.has(key)) continue;
+          seenPositions.add(key);
+          candidates.push({
+            fen: move.before,
+            played: move.san,
+            color: move.color,
+            playedFen: move.after,
+          });
         }
       }
       for (const [index, candidate] of candidates.entries()) {
-        message("#tactics-status", `Analisi delle opportunità tattiche: ${index + 1}/${candidates.length}…`);
-        const before = await engine.analyze(candidate.fen, 11);
-        const after = await engine.analyze(candidate.playedFen, 11);
+        message("#tactics-status", "Verifica qualità e unicità della soluzione: " + (index + 1) + "/" + candidates.length + "…");
+        const before = await engine.analyze(candidate.fen, 13, 3);
+        const after = await engine.analyze(candidate.playedFen, 13, 1);
         analyzed += 1;
-        if (!before.bestmove || before.bestmove === "(none)" || before.bestSan === candidate.played) continue;
-        const loss = before.scoreCp === null || after.scoreCp === null ? 0 : Math.round((before.scoreCp + after.scoreCp));
-        if (loss < 120) continue;
+        const loss = centipawnLoss(before, after);
+        const best = before.bestmove && before.bestmove !== "(none)" ? before.bestmove : null;
+        const margin = before.scoreGapCp;
+        const forcing = isForcingTacticalMove(candidate.fen, before.pvUci || []);
+        if (!best || !before.bestSan || before.bestSan === candidate.played
+            || loss === null || loss < 150
+            || margin === null || margin < 35
+            || !forcing) {
+          rejected += 1;
+          continue;
+        }
         puzzleQueue.push({
-          id: candidate.fen + "|" + before.bestmove,
+          id: candidate.fen + "|" + best,
           fen: candidate.fen,
-          expectedUci: before.bestmove,
+          expectedUci: best,
           expectedSan: before.bestSan,
           playedSan: candidate.played,
           lossCp: loss,
+          marginCp: margin,
+          confidence: Math.min(99, Math.round(60 + Math.min(25, (loss - 150) / 12) + Math.min(14, (margin - 35) / 8))),
           color: candidate.color,
           pv: before.pvSan,
         });
       }
-      puzzleQueue.sort((a, b) => b.lossCp - a.lossCp);
-      message("#tactics-status", `${analyzed} posizioni analizzate · ${puzzleQueue.length} candidati tattici trovati. La stima è una selezione preliminare, non un'etichetta di blunder certificata.`);
+      puzzleQueue.sort((a, b) => b.confidence - a.confidence || b.lossCp - a.lossCp);
+      message("#tactics-status",
+        analyzed + " posizioni analizzate · " + puzzleQueue.length + " esercizi ad alta selettività · "
+        + rejected + " candidati scartati. Filtro: perdita ≥1,50 pedoni, soluzione distinta e linea forzante."
+      );
       loadNextTactic();
-    } catch (error) { message("#tactics-status", "Analisi tattica interrotta: " + error.message); }
-    finally { tacticsLoading = false; setButtonBusy(button, false); }
+    } catch (error) {
+      message("#tactics-status", "Analisi tattica interrotta: " + error.message);
+    } finally {
+      tacticsLoading = false;
+      setButtonBusy(button, false);
+    }
   }
 
   function loadNextTactic() {
@@ -597,6 +630,342 @@ export function initializeChessSuite({ getCurrentTree, loadGeneratedTree, getCur
     }
     message("#tactics-answer", "Corretto: " + currentPuzzle.expectedSan + ". " + currentPuzzle.pv.join(" "));
     loadNextTactic();
+  }
+
+  function readMistakeFlashcards() {
+    try {
+      const saved = JSON.parse(localStorage.getItem("chess-os.mistake-cards.v1") || "[]");
+      return Array.isArray(saved) ? saved.filter((card) => card && typeof card.id === "string" && card.fsrs) : [];
+    } catch { return []; }
+  }
+
+  function persistMistakeFlashcards() {
+    try {
+      localStorage.setItem("chess-os.mistake-cards.v1", JSON.stringify(mistakeCards));
+      return true;
+    } catch {
+      message("#mistake-cards-summary", "Memoria locale piena: esporta i dati prima di continuare.");
+      return false;
+    }
+  }
+
+  function renderMistakeFlashcardSummary() {
+    const due = selectDueMistakeFlashcards(mistakeCards, new Date(), 1000).length;
+    message("#mistake-cards-summary", mistakeCards.length + " carte generate dagli errori · " + due + " da ripassare oggi. Programmazione FSRS-6 locale.");
+    const start = $("#mistake-cards-start");
+    if (start) start.disabled = mistakeCards.length === 0;
+  }
+
+  function saveMistakeCardsFromReport() {
+    if (!latestGameReport?.mistakes?.length) {
+      message("#mistake-cards-summary", "Prima analizza una partita e genera almeno un errore.");
+      return;
+    }
+    const result = upsertMistakeFlashcards(mistakeCards, latestGameReport.mistakes);
+    mistakeCards = result.cards;
+    if (!persistMistakeFlashcards()) return;
+    renderMistakeFlashcardSummary();
+    message("#mistake-cards-summary", result.added + " nuove carte · " + result.updated + " aggiornate · " + mistakeCards.length + " totali. Le ripetizioni non azzerano la memoria FSRS.");
+  }
+
+  function renderCurrentMistakeCard() {
+    const session = $("#mistake-card-session");
+    if (!currentMistakeCard) {
+      if (session) session.hidden = true;
+      message("#mistake-card-front", "Nessuna carta attiva.");
+      return;
+    }
+    if (session) session.hidden = false;
+    $("#mistake-card-front").textContent =
+      currentMistakeCard.opening + " · perdita stimata " + (currentMistakeCard.lossCp / 100).toFixed(2)
+      + " · mossa originale " + (currentMistakeCard.playedSan || "—");
+    const board = $("#mistake-card-board");
+    if (board) renderMiniBoard(board, new Chess(currentMistakeCard.fen), null, () => {});
+    $("#mistake-card-answer").value = "";
+    $("#mistake-card-answer").disabled = false;
+    $("#mistake-card-check").disabled = false;
+    $("#mistake-card-reveal").hidden = false;
+    $("#mistake-card-grades").hidden = true;
+    message("#mistake-card-feedback", "Trova la mossa migliore. Inserisci SAN (es. Nf3) oppure UCI (es. g1f3).");
+  }
+
+  function loadNextMistakeCard() {
+    currentMistakeCard = mistakeQueue.shift() || null;
+    mistakeCardRevealed = false;
+    renderCurrentMistakeCard();
+    if (!currentMistakeCard) {
+      message("#mistake-card-feedback", "Sessione terminata: nessun'altra carta scaduta.");
+      renderMistakeFlashcardSummary();
+      return;
+    }
+    message("#mistake-card-feedback", "Carta " + (mistakeCards.length - mistakeQueue.length) + " · trova la mossa corretta.");
+  }
+
+  function startMistakeCardReview() {
+    const due = selectDueMistakeFlashcards(mistakeCards, new Date(), 30);
+    if (!due.length) {
+      const next = [...mistakeCards].sort((a, b) => new Date(a.fsrs.due) - new Date(b.fsrs.due))[0];
+      message("#mistake-card-feedback", next
+        ? "Nessuna carta scaduta. Prossimo ripasso: " + new Date(next.fsrs.due).toLocaleString("it-IT") + "."
+        : "Genera prima le carte dagli errori di una partita.");
+      return;
+    }
+    mistakeQueue = due.slice(1);
+    currentMistakeCard = due[0];
+    mistakeCardRevealed = false;
+    renderCurrentMistakeCard();
+    message("#mistake-card-feedback", "Hai " + due.length + " carte scadute in questa sessione. Trova la mossa corretta.");
+  }
+
+  function revealMistakeCard() {
+    if (!currentMistakeCard) return;
+    mistakeCardRevealed = true;
+    $("#mistake-card-answer").disabled = true;
+    $("#mistake-card-check").disabled = true;
+    $("#mistake-card-reveal").hidden = true;
+    $("#mistake-card-grades").hidden = false;
+    message("#mistake-card-feedback", "Soluzione: " + currentMistakeCard.expectedSan + ". Valuta quanto era facile ricordarla.");
+  }
+
+  function checkMistakeCardAnswer() {
+    if (!currentMistakeCard || mistakeCardRevealed) return;
+    const answer = $("#mistake-card-answer").value.trim();
+    if (!answer) {
+      message("#mistake-card-feedback", "Inserisci una mossa in notazione SAN o UCI.");
+      return;
+    }
+    const normalize = (value) => String(value).replace(/[+#?!]/g, "").replace(/0/g, "O").toLocaleLowerCase();
+    if (normalize(answer) === normalize(currentMistakeCard.expectedSan)
+        || answer.toLocaleLowerCase() === currentMistakeCard.expectedUci.toLocaleLowerCase()) {
+      message("#mistake-card-feedback", "Corretto. Soluzione: " + currentMistakeCard.expectedSan + ". Valuta il ripasso.");
+      revealMistakeCard();
+    } else {
+      message("#mistake-card-feedback", "Non è la mossa prevista. Riprova oppure mostra la soluzione.");
+    }
+  }
+
+  function gradeCurrentMistakeCard(event) {
+    const rating = event.currentTarget?.dataset?.rating;
+    if (!currentMistakeCard || !mistakeCardRevealed || !["again", "hard", "good", "easy"].includes(rating)) return;
+    try {
+      const updated = gradeMistakeFlashcard(currentMistakeCard, rating);
+      mistakeCards = mistakeCards.map((card) => card.id === updated.id ? updated : card);
+      if (!persistMistakeFlashcards()) return;
+      loadNextMistakeCard();
+    } catch (error) {
+      message("#mistake-card-feedback", "Non riesco a pianificare il ripasso: " + error.message);
+    }
+  }
+
+  function renderGameAnalysisReport(report) {
+    const target = $("#game-report-results");
+    if (!target) return;
+    target.replaceChildren();
+    const summary = document.createElement("p");
+    summary.textContent = report.gamesRead + " partite valide · " + report.pliesAnalyzed + " semimosse analizzate · "
+      + report.categories.inaccuracy + " imprecisioni · " + report.categories.mistake + " errori · "
+      + report.categories.blunder + " errori gravi · perdita media " + (report.averageLossCp === null ? "n/d" : (report.averageLossCp / 100).toFixed(2) + " pedoni") + ".";
+    target.append(summary);
+    for (const item of report.mistakes.slice(0, 15)) {
+      const row = document.createElement("div");
+      row.className = "suite-report-row";
+      const title = document.createElement("strong");
+      title.textContent = item.white + " – " + item.black + " · " + item.opening + " · " + item.moveNumber + (item.color === "w" ? "." : "…");
+      const detail = document.createElement("p");
+      detail.textContent = item.playedSan + " giocata · migliore: " + (item.bestSan || "non disponibile")
+        + " · " + (item.lossCp / 100).toFixed(2) + " pedoni · " + item.category;
+      const line = document.createElement("p");
+      line.textContent = "Variante motore: " + (item.pv.join(" ") || "non disponibile");
+      row.append(title, detail, line);
+      target.append(row);
+    }
+    if (!report.mistakes.length) {
+      const empty = document.createElement("p");
+      empty.textContent = "Nessuna imprecisione oltre la soglia impostata nel campione analizzato.";
+      target.append(empty);
+    }
+    const saveButton = $("#mistake-cards-create");
+    if (saveButton) saveButton.disabled = report.mistakes.length === 0;
+  }
+
+  async function runGameAnalysisReport() {
+    const pgn = $("#game-report-pgn").value.trim() || importedPgn;
+    if (!pgn) {
+      message("#game-report-status", "Importa o incolla almeno una partita PGN.");
+      return;
+    }
+    const button = $("#game-report-run");
+    setButtonBusy(button, true, "Analisi delle mosse…");
+    latestGameReport = null;
+    if ($("#mistake-cards-create")) $("#mistake-cards-create").disabled = true;
+    message("#game-report-status", "Stockfish sta valutando le posizioni. Profondità 10, massimo 48 semimosse per partita e fino a 3 partite.");
+    try {
+      latestGameReport = await analyzeGameWithStockfish(pgn, engine, {
+        depth: 10,
+        maxGames: 3,
+        maxPlies: 48,
+        thresholdCp: 50,
+        onProgress: (progress) => message("#game-report-status",
+          "Analisi partita " + progress.game + "/" + progress.games + " · semimossa " + progress.ply + "/" + progress.plies + "…"),
+      });
+      renderGameAnalysisReport(latestGameReport);
+      message("#game-report-status", "Report pronto. Le categorie sono stime in centipawn, non giudizi assoluti sulla qualità umana.");
+    } catch (error) {
+      message("#game-report-status", "Report non completato: " + error.message);
+    } finally {
+      setButtonBusy(button, false);
+    }
+  }
+
+  function runOpponentPreparation() {
+    const pgn = $("#opponent-prep-pgn").value.trim() || importedPgn;
+    const name = $("#opponent-prep-name").value.trim();
+    try {
+      const report = analyzeOpponentPreparation(pgn, name, $("#opponent-prep-side").value, 24);
+      const target = $("#opponent-prep-report");
+      target.replaceChildren();
+      const summary = document.createElement("p");
+      summary.textContent = report.gamesRead + " partite considerate · " + report.ignored + " ignorate · Bianco " + report.colors.white + " · Nero " + report.colors.black + ".";
+      target.append(summary);
+      for (const opening of report.openings.slice(0, 8)) {
+        const row = document.createElement("div");
+        row.className = "suite-report-row";
+        const title = document.createElement("strong");
+        title.textContent = opening.name + " · " + opening.games + " occorrenze (" + opening.percentage + "%)";
+        const outcomes = document.createElement("p");
+        outcomes.textContent = "Risultati dal punto di vista dell'avversario: " + opening.wins + " vittorie, " + opening.draws + " patte, " + opening.losses + " sconfitte.";
+        row.append(title, outcomes);
+        target.append(row);
+      }
+      const first = document.createElement("p");
+      first.textContent = "Prime mosse più frequenti: " + report.firstMoves.map((item) => item.san + " (" + item.percentage + "%)").join(" · ");
+      target.append(first);
+      for (const preference of report.movePreferences.slice(0, 6)) {
+        const row = document.createElement("div");
+        row.className = "suite-report-row";
+        const heading = document.createElement("strong");
+        heading.textContent = "Scelta " + preference.turn + " dell'avversario";
+        const moves = document.createElement("p");
+        moves.textContent = preference.moves.map((item) => item.san + " (" + item.percentage + "%)").join(" · ");
+        row.append(heading, moves);
+        target.append(row);
+      }
+      message("#opponent-prep-status", "Preparazione pronta. Le percentuali sono calcolate soltanto sulle partite PGN caricate.");
+    } catch (error) {
+      message("#opponent-prep-status", "Preparazione non riuscita: " + error.message);
+    }
+  }
+
+  function renderRepertoireWeaknessHeatmap() {
+    try {
+      const metrics = getStudyMetrics() || {};
+      const report = buildWeaknessHeatmap(getCurrentTree(), metrics.reviewCards || [], metrics.reviewLogs || [], new Date());
+      const target = $("#weakness-heatmap-report");
+      target.replaceChildren();
+      const summary = document.createElement("p");
+      summary.textContent = report.reviewedMoves + "/" + report.totalMoves + " mosse con almeno un ripasso registrato. Le posizioni senza cronologia restano non misurabili.";
+      target.append(summary);
+      for (const item of report.positions.slice(0, 16)) {
+        const row = document.createElement("div");
+        row.className = "suite-report-row";
+        const title = document.createElement("strong");
+        title.textContent = item.moves.join(" / ") + " · " + item.label;
+        const detail = document.createElement("p");
+        detail.textContent = item.accuracy === null
+          ? "Nessun dato FSRS · " + item.overdue + " carte scadute."
+          : item.accuracy + "% richiamo · " + item.reviews + " ripassi · " + item.misses + " errori · " + item.overdue + " carte scadute · " + item.confidence;
+        row.append(title, detail);
+        target.append(row);
+      }
+      message("#weakness-heatmap-status", report.totalMoves
+        ? "Heatmap costruita dalla cronologia FSRS del repertorio attivo."
+        : "Nessuna mossa allenabile nel repertorio attivo.");
+    } catch (error) {
+      message("#weakness-heatmap-status", "Heatmap non disponibile: " + error.message);
+    }
+  }
+
+  function renderBlindfoldPrompt() {
+    const entry = blindfoldQueue[blindfoldIndex];
+    const input = $("#blindfold-answer");
+    if (!entry) {
+      message("#blindfold-prompt", "Percorso Blindfold completato.");
+      message("#blindfold-feedback", "Hai terminato tutte le mosse selezionate.");
+      if (input) input.disabled = true;
+      $("#blindfold-check").disabled = true;
+      $("#blindfold-reveal").disabled = true;
+      $("#blindfold-next").disabled = true;
+      return;
+    }
+    const position = new Chess(entry.fen);
+    const turn = position.turn() === "w" ? "Bianco" : "Nero";
+    const moveNo = position.fen().split(/\\s+/)[5] || "1";
+    message("#blindfold-prompt", "Mossa " + moveNo + (position.turn() === "w" ? "." : "…") + " · " + turn + " al tratto · " + (blindfoldIndex + 1) + "/" + blindfoldQueue.length);
+    message("#blindfold-feedback", "Richiama la prossima mossa senza guardare la scacchiera. Sono accettate SAN e UCI.");
+    if (input) {
+      input.disabled = false;
+      input.value = "";
+      input.focus();
+    }
+    $("#blindfold-check").disabled = false;
+    $("#blindfold-reveal").disabled = false;
+    $("#blindfold-next").disabled = true;
+    blindfoldAnswered = false;
+  }
+
+  function startBlindfold() {
+    const tree = getCurrentTree();
+    const selectedSide = $("#blindfold-side").value;
+    const path = tree?.mainlinePath?.() || [];
+    blindfoldQueue = path.map((id) => {
+      const edge = tree.getEdge(id);
+      const node = edge ? tree.getNode(edge.from) : null;
+      return edge && node ? { fen: node.fen, san: edge.san, uci: edge.uci } : null;
+    }).filter(Boolean).filter((entry) => {
+      const side = new Chess(entry.fen).turn();
+      return selectedSide === "both" || (selectedSide === "white" ? side === "w" : side === "b");
+    });
+    blindfoldIndex = 0;
+    if (!blindfoldQueue.length) {
+      message("#blindfold-prompt", "Il repertorio attivo non contiene mosse per il lato selezionato.");
+      return;
+    }
+    $("#blindfold-answer").value = "";
+    renderBlindfoldPrompt();
+  }
+
+  function checkBlindfoldAnswer() {
+    const entry = blindfoldQueue[blindfoldIndex];
+    if (!entry || blindfoldAnswered) return;
+    const answer = $("#blindfold-answer").value.trim();
+    if (!answer) {
+      message("#blindfold-feedback", "Inserisci una mossa SAN o UCI.");
+      return;
+    }
+    const normalize = (value) => String(value).replace(/[+#?!]/g, "").replace(/0/g, "O").toLocaleLowerCase();
+    if (normalize(answer) === normalize(entry.san) || answer.toLocaleLowerCase() === entry.uci.toLocaleLowerCase()) {
+      blindfoldAnswered = true;
+      $("#blindfold-next").disabled = false;
+      $("#blindfold-check").disabled = true;
+      message("#blindfold-feedback", "Corretto: " + entry.san + ". Premi Avanti per continuare.");
+    } else {
+      message("#blindfold-feedback", "Mossa non corretta. Riprova oppure rivela la soluzione.");
+    }
+  }
+
+  function revealBlindfoldAnswer() {
+    const entry = blindfoldQueue[blindfoldIndex];
+    if (!entry) return;
+    blindfoldAnswered = true;
+    $("#blindfold-next").disabled = false;
+    $("#blindfold-check").disabled = true;
+    message("#blindfold-feedback", "Soluzione: " + entry.san + " · UCI " + entry.uci + " · FEN prima della mossa: " + entry.fen);
+  }
+
+  function nextBlindfoldMove() {
+    if (!blindfoldAnswered) return;
+    blindfoldIndex += 1;
+    renderBlindfoldPrompt();
   }
 
   function endgameMoveChanged(chess) {
@@ -632,9 +1001,25 @@ export function initializeChessSuite({ getCurrentTree, loadGeneratedTree, getCur
     $("#analyze-current")?.addEventListener("click", analyzeCurrentPosition);
     $("#tactics-create")?.addEventListener("click", createTacticalPuzzles);
     $("#tactics-next")?.addEventListener("click", loadNextTactic);
+    $("#game-report-run")?.addEventListener("click", runGameAnalysisReport);
+    $("#mistake-cards-create")?.addEventListener("click", saveMistakeCardsFromReport);
+    $("#mistake-cards-start")?.addEventListener("click", startMistakeCardReview);
+    $("#mistake-card-check")?.addEventListener("click", checkMistakeCardAnswer);
+    $("#mistake-card-reveal")?.addEventListener("click", revealMistakeCard);
+    $("#mistake-card-answer")?.addEventListener("keydown", (event) => { if (event.key === "Enter") checkMistakeCardAnswer(); });
+    $("#mistake-card-grades")?.addEventListener("click", (event) => {
+      if (event.target.closest("[data-rating]")) gradeCurrentMistakeCard({ currentTarget: event.target.closest("[data-rating]") });
+    });
+    $("#blindfold-start")?.addEventListener("click", startBlindfold);
+    $("#blindfold-check")?.addEventListener("click", checkBlindfoldAnswer);
+    $("#blindfold-reveal")?.addEventListener("click", revealBlindfoldAnswer);
+    $("#blindfold-next")?.addEventListener("click", nextBlindfoldMove);
+    $("#weakness-heatmap-run")?.addEventListener("click", renderRepertoireWeaknessHeatmap);
+    $("#opponent-prep-run")?.addEventListener("click", runOpponentPreparation);
     $("#annotation-save")?.addEventListener("click", saveAnnotation);
     refreshAnnotation();
     updateEndgameSummary();
+    renderMistakeFlashcardSummary();
     if (importedPgn) {
       fillPgnFields(importedPgn);
       message("#account-import-status", `Archivio PGN locale caricato: ${splitPgnGames(importedPgn).length} partite.`);
