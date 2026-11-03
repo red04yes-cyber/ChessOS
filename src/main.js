@@ -655,7 +655,23 @@ function renderTranspositions() {
     const card = makeElement("div", "transposition-entry");
     card.append(makeElement("strong", "", group.paths.length + " sequenze → stessa posizione"));
     card.append(makeElement("small", "", group.fen.split(/\s+/)[0]));
-    for (const path of group.paths) card.append(makeElement("p", "transposition-path", path.moves));
+    for (const path of group.paths) {
+      const open = makeElement("button", "transposition-path-button", path.moves || "Posizione iniziale");
+      open.type = "button";
+      open.title = "Apri questa sequenza nel repertorio";
+      open.addEventListener("click", () => {
+        try {
+          syncStudioPath(path.edgeIds);
+          selectedSquare = null;
+          mode = "studio";
+          renderAll();
+          showToast("Sequenza della trasposizione aperta.");
+        } catch (error) {
+          showToast("Impossibile aprire la sequenza: " + error.message);
+        }
+      });
+      card.append(open);
+    }
     list.append(card);
   }
 }
