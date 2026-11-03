@@ -1,4 +1,6 @@
 import { Chess } from "chess.js";
+import { squareAccessibleLabel } from "./board-accessibility.js";
+import { nextBoardSquare } from "./board-navigation.js";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { RepertoireTree } from "./repertoire-tree.js";
@@ -39,6 +41,7 @@ let mode = "studio";
 let chessSuite = null;
 let selectedSquare = null;
 let boardFlipped = false;
+let boardFocusSquare = null;
 let pendingPromotion = null;
 const persistenceMode = isTauri() ? "sqlite" : "browser";
 let databaseReady = persistenceMode === "browser";
@@ -397,6 +400,7 @@ function updateBoardCoordinates() {
 }
 
 function renderBoard() {
+  const restoreBoardFocus = boardElement.contains(document.activeElement);
   const chess = activeGame();
   const board = chess.board();
   const legalTargets = new Set(
@@ -430,6 +434,7 @@ function renderBoard() {
       const isLight = (displayRow + displayCol) % 2 === 0;
       button.type = "button";
       button.dataset.square = square;
+      button.tabIndex = square === (boardFocusSquare || selectedSquare || (boardFlipped ? "h1" : "a8")) ? 0 : -1;
       button.className = "square " + (isLight ? "light" : "dark");
       if (selectedSquare === square) button.classList.add("selected");
       if (lastSquares.has(square)) button.classList.add("last-move");
@@ -441,10 +446,9 @@ function renderBoard() {
         pieceSpan.className = "piece " + (piece.color === "w" ? "white-piece" : "black-piece");
         pieceSpan.textContent = symbols[piece.color][piece.type];
         button.append(pieceSpan);
-        button.setAttribute("aria-label", (piece.color === "w" ? "Bianco " : "Nero ") + piece.type + " in " + square);
-      } else {
-        button.setAttribute("aria-label", square);
       }
+      button.setAttribute("aria-label", squareAccessibleLabel(piece, square));
+      button.setAttribute("aria-pressed", selectedSquare === square ? "true" : "false");
       boardElement.append(button);
     }
   }
@@ -469,6 +473,9 @@ function renderBoard() {
   $("#undo").disabled = mode !== "studio" || studioPly === 0;
   $("#redo").disabled = mode !== "studio" || studioPly >= studioSans.length;
   $("#flip-board").textContent = boardFlipped ? "Vista Bianco" : "Vista Nero";
+  if (restoreBoardFocus && boardFocusSquare) {
+    boardElement.querySelector('button[data-square="' + boardFocusSquare + '"]')?.focus({ preventScroll: true });
+  }
 }
 
 function renderMoves() {
@@ -2431,7 +2438,21 @@ async function copyFen() {
 
 boardElement.addEventListener("click", (event) => {
   const squareButton = event.target.closest("button[data-square]");
-  if (squareButton) handleSquareClick(squareButton.dataset.square);
+  if (!squareButton) return;
+  boardFocusSquare = squareButton.dataset.square;
+  handleSquareClick(boardFocusSquare);
+});
+
+boardElement.addEventListener("keydown", (event) => {
+  const squareButton = event.target.closest("button[data-square]");
+  if (!squareButton) return;
+  const nextSquare = nextBoardSquare(squareButton.dataset.square, event.key, boardFlipped);
+  if (!nextSquare) return;
+  event.preventDefault();
+  event.stopPropagation();
+  boardFocusSquare = nextSquare;
+  renderBoard();
+  boardElement.querySelector('button[data-square="' + nextSquare + '"]')?.focus({ preventScroll: true });
 });
 
 $("#open-online-import").addEventListener("click", openOnlineImportDialog);
