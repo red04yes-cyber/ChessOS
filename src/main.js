@@ -729,7 +729,7 @@ function clearDragState() {
 }
 
 function beginBoardDrag(event) {
-  if (event.button !== 0 || event.isPrimary === false || mode === "studio" && chessLab && !chessLab.canHumanMove()) return;
+  if (event.button !== 0 || event.isPrimary === false || trainingErrorAnimating || (mode === "studio" && chessLab && !chessLab.canHumanMove())) return;
   const squareButton = event.target.closest?.(".square[data-square]");
   if (!squareButton) return;
   const chess = activeGame();
@@ -751,7 +751,7 @@ function beginBoardDrag(event) {
 }
 
 function moveBoardDrag(event) {
-  if (!dragState || event.pointerId !== dragState.pointerId) return;
+  if (!dragState || event.pointerId !== dragState.pointerId || trainingErrorAnimating) return;
   const distance = Math.hypot(event.clientX - dragState.startX, event.clientY - dragState.startY);
   if (!dragState.active && distance < 5) return;
 
@@ -869,6 +869,10 @@ function renderBoard() {
       if (lastSquares.has(square)) button.classList.add("last-move");
       if (checkedKingSquare === square) button.classList.add("in-check");
       if (legalTargets.has(square)) button.classList.add(piece ? "capture-target" : "legal-target");
+      const expectedTrainingMove = mode === "training" ? trainingMoves[trainingIndex] : null;
+      if (expectedTrainingMove && trainingHintLevel >= 1 && square === expectedTrainingMove.from) button.classList.add("hint-source");
+      if (expectedTrainingMove && trainingHintLevel >= 2 && square === expectedTrainingMove.to) button.classList.add("hint-target");
+      if (mode === "training" && (!trainingMoves.length || trainingErrorAnimating)) button.disabled = true;
 
       if (piece) {
         button.append(createPieceElement(piece.color, piece.type));
@@ -1112,6 +1116,7 @@ function renderMode() {
   $("#save-line").disabled = training || !databaseReady;
   $("#reset").textContent = training ? "Esci dall'allenamento" : "Nuovo";
   document.body.dataset.mode = training ? "training" : "studio";
+  $("#training-session-card").hidden = !training;
   $("#flip-board").disabled = false;
 }
 function renderVariations() {
@@ -1195,7 +1200,7 @@ function startTrainingTimer() {
   stopTrainingTimer();
   trainingElapsedSeconds = 0;
   trainingTimer = window.setInterval(() => {
-    if (mode !== "training" || document.visibilityState !== "visible") return;
+    if (mode !== "training" || trainingIndex >= trainingMoves.length || document.visibilityState !== "visible") return;
     trainingElapsedSeconds += 1;
     renderTrainingSession();
   }, 1000);
@@ -1357,6 +1362,7 @@ function renderAll() {
   renderVariations();
   renderRepertoire();
   renderMode();
+  renderTrainingSession();
   chessLab?.onPositionChanged();
 }
 
@@ -1474,6 +1480,7 @@ function commitSelectedMove(selectedMove) {
 }
 
 function handleSquareClick(square) {
+  if (trainingErrorAnimating || (mode === "training" && !trainingMoves.length)) return;
   const chess = activeGame();
   if (pendingPromotion) return;
   if (chessLab && !chessLab.canHumanMove()) {
