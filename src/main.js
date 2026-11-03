@@ -153,6 +153,11 @@ function setDirty(value = true) {
   indicator.classList.toggle("unsaved", dirty);
 }
 
+function confirmDiscardChanges(action) {
+  if (!dirty) return true;
+  return window.confirm("Ci sono modifiche non salvate. Vuoi eliminarle e " + action + "?");
+}
+
 function gameStatus(chess) {
   if (chess.isCheckmate()) return "Scacco matto · vince il " + (chess.turn() === "w" ? "Nero" : "Bianco");
   if (chess.isStalemate()) return "Stallo · patta";
@@ -617,7 +622,7 @@ function handleSquareClick(square) {
 
 function openLine(id) {
   const line = repertoire.find((item) => item.id === id);
-  if (!line) return;
+  if (!line || !confirmDiscardChanges("aprire un'altra linea")) return;
   try {
     const loaded = line.tree ? RepertoireTree.fromJSON(line.tree) : RepertoireTree.fromPgn(line.pgn);
     rebuildTimeline(loaded);
@@ -747,6 +752,7 @@ function importPgn() {
   }
   try {
     const imported = RepertoireTree.fromPgn(text);
+    if (!confirmDiscardChanges("importare questo PGN")) return;
     rebuildTimeline(imported);
     mode = "studio";
     activeLineId = null;
@@ -774,7 +780,7 @@ function exportPgn() {
   document.body.append(anchor);
   anchor.click();
   anchor.remove();
-  URL.revokeObjectURL(url);
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
   showToast("File PGN esportato.");
 }
 
@@ -783,6 +789,7 @@ function newPosition() {
     leaveTraining();
     return;
   }
+  if (!confirmDiscardChanges("iniziare una nuova linea")) return;
   baseFen = DEFAULT_FEN;
   studioTree = new RepertoireTree(DEFAULT_FEN);
   syncStudioPath([]);
@@ -793,7 +800,6 @@ function newPosition() {
   titleInput.value = "Nuova linea";
   setDirty(true);
   renderAll();
-void initializePersistence();
 }
 
 async function copyFen() {
@@ -854,7 +860,11 @@ document.addEventListener("keydown", (event) => {
   }
   if (mode !== "studio" || pendingPromotion) return;
   const target = event.target;
-  if (target instanceof HTMLElement && (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT", "BUTTON"].includes(target.tagName))) return;
+  if (target instanceof HTMLElement && (
+    target.isContentEditable
+    || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)
+    || (target.tagName === "BUTTON" && !target.matches(".square, .san-move"))
+  )) return;
   if (event.key === "ArrowLeft" && studioPly > 0) {
     event.preventDefault();
     positionForPly(studioPly - 1);
@@ -865,3 +875,4 @@ document.addEventListener("keydown", (event) => {
 });
 
 renderAll();
+void initializePersistence();
