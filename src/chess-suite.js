@@ -244,7 +244,7 @@ function formatEngineResult(result) {
   return { evaluation, best: result.bestSan || "—", pv: result.pvSan.join(" ") || "—", depth: result.depth };
 }
 
-export function initializeChessSuite({ getCurrentTree, loadGeneratedTree, getCurrentFen, getCurrentEdge, onAnnotationSaved, onError }) {
+export function initializeChessSuite({ getCurrentTree, loadGeneratedTree, getCurrentFen, getCurrentEdge, onAnnotationSaved, onImportedGames, onError }) {
   const engine = stockfish;
   let endgameGame = new Chess();
   let endgameBoard;
@@ -441,6 +441,7 @@ export function initializeChessSuite({ getCurrentTree, loadGeneratedTree, getCur
       importedPgn = pgn;
       persistGames(pgn);
       fillPgnFields(pgn);
+      onImportedGames?.(pgn);
       message("#account-import-status", `Importate ${games.length} partite da ${provider}. Le partite sono disponibili in Opening Explorer, Tactics e preparazione avversario.`);
       message("#opening-summary", `Archivio pronto: ${games.length} partite importate.`);
     } catch (error) { message("#account-import-status", "Importazione non riuscita: " + error.message); }
@@ -637,6 +638,7 @@ export function initializeChessSuite({ getCurrentTree, loadGeneratedTree, getCur
     updateEndgameSummary();
     if (importedPgn) {
       fillPgnFields(importedPgn);
+      onImportedGames?.(importedPgn);
       message("#account-import-status", `Archivio PGN locale caricato: ${splitPgnGames(importedPgn).length} partite.`);
     }
   }
