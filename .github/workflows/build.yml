@@ -47,6 +47,7 @@ jobs:
       - name: Install stable Rust toolchain and MSVC target
         uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8
         with:
+          toolchain: stable
           targets: x86_64-pc-windows-msvc
       - name: Install dependencies
         run: npm install --no-audit --no-fund
