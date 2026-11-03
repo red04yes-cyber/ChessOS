@@ -2972,6 +2972,29 @@ $("#fen-editor-standard").addEventListener("click", () => {
 });
 $("#fen-editor-apply").addEventListener("click", applyFenEditorPosition);
 $("#save-line").addEventListener("click", saveLine);
+$("#select-pgn-file").addEventListener("click", () => $("#pgn-file").click());
+$("#pgn-file").addEventListener("change", async (event) => {
+  const input = event.currentTarget;
+  const file = input.files?.[0];
+  if (!file) return;
+  try {
+    if (file.size > 10_000_000) {
+      showToast("Il file PGN supera il limite di 10 MB.", { type: "warning" });
+      return;
+    }
+    const contents = await file.text();
+    if (!contents.trim()) {
+      showToast("Il file selezionato è vuoto.", { type: "warning" });
+      return;
+    }
+    $("#pgn-input").value = contents;
+    showToast("File PGN caricato. Premi “Carica PGN” per importarlo.");
+  } catch (error) {
+    showToast("Impossibile leggere il file PGN: " + (error?.message || String(error)), { type: "error" });
+  } finally {
+    input.value = "";
+  }
+});
 $("#import-pgn").addEventListener("click", importPgn);
 $("#export-pgn").addEventListener("click", exportPgn);
 $("#promotion-cancel").addEventListener("click", () => {
