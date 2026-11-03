@@ -290,7 +290,7 @@ export function getTranspositionGroups(tree) {
       if (!prefix) continue;
       const ids = [...prefix, edge.id];
       const sans = ids.map((id) => tree.getEdge(id)?.san).filter(Boolean);
-      paths.push({ edgeId: edge.id, moves: sans.join(" "), ply: sans.length });
+      paths.push({ edgeId: edge.id, edgeIds: ids, moves: sans.join(" "), ply: sans.length });
     }
     if (paths.length > 1) groups.push({ nodeId: node.id, fen: node.fen, paths });
   }
