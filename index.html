@@ -207,6 +207,14 @@
               <label class="field-label" for="endgame-fen">FEN della posizione (puoi incollare qualsiasi finale)</label>
               <input id="endgame-fen" class="text-input" spellcheck="false"/>
               <div class="tool-actions">
+                <label class="field-label" for="endgame-side">Tu giochi</label>
+                <select id="endgame-side" class="text-input"><option value="white">Bianco</option><option value="black">Nero</option></select>
+                <label class="field-label" for="endgame-elo">Forza Stockfish</label>
+                <select id="endgame-elo" class="text-input"><option value="1320">1320</option><option value="1500">1500</option><option value="1700" selected>1700</option><option value="1900">1900</option><option value="2100">2100</option><option value="2500">2500</option></select>
+                <button class="button small primary" id="endgame-start-practice">Allena contro Stockfish</button>
+                <button class="button small ghost" id="endgame-stop-practice">Termina allenamento</button>
+              </div>
+              <div class="tool-actions">
                 <button class="button small ghost" id="endgame-load">Carica posizione</button>
                 <button class="button small primary" id="endgame-analyze">Analizza Stockfish</button>
                 <button class="button small ghost" id="endgame-engine-move">Mossa motore</button>
