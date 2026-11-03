@@ -632,7 +632,7 @@ export function initializeChessSuite({ getCurrentTree, loadGeneratedTree, getCur
     endgameBoard.render();
   }
 
-  function initialize() {
+  async function initialize() {
     const category = $("#endgame-category");
     if (category) {
       category.replaceChildren();
@@ -673,9 +673,12 @@ export function initializeChessSuite({ getCurrentTree, loadGeneratedTree, getCur
       message("#account-import-status", `Archivio PGN locale caricato: ${splitPgnGames(importedPgn).length} partite.`);
     }
   }
-  initialize();
+  const ready = initialize().catch((error) => {
+    message("#endgame-status", "Inizializzazione Endgame Lab non riuscita: " + error.message);
+  });
 
   return {
+    ready,
     refresh() { refreshAnnotation(); },
     refreshEndgame() { updateEndgameSummary(); },
     async loadImportedPgn(pgn) { importedPgn = pgn; fillPgnFields(pgn); await setAppSetting(GAME_IMPORT_KEY, pgn); },
