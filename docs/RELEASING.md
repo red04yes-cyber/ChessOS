@@ -63,9 +63,8 @@ The owner must select the intended model before a `LICENSE` file is added. Stock
 2. Run the clean-Windows manual acceptance test.
 3. Add the selected `LICENSE` file and verify all third-party notices.
 4. Create tag `v0.1.0` on the exact tested commit.
-5. Create a GitHub Release from that tag and paste `docs/releases/v0.1.0.md`.
-6. Attach the installer and its matching checksum file.
-7. Verify the published asset checksum after download.
-8. Store a second copy of the installer, checksum and release notes in a durable backup location.
+5. Push the approved `v0.1.0` tag. The `Publish tagged GitHub Release` job will download the artifact, create the GitHub Release from `docs/releases/v0.1.0.md`, and attach the installer plus checksum.
+6. Verify the published asset checksum after download.
+7. Store a second copy of the installer, checksum and release notes in a durable backup location.
 
 The release-notes file is a draft, not a published GitHub Release.
