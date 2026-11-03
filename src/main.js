@@ -141,11 +141,15 @@ async function initializePersistence() {
     repertoire = records;
     databaseReady = true;
     const storedCards = await invoke("list_study_cards");
-    if (Array.isArray(storedCards) && storedCards.length) {
-      studyCards = storedCards;
-      try { localStorage.removeItem(STUDY_CARDS_KEY); } catch { /* SQLite is authoritative in desktop mode. */ }
-    } else if (studyCards.length) {
+    const cardsById = new Map(studyCards.map((card) => [card.id, card]));
+    for (const card of Array.isArray(storedCards) ? storedCards : []) {
+      cardsById.set(card.id, card);
+    }
+    studyCards = [...cardsById.values()];
+    if (studyCards.length !== (Array.isArray(storedCards) ? storedCards.length : 0)) {
       await persistStudyCards();
+    } else {
+      try { localStorage.removeItem(STUDY_CARDS_KEY); } catch { /* SQLite is authoritative in desktop mode. */ }
     }
     if (migrationErrors.length === 0) {
       try { localStorage.removeItem(STORAGE_KEY); } catch { /* Non bloccare l'avvio per storage non disponibile. */ }
