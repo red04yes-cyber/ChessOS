@@ -144,10 +144,10 @@ try {
     Invoke-SqliteSentinel $databasePath "seed"
 
     Write-Host "== Build upgrade candidate $upgradeVersion =="
+    $originalConfig.version = $upgradeVersion
     $candidateConfig = $originalConfig | ConvertTo-Json -Depth 50
-    $candidateConfig = $candidateConfig -replace ('"version"\s*:\s*"' + [regex]::Escape($originalVersion) + '"'),
-        ('"version": "' + $upgradeVersion + '"')
-    if ($candidateConfig -eq $originalConfigText) {
+    $candidateVersion = [string](($candidateConfig | ConvertFrom-Json).version)
+    if ($candidateVersion -ne $upgradeVersion) {
         throw "Impossibile impostare la versione candidata $upgradeVersion in tauri.conf.json."
     }
     [System.IO.File]::WriteAllText($tauriConfigPath, $candidateConfig, [System.Text.UTF8Encoding]::new($false))
