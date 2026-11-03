@@ -912,3 +912,24 @@ h1 { color: var(--text); font-weight: 750; }
 :root[data-theme="light"] .pgn-input,
 :root[data-theme="system"] .text-input,
 :root[data-theme="system"] .pgn-input { background: var(--surface-2); color: var(--text); border-color: var(--border); }
+
+
+/* Pointer-based board dragging for mouse, pen and touch */
+.chessboard .square {
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.chessboard .square.dragging {
+  opacity: .45;
+  cursor: grabbing;
+}
+.chessboard .square.drop-target {
+  outline: 3px solid var(--accent-strong);
+  outline-offset: -4px;
+  z-index: 2;
+}
+.chessboard .piece {
+  pointer-events: none;
+  -webkit-user-drag: none;
+}

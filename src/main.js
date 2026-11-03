@@ -25,6 +25,8 @@ import {
 import "./style.css";
 import { getAdjacentSquare } from "./board-navigation.js";
 import { applyUiPreferences, readUiPreferences, saveUiPreferences } from "./ui-preferences.js";
+import { classifyBoardMove } from "./board-input.js";
+import { listenForOptionalImportProgress } from "./online-import-progress.js";
 
 const STORAGE_KEY = "chess-os.repertoire.v1";
 const REVIEW_STORAGE_KEY = "chess-os.fsrs.review-state.v1";
@@ -99,6 +101,8 @@ let studioPly = 0;
 let studioTree = new RepertoireTree(DEFAULT_FEN);
 let studioPath = [];
 let toastTimer = null;
+let pointerBoardGesture = null;
+let suppressNextBoardClick = false;
 let fenEditorState = null;
 let pendingBoardFocusSquare = null;
 let promotionReturnFocus = null;
@@ -298,7 +302,13 @@ async function initializePersistence() {
     databaseReady = true;
     await ensureDemoOpenings();
     records = repertoire;
-    await refreshImportedGames();
+    try {
+      await refreshImportedGames();
+    } catch (error) {
+      // Imported-game listing is optional: keep the main SQLite app usable.
+      importedGames = [];
+      console.error("Libreria delle partite importate non disponibile:", error);
+    }
     if (migrationErrors.length === 0) {
       try { localStorage.removeItem(STORAGE_KEY); } catch { /* Non bloccare l'avvio per storage non disponibile. */ }
       updateStorageLabel("Database SQLite", "Dati salvati sul dispositivo · " + records.length + " repertori");
@@ -1265,21 +1275,36 @@ async function startOnlineGameImport() {
   $("#online-import-progress").textContent = "Connessione al servizio e download degli archivi…";
   let stopListening = null;
   try {
-    stopListening = await listen("online-game-import-progress", (event) => {
-      const progress = event.payload || {};
-      $("#online-import-progress").textContent =
-        "Elaborate: " + (progress.processed || 0)
-        + " · nuove: " + (progress.imported || 0)
-        + " · già presenti: " + (progress.duplicates || 0)
-        + " · non supportate: " + (progress.skipped || 0);
-    });
+    stopListening = await listenForOptionalImportProgress(
+      listen,
+      (event) => {
+        const progress = event.payload || {};
+        $("#online-import-progress").textContent =
+          "Elaborate: " + (progress.processed || 0)
+          + " · nuove: " + (progress.imported || 0)
+          + " · già presenti: " + (progress.duplicates || 0)
+          + " · non supportate: " + (progress.skipped || 0);
+      },
+      (listenError) => {
+        console.warn("Aggiornamento avanzamento non disponibile:", listenError);
+        $("#online-import-progress").textContent =
+          "Importazione avviata. Il download continua anche senza aggiornamenti in tempo reale…";
+      },
+    );
+
     const summary = await invoke("import_online_games", { provider, username, token });
-    await refreshImportedGames();
+    let refreshWarning = "";
+    try {
+      await refreshImportedGames();
+    } catch (refreshError) {
+      refreshWarning = " La libreria non è stata aggiornata a video: " + (refreshError?.message || String(refreshError));
+    }
     const providerName = provider === "lichess" ? "Lichess" : "Chess.com";
     $("#online-import-progress").textContent =
       providerName + " — " + summary.username + ": " + summary.imported + " nuove partite importate, "
       + summary.duplicates + " già presenti e " + summary.skipped + " ignorate/non supportate."
-      + (provider === "chess_com" ? " Archivi mensili controllati: " + summary.archives + "." : "");
+      + (provider === "chess_com" ? " Archivi mensili controllati: " + summary.archives + "." : "")
+      + refreshWarning;
     $("#lichess-api-token").value = "";
     showToast(summary.imported + " partite aggiunte alla libreria.");
   } catch (error) {
@@ -1287,7 +1312,11 @@ async function startOnlineGameImport() {
     showToast("Importazione partite non riuscita.", { type: "error" });
     try { await refreshImportedGames(); } catch { /* Mantieni la libreria già caricata. */ }
   } finally {
-    if (stopListening) stopListening();
+    if (stopListening) {
+      try { stopListening(); } catch (unlistenError) {
+        console.warn("Impossibile rimuovere il listener di avanzamento:", unlistenError);
+      }
+    }
     $("#lichess-api-token").value = "";
     onlineImportBusy = false;
     button.disabled = false;
@@ -1461,6 +1490,7 @@ function commitSelectedMove(selectedMove) {
 function handleSquareClick(square) {
   pendingBoardFocusSquare = square;
   if (mode === "exam" && examAnswered) return;
+  if (mode === "training" && (!currentReviewCard || reviewSolved || reviewRevealed)) return;
   const chess = activeGame();
   if (mode === "studio" && boardMarkTool !== "move") {
     handleBoardMarkSquare(square);
@@ -1471,8 +1501,8 @@ function handleSquareClick(square) {
     showToast(gameStatus(chess));
     return;
   }
-  const piece = chess.get(square);
 
+  const piece = chess.get(square);
   if (!selectedSquare) {
     if (piece && piece.color === chess.turn()) {
       selectedSquare = square;
@@ -1481,34 +1511,30 @@ function handleSquareClick(square) {
     return;
   }
 
-  if (selectedSquare === square) {
+  const from = selectedSquare;
+  const intent = classifyBoardMove(chess, from, square);
+  if (intent.kind === "same-square") {
     selectedSquare = null;
     renderBoard();
     return;
   }
-
-  if (piece && piece.color === chess.turn()) {
-    selectedSquare = square;
+  if (intent.kind === "select") {
+    selectedSquare = intent.square;
     renderBoard();
     return;
   }
-
-  const choices = chess.moves({ square: selectedSquare, verbose: true })
-    .filter((move) => move.to === square);
-  if (!choices.length) {
-    selectedSquare = null;
-    renderBoard();
-    showToast("Mossa non legale.", { type: "error" });
+  if (intent.kind === "promotion") {
+    openPromotionChooser(from, square, intent.moves);
+    return;
+  }
+  if (intent.kind === "move") {
+    commitSelectedMove(intent.move);
     return;
   }
 
-  const promotions = choices.filter((move) => Boolean(move.promotion));
-  if (promotions.length) {
-    openPromotionChooser(selectedSquare, square, promotions);
-    return;
-  }
-
-  commitSelectedMove(choices[0]);
+  selectedSquare = null;
+  renderBoard();
+  showToast(intent.kind === "illegal" ? "Mossa non legale." : "Seleziona un pezzo del colore al tratto.", { type: "error" });
 }
 
 function openLine(id) {
@@ -2683,7 +2709,7 @@ function exportPgn() {
   document.body.append(anchor);
   anchor.click();
   anchor.remove();
-  URL.revokeObjectURL(url);
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
   showToast("File PGN esportato.");
 }
 
@@ -2710,7 +2736,6 @@ function newPosition() {
   titleInput.value = "Nuova linea";
   setDirty(true);
   renderAll();
-void initializePersistence();
 }
 
 function initializeUiPreferences() {
@@ -2765,7 +2790,95 @@ async function copyFen() {
   }
 }
 
+function clearBoardGestureStyles() {
+  boardElement.querySelectorAll(".dragging, .drop-target").forEach((element) => {
+    element.classList.remove("dragging", "drop-target");
+  });
+}
+
+function boardInputAllowed(chess) {
+  if (!chess || pendingPromotion || chess.isGameOver()) return false;
+  if (mode === "exam" && examAnswered) return false;
+  if (mode === "training" && (!currentReviewCard || reviewSolved || reviewRevealed)) return false;
+  return (mode === "studio" && boardMarkTool === "move") || mode === "training" || mode === "exam";
+}
+
+boardElement.addEventListener("pointerdown", (event) => {
+  if (event.button !== 0 || pointerBoardGesture) return;
+  const squareButton = event.target.closest("button[data-square]");
+  if (!squareButton) return;
+  const chess = activeGame();
+  if (!boardInputAllowed(chess)) return;
+  const from = squareButton.dataset.square;
+  const piece = chess.get(from);
+  if (!piece || piece.color !== chess.turn()) return;
+  pointerBoardGesture = {
+    pointerId: event.pointerId,
+    from,
+    startX: event.clientX,
+    startY: event.clientY,
+    moved: false,
+  };
+});
+
+document.addEventListener("pointermove", (event) => {
+  const gesture = pointerBoardGesture;
+  if (!gesture || gesture.pointerId !== event.pointerId) return;
+  const distance = Math.hypot(event.clientX - gesture.startX, event.clientY - gesture.startY);
+  if (!gesture.moved && distance < 7) return;
+  gesture.moved = true;
+  event.preventDefault();
+
+  const source = boardElement.querySelector('button[data-square="' + gesture.from + '"]');
+  source?.classList.add("dragging");
+  boardElement.querySelectorAll(".drop-target").forEach((element) => element.classList.remove("drop-target"));
+  const target = document.elementFromPoint(event.clientX, event.clientY)?.closest("#chessboard button[data-square]");
+  if (target && target.dataset.square !== gesture.from) target.classList.add("drop-target");
+}, { passive: false });
+
+document.addEventListener("pointerup", (event) => {
+  const gesture = pointerBoardGesture;
+  if (!gesture || gesture.pointerId !== event.pointerId) return;
+  pointerBoardGesture = null;
+  clearBoardGestureStyles();
+  if (!gesture.moved) return;
+
+  const target = document.elementFromPoint(event.clientX, event.clientY)?.closest("#chessboard button[data-square]");
+  if (!target || !boardElement.contains(target)) {
+    selectedSquare = null;
+    pendingBoardFocusSquare = gesture.from;
+    renderBoard();
+    return;
+  }
+
+  const destination = target.dataset.square;
+  suppressNextBoardClick = true;
+  window.setTimeout(() => { suppressNextBoardClick = false; }, 0);
+  if (destination === gesture.from) {
+    selectedSquare = null;
+    pendingBoardFocusSquare = gesture.from;
+    renderBoard();
+    return;
+  }
+  selectedSquare = gesture.from;
+  handleSquareClick(destination);
+});
+
+document.addEventListener("pointercancel", (event) => {
+  if (!pointerBoardGesture || pointerBoardGesture.pointerId !== event.pointerId) return;
+  pointerBoardGesture = null;
+  clearBoardGestureStyles();
+  selectedSquare = null;
+  pendingBoardFocusSquare = null;
+  renderBoard();
+});
+
 boardElement.addEventListener("click", (event) => {
+  if (suppressNextBoardClick) {
+    suppressNextBoardClick = false;
+    event.preventDefault();
+    return;
+  }
   const squareButton = event.target.closest("button[data-square]");
   if (squareButton) handleSquareClick(squareButton.dataset.square);
 });
