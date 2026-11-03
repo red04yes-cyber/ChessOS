@@ -31,5 +31,5 @@ test("toggles coloured squares and directional arrows", () => {
 test("supports common move NAGs and renders their symbols", () => {
   assert.equal(normalizeNag("$3"), "$3");
   assert.equal(normalizeNag("$999"), "");
-  assert.equal(nagsToSymbols(["$1", "$5", "$2"]), "!!!?");
+  assert.equal(nagsToSymbols(["$1", "$5", "$2"]), "!!??");
 });
