@@ -314,13 +314,10 @@ fn save_with_connection(connection: &mut Connection, input: SaveRepertoireInput)
                 (repertoire_id, edge_id, from_position_id, to_position_id, uci, san, nags_json, comment, sort_order)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)"
         ).map_err(|error| error.to_string())?;
-        let node_order: std::collections::HashMap<&str, usize> = input.tree.nodes
-            .iter().enumerate().map(|(index, node)| (node.id.as_str(), index)).collect();
         for edge in &input.tree.edges {
             let nags = serde_json::to_string(&edge.nags).map_err(|error| error.to_string())?;
-            let order = *node_order.get(edge.from.as_str()).unwrap_or(&0);
             statement.execute(params![
-                input.id, edge.id, edge.from, edge.to, edge.uci, edge.san, nags, edge.comment, order
+                input.id, edge.id, edge.from, edge.to, edge.uci, edge.san, nags, edge.comment, edge.order
             ]).map_err(|error| error.to_string())?;
         }
     }
