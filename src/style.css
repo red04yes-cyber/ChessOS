@@ -594,3 +594,5 @@ h1 { margin: 9px 0 5px; font-size: clamp(24px, 2.2vw, 31px); line-height: 1.1; l
 @media (prefers-reduced-motion: reduce) {
   .weakness-meter-fill { transition: none; }
 }
+
+.mini-board[hidden] { display: none !important; }
