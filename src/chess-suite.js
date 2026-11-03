@@ -1,4 +1,5 @@
 import { Chess } from "chess.js";
+import { invoke, isTauri } from "@tauri-apps/api/core";
 import { RepertoireTree } from "./repertoire-tree.js";
 import { ENDGAME_CATALOG, ENDGAME_LESSONS } from "./endgame-catalog.js";
 import { stockfish } from "./stockfish-engine.js";
@@ -31,11 +32,13 @@ function setButtonBusy(button, busy, label) {
   if (busy) { button.dataset.originalLabel = button.textContent; button.textContent = label || "Elaborazione…"; }
   else if (button.dataset.originalLabel) { button.textContent = button.dataset.originalLabel; delete button.dataset.originalLabel; }
 }
-function getStoredGames() {
-  try { return localStorage.getItem(GAME_IMPORT_KEY) || ""; } catch { return ""; }
+async function getAppSetting(key) {
+  if (isTauri()) return await invoke("get_app_setting", { key });
+  try { return localStorage.getItem(key); } catch { return null; }
 }
-function persistGames(pgn) {
-  try { localStorage.setItem(GAME_IMPORT_KEY, pgn); } catch { throw new Error("Archivio locale pieno: esporta le partite o riduci il numero importato."); }
+async function setAppSetting(key, value) {
+  if (isTauri()) return await invoke("set_app_setting", { key, value });
+  try { localStorage.setItem(key, value); } catch { throw new Error("Archivio locale pieno: esporta i dati o riduci il numero importato."); }
 }
 function fillPgnFields(pgn) {
   for (const selector of ["#mistake-pgn", "#opponent-pgn", "#opening-pgn", "#tactics-pgn"]) {
@@ -257,15 +260,16 @@ export function initializeChessSuite({ getCurrentTree, loadGeneratedTree, getCur
   let tacticsBoard;
   let tacticsGame = null;
   let tacticsLoading = false;
-  let importedPgn = getStoredGames();
+  let importedPgn = "";
   let endgameLesson = ENDGAME_LESSONS[0];
-  let endgameCards = readEndgameProgress();
 
-  function readEndgameProgress() {
-    try { return JSON.parse(localStorage.getItem("chess-os.endgame-progress.v1") || "{}"); } catch { return {}; }
+
+  let endgameCards = {};
+  async function loadEndgameProgress() {
+    try { endgameCards = JSON.parse(await getAppSetting("chess-os.endgame-progress.v1") || "{}"); } catch { endgameCards = {}; }
   }
   function saveEndgameProgress() {
-    try { localStorage.setItem("chess-os.endgame-progress.v1", JSON.stringify(endgameCards)); } catch { /* Keep this session usable even when storage is full. */ }
+    return setAppSetting("chess-os.endgame-progress.v1", JSON.stringify(endgameCards));
   }
   function updateEndgameSummary() {
     const completed = Object.values(endgameCards).filter((entry) => entry.completed).length;
@@ -360,7 +364,7 @@ export function initializeChessSuite({ getCurrentTree, loadGeneratedTree, getCur
       progress.masteredAt = new Date().toISOString();
     }
     endgameCards[endgameLesson.id] = progress;
-    saveEndgameProgress();
+    void saveEndgameProgress().catch((error) => message("#endgame-status", "Progressi non salvati: " + error.message));
     renderEndgameLesson();
     message("#endgame-status", progress.mastered ? "Lezione segnata come appresa." : "Stato di padronanza rimosso.");
   }
@@ -386,7 +390,7 @@ export function initializeChessSuite({ getCurrentTree, loadGeneratedTree, getCur
       progress.lastProbedAt = new Date().toISOString();
       progress.mastered = Boolean(progress.mastered);
       endgameCards[endgameLesson.id] = progress;
-      saveEndgameProgress();
+      void saveEndgameProgress().catch((error) => message("#endgame-status", "Progressi non salvati: " + error.message));
       renderEndgameLesson();
     } catch (error) { message("#endgame-tablebase-result", "Tablebase non disponibile: " + error.message); }
     finally { setButtonBusy(button, false); }
@@ -439,7 +443,7 @@ export function initializeChessSuite({ getCurrentTree, loadGeneratedTree, getCur
       const pgn = provider === "lichess" ? await fetchLichessGames(username, max) : await fetchChessComGames(username, max);
       const games = splitPgnGames(pgn);
       importedPgn = pgn;
-      persistGames(pgn);
+      await setAppSetting(GAME_IMPORT_KEY, pgn);
       fillPgnFields(pgn);
       message("#account-import-status", `Importate ${games.length} partite da ${provider}. Le partite sono disponibili in Opening Explorer, Tactics e preparazione avversario.`);
       message("#opening-summary", `Archivio pronto: ${games.length} partite importate.`);
@@ -616,6 +620,8 @@ export function initializeChessSuite({ getCurrentTree, loadGeneratedTree, getCur
     endgameBoard = createBoardController($("#endgame-board"), () => endgameGame, endgameMoveChanged);
     sparringBoard = createBoardController($("#sparring-board"), () => sparringGame, onSparringMove, () => !sparringBusy && sparringGame.turn() === sparringColor);
     tacticsBoard = createBoardController($("#tactics-board"), () => tacticsGame || new Chess(), onTacticMove);
+    await loadEndgameProgress();
+    importedPgn = await getAppSetting(GAME_IMPORT_KEY) || "";
     populateEndgameTopics();
     $("#endgame-analyze")?.addEventListener("click", analyzeEndgame);
     $("#endgame-engine-move")?.addEventListener("click", engineEndgameMove);
@@ -641,12 +647,12 @@ export function initializeChessSuite({ getCurrentTree, loadGeneratedTree, getCur
   return {
     refresh() { refreshAnnotation(); },
     refreshEndgame() { updateEndgameSummary(); },
-    loadImportedPgn(pgn) { importedPgn = pgn; fillPgnFields(pgn); persistGames(pgn); },
+    async loadImportedPgn(pgn) { importedPgn = pgn; fillPgnFields(pgn); await setAppSetting(GAME_IMPORT_KEY, pgn); },
     getCurrentEndgameLesson() { return endgameLesson; },
     loadEndgameProgress(progress) {
       if (progress && typeof progress === "object" && !Array.isArray(progress)) {
         endgameCards = progress;
-        saveEndgameProgress();
+        void saveEndgameProgress().catch(() => {});
         renderEndgameLesson();
       }
     },
