@@ -20,7 +20,7 @@ Windows-first chess repertoire and training desktop app. This repository now con
 - Undo/redo by navigating the complete move timeline and reset in Studio mode
 - Training mode that asks the user to replay every move in a saved or current line
 - Vite frontend and Tauri 2 desktop shell
-- Automated JavaScript tests for legal moves, castling, en passant, promotion, PGN and terminal positions; Windows NSIS installer workflow
+- Automated JavaScript tests for chess rules, PGN/RAV round-trips, transpositions and UCI parsing; Windows CI smoke-tests Stockfish and builds the NSIS installer
 
 ## Important scope note
 
@@ -66,6 +66,23 @@ npm run tauri:build
 The NSIS installer is configured for a per-user installation (no administrator prompt by default), creates a Start Menu entry, and downloads the small WebView2 bootstrapper if the runtime is missing. The frontend and installer are also checked by the GitHub Actions workflow on pushes and pull requests to `main`.
 
 The installer, when a successful CI run produces it, is uploaded as the `chess-os-windows-installer` workflow artifact. A successful build has not yet been independently verified.
+
+## Stockfish analysis
+
+The Windows desktop build bundles the official **Stockfish 19 x86-64 universal** release. It is downloaded from the official upstream release during the build (not committed to this repository), verified against a pinned SHA-256 digest, and launched as a separate process. Chess OS communicates with it over standard input/output using UCI. The analysis panel displays centipawn or mate evaluations and up to five principal variations; search depth and MultiPV count are configurable. The engine is not launched by the browser preview.
+
+On Windows, install the frontend dependencies and fetch the pinned engine distribution before launching or building the desktop app:
+
+```powershell
+npm install
+npm run stockfish:install
+npm run stockfish:smoke
+npm run tauri:dev
+```
+
+The CI Windows job runs the same engine smoke test, JavaScript tests, Rust tests and NSIS build. The NSIS package contains `stockfish.exe`, the NNUE network files if supplied by upstream, the GPL-3.0 license and AUTHORS notice. The upstream source is pinned to the `sf_19` tag. See [the Stockfish third-party notice](licenses/stockfish/NOTICE.md) and [GPL license text](licenses/stockfish/Copying.txt).
+
+Stockfish is GPL-3.0. It remains an independent executable and is not linked into Chess OS. Any modified or rebuilt engine binary must be distributed with the exact corresponding source code under the applicable GPL terms.
 
 ## Data and SQLite
 
