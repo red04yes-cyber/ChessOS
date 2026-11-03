@@ -1,6 +1,7 @@
 import { Chess } from "chess.js";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { RepertoireTree } from "./repertoire-tree.js";
+import { classifyBoardMove } from "./board-input.js";
 import "./style.css";
 
 const STORAGE_KEY = "chess-os.repertoire.v1";
@@ -17,6 +18,8 @@ let mode = "studio";
 let selectedSquare = null;
 let boardFlipped = false;
 let pendingPromotion = null;
+let draggedSquare = null;
+let ignoreNextBoardClick = false;
 const persistenceMode = isTauri() ? "sqlite" : "browser";
 let databaseReady = persistenceMode === "browser";
 let repertoire = persistenceMode === "browser" ? readRepertoire() : [];
@@ -260,6 +263,7 @@ function renderBoard() {
       button.type = "button";
       button.dataset.square = square;
       button.className = "square " + (isLight ? "light" : "dark");
+      button.draggable = Boolean(piece) && piece.color === chess.turn() && !chess.isGameOver() && !pendingPromotion;
       if (selectedSquare === square) button.classList.add("selected");
       if (lastSquares.has(square)) button.classList.add("last-move");
       if (checkedKingSquare === square) button.classList.add("in-check");
@@ -392,7 +396,7 @@ function renderMode() {
   $("#reset").textContent = training ? "Esci dal ripasso" : "Nuova posizione";
   $("#page-subtitle").textContent = training
     ? "Ripeti la linea selezionata e trova le mosse nell’ordine corretto."
-    : "Costruisci linee principali, varianti e transposizioni.";
+    : "Trascina i pezzi oppure selezionali con due clic per costruire linee e varianti.";
   $("#flip-board").disabled = false;
 }
 
@@ -580,9 +584,9 @@ function handleSquareClick(square) {
     showToast(gameStatus(chess));
     return;
   }
-  const piece = chess.get(square);
 
   if (!selectedSquare) {
+    const piece = chess.get(square);
     if (piece && piece.color === chess.turn()) {
       selectedSquare = square;
       renderBoard();
@@ -590,34 +594,30 @@ function handleSquareClick(square) {
     return;
   }
 
-  if (selectedSquare === square) {
+  const from = selectedSquare;
+  const intent = classifyBoardMove(chess, from, square);
+  if (intent.kind === "same-square") {
     selectedSquare = null;
     renderBoard();
     return;
   }
-
-  if (piece && piece.color === chess.turn()) {
-    selectedSquare = square;
+  if (intent.kind === "select") {
+    selectedSquare = intent.square;
     renderBoard();
     return;
   }
-
-  const choices = chess.moves({ square: selectedSquare, verbose: true })
-    .filter((move) => move.to === square);
-  if (!choices.length) {
-    selectedSquare = null;
-    renderBoard();
-    showToast("Mossa non legale.");
+  if (intent.kind === "promotion") {
+    openPromotionChooser(from, square, intent.moves);
+    return;
+  }
+  if (intent.kind === "move") {
+    commitSelectedMove(intent.move);
     return;
   }
 
-  const promotions = choices.filter((move) => Boolean(move.promotion));
-  if (promotions.length) {
-    openPromotionChooser(selectedSquare, square, promotions);
-    return;
-  }
-
-  commitSelectedMove(choices[0]);
+  selectedSquare = null;
+  renderBoard();
+  showToast("Mossa non legale.");
 }
 
 function openLine(id) {
@@ -812,7 +812,76 @@ async function copyFen() {
   }
 }
 
+function clearBoardDragStyles() {
+  boardElement.querySelectorAll(".dragging, .drop-target").forEach((square) => {
+    square.classList.remove("dragging", "drop-target");
+  });
+}
+
+boardElement.addEventListener("dragstart", (event) => {
+  const squareButton = event.target.closest("button[data-square]");
+  if (!squareButton || !squareButton.draggable || mode === "training" && !trainingGame) {
+    event.preventDefault();
+    return;
+  }
+  draggedSquare = squareButton.dataset.square;
+  selectedSquare = draggedSquare;
+  squareButton.classList.add("dragging");
+  if (event.dataTransfer) {
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", draggedSquare);
+  }
+});
+
+boardElement.addEventListener("dragover", (event) => {
+  const squareButton = event.target.closest("button[data-square]");
+  if (!draggedSquare || !squareButton) return;
+  event.preventDefault();
+  squareButton.classList.add("drop-target");
+  if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+});
+
+boardElement.addEventListener("dragleave", (event) => {
+  const squareButton = event.target.closest("button[data-square]");
+  if (squareButton && !squareButton.contains(event.relatedTarget)) {
+    squareButton.classList.remove("drop-target");
+  }
+});
+
+boardElement.addEventListener("drop", (event) => {
+  const squareButton = event.target.closest("button[data-square]");
+  if (!draggedSquare || !squareButton) return;
+  event.preventDefault();
+  const from = draggedSquare;
+  const to = squareButton.dataset.square;
+  draggedSquare = null;
+  clearBoardDragStyles();
+  ignoreNextBoardClick = true;
+  window.setTimeout(() => { ignoreNextBoardClick = false; }, 0);
+  selectedSquare = from;
+  if (from === to) {
+    selectedSquare = null;
+    renderBoard();
+    return;
+  }
+  handleSquareClick(to);
+});
+
+boardElement.addEventListener("dragend", () => {
+  if (draggedSquare) {
+    draggedSquare = null;
+    selectedSquare = null;
+    renderBoard();
+  } else {
+    clearBoardDragStyles();
+  }
+});
+
 boardElement.addEventListener("click", (event) => {
+  if (ignoreNextBoardClick) {
+    event.preventDefault();
+    return;
+  }
   const squareButton = event.target.closest("button[data-square]");
   if (squareButton) handleSquareClick(squareButton.dataset.square);
 });
