@@ -85,8 +85,8 @@ jobs:
           from pathlib import Path
           path = Path(".github/workflows/build.yml")
           source = path.read_text(encoding="utf-8")
-          start = source.index("  bootstrap-maintenance:\\n")
-          end = source.index("  verify:\\n", start)
+          start = source.index("  bootstrap-maintenance:")
+          end = source.index("  verify:", start)
           path.write_text(source[:start] + source[end:], encoding="utf-8")
           PY
           git config user.name "github-actions[bot]"
