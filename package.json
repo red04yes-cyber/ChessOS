@@ -11,12 +11,16 @@
     "test": "node --test",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build"
+    "tauri:build": "tauri build",
+    "prepare:engine": "node scripts/prepare-engine.js",
+    "predev": "npm run prepare:engine",
+    "prebuild": "npm run prepare:engine"
   },
   "dependencies": {
     "chess.js": "1.4.0",
     "@tauri-apps/api": "^2.0.0",
-    "ts-fsrs": "5.4.2"
+    "ts-fsrs": "5.4.2",
+    "stockfish": "19.0.1"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.0.0",
