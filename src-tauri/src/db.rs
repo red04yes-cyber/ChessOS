@@ -951,6 +951,14 @@ fn record_exam_answer_with_connection(
     if status != "in_progress" || input.question_index >= total_questions {
         return Err("La sessione d'esame non accetta altre risposte.".into());
     }
+    let previous_answers: i64 = transaction.query_row(
+        "SELECT COUNT(*) FROM exam_answers WHERE attempt_id = ?1",
+        params![input.attempt_id],
+        |row| row.get(0),
+    ).map_err(|error| error.to_string())?;
+    if previous_answers != input.question_index {
+        return Err("Le risposte dell'esame devono essere registrate in ordine.".into());
+    }
     let expected_position: Option<String> = transaction.query_row(
         "SELECT p.fen
          FROM repertoire_moves m
@@ -1169,6 +1177,18 @@ mod tests {
             |row| row.get(0),
         ).unwrap();
         assert_eq!(answers, 0);
+
+        let skipped = record_exam_answer_with_connection(&mut connection, RecordExamAnswerInput {
+            id: "answer-skipped".into(),
+            attempt_id: "exam-secure".into(),
+            question_index: 1,
+            edge_id: "root|e2e4".into(),
+            position_fen: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1".into(),
+            expected_uci: "e2e4".into(),
+            selected_uci: "e2e4".into(),
+            answered_at: "2026-11-03T10:02:00Z".into(),
+        });
+        assert!(skipped.is_err());
     }
 
     #[test]
@@ -1242,5 +1262,35 @@ mod tests {
         let moves: i64 = connection.query_row("SELECT COUNT(*) FROM repertoire_moves", [], |r| r.get(0)).unwrap();
         assert_eq!(positions, 0);
         assert_eq!(moves, 0);
+    }
+
+    #[test]
+    fn deleting_repertoire_cascades_to_exam_attempts_and_answers() {
+        let mut connection = memory_db();
+        save_with_connection(&mut connection, fixture()).unwrap();
+        start_exam_with_connection(&mut connection, StartExamInput {
+            id: "exam-delete".into(),
+            repertoire_id: "open-game".into(),
+            repertoire_title: "Open Game".into(),
+            started_at: "2026-11-03T10:00:00Z".into(),
+            total_questions: 1,
+            pass_threshold: 70,
+            side: "white".into(),
+        }).unwrap();
+        record_exam_answer_with_connection(&mut connection, RecordExamAnswerInput {
+            id: "answer-delete".into(),
+            attempt_id: "exam-delete".into(),
+            question_index: 0,
+            edge_id: "root|e2e4".into(),
+            position_fen: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1".into(),
+            expected_uci: "e2e4".into(),
+            selected_uci: "e2e4".into(),
+            answered_at: "2026-11-03T10:01:00Z".into(),
+        }).unwrap();
+        connection.execute("DELETE FROM repertoires WHERE id = 'open-game'", []).unwrap();
+        let attempts: i64 = connection.query_row("SELECT COUNT(*) FROM exam_attempts", [], |row| row.get(0)).unwrap();
+        let answers: i64 = connection.query_row("SELECT COUNT(*) FROM exam_answers", [], |row| row.get(0)).unwrap();
+        assert_eq!(attempts, 0);
+        assert_eq!(answers, 0);
     }
 }
