@@ -34,6 +34,8 @@ This is **not** the recovered 0.7.0 application and is not yet feature-complete 
 
 The old archive fragments remain under `recovery/` for provenance only. They are not build inputs.
 
+The feature roadmap, including the additional training and opponent-preparation ideas, is tracked in [docs/ROADMAP.md](docs/ROADMAP.md). It also records that transposition handling is already implemented in the repertoire graph.
+
 ## Requirements
 
 - Node.js 20 or newer
