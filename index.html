@@ -208,6 +208,19 @@
                   <button id="review-start" class="button primary review-start" type="button">Avvia sessione giornaliera</button>
                 </div>
                 <div id="review-active" hidden>
+                  <div class="review-session-progress">
+                    <div class="review-session-progress-head">
+                      <span id="review-session-count">Carta 0 di 0</span>
+                      <span id="review-session-left">0 rimanenti</span>
+                    </div>
+                    <div id="review-progress-track" class="review-progress-track" role="progressbar" aria-label="Avanzamento della sessione" aria-valuemin="0" aria-valuemax="0" aria-valuenow="0">
+                      <span id="review-progress-fill"></span>
+                    </div>
+                    <div class="review-session-counters">
+                      <span>Carte ripassate <strong id="review-session-completed">0</strong></span>
+                      <span>Valutate Again <strong id="review-session-again">0</strong></span>
+                    </div>
+                  </div>
                   <div id="review-card-meta" class="review-card-meta"></div>
                   <p id="review-feedback" class="review-feedback">Trova la mossa del repertorio.</p>
                   <button id="review-show-answer" class="button review-action" type="button">Mostra soluzione</button>
