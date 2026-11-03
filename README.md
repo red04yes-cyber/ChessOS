@@ -33,8 +33,6 @@ This is **not** the recovered 0.7.0 application and is not yet feature-complete 
 - SQLite database backup/export and restore UI
 - Stockfish analysis / evaluation
 - Dashboard, analytics, goals and exams
-- Cloud sync, account system and backups
-
 The old archive fragments remain under `recovery/` for provenance only. They are not build inputs.
 
 ## Requirements
@@ -72,9 +70,9 @@ The installer, when a successful CI run produces it, is uploaded as the `chess-o
 
 ## Data and SQLite
 
-The Tauri desktop app stores repertoire data in `chess-os.sqlite3` inside the application data directory managed by Tauri. The database has versioned migrations (`schema_migrations`), a repertoire table, normalized position and move-edge tables (so branches and transpositions are retained), app settings, and the tables reserved for training cards and review history. Foreign keys and cascading deletes keep each repertoire graph consistent. The browser preview uses `localStorage` only as a development fallback.
+The Tauri desktop app stores repertoire data and FSRS review state in `chess-os.sqlite3` inside the application data directory managed by Tauri. Versioned migrations create normalized repertoire, position and move-edge tables, plus `study_cards`, `training_sessions` and `review_logs`. The latest migration stores the complete serialized FSRS card state alongside its next due date and summary fields. Saving a review updates the card, appends its review log and updates the session counters atomically. The browser preview stores equivalent review state in `localStorage` as a development fallback.
 
-On first desktop startup, Chess OS imports legacy `chess-os.repertoire.v1` entries from WebView `localStorage` that are not already in SQLite. The legacy key is removed only after all entries have imported successfully. To back up a repertoire today, export it as PGN; a full SQLite backup/restore interface is still planned. See [docs/DATABASE.md](docs/DATABASE.md) for the schema and migration details.
+On first desktop startup, Chess OS imports legacy `chess-os.repertoire.v1` entries from WebView `localStorage` that are not already in SQLite. The legacy key is removed only after all entries have imported successfully. To back up a repertoire today, export it as PGN; a full SQLite backup/restore interface is still planned. See [docs/DATABASE.md](docs/DATABASE.md) for schema and migration details, and [docs/FSRS.md](docs/FSRS.md) for the fixed scheduler version, parameters and review-card model.
 
 ## License
 
