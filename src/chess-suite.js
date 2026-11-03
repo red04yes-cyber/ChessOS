@@ -605,13 +605,12 @@ export function initializeChessSuite({ getCurrentTree, loadGeneratedTree, getCur
       }
       category.addEventListener("change", populateEndgameTopics);
     }
-    $("#endgame-topic")?.addEventListener("change", renderEndgameLesson);
+    $("#endgame-topic")?.addEventListener("change", () => { renderEndgameLesson(); loadEndgamePosition(); });
     $("#endgame-load")?.addEventListener("click", loadEndgamePosition);
     endgameBoard = createBoardController($("#endgame-board"), () => endgameGame, endgameMoveChanged);
     sparringBoard = createBoardController($("#sparring-board"), () => sparringGame, onSparringMove, () => !sparringBusy && sparringGame.turn() === sparringColor);
     tacticsBoard = createBoardController($("#tactics-board"), () => tacticsGame || new Chess(), onTacticMove);
     populateEndgameTopics();
-    loadEndgamePosition();
     $("#endgame-analyze")?.addEventListener("click", analyzeEndgame);
     $("#endgame-engine-move")?.addEventListener("click", engineEndgameMove);
     $("#endgame-tablebase")?.addEventListener("click", probeEndgameTablebase);
@@ -637,5 +636,6 @@ export function initializeChessSuite({ getCurrentTree, loadGeneratedTree, getCur
     refresh() { refreshAnnotation(); },
     refreshEndgame() { updateEndgameSummary(); },
     loadImportedPgn(pgn) { importedPgn = pgn; fillPgnFields(pgn); persistGames(pgn); },
+    getCurrentEndgameLesson() { return endgameLesson; },
   };
 }
