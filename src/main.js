@@ -1,4 +1,5 @@
 import { Chess } from "chess.js";
+import { invoke, isTauri } from "@tauri-apps/api/core";
 import { RepertoireTree } from "./repertoire-tree.js";
 import "./style.css";
 
@@ -16,7 +17,9 @@ let mode = "studio";
 let selectedSquare = null;
 let boardFlipped = false;
 let pendingPromotion = null;
-let repertoire = readRepertoire();
+const persistenceMode = isTauri() ? "sqlite" : "browser";
+let databaseReady = persistenceMode === "browser";
+let repertoire = persistenceMode === "browser" ? readRepertoire() : [];
 let activeLineId = null;
 let dirty = false;
 let trainingGame = null;
@@ -57,6 +60,77 @@ function persistRepertoire() {
   } catch {
     showToast("Non riesco a salvare: memoria locale non disponibile.");
     return false;
+  }
+}
+
+function updateStorageLabel(title, description) {
+  const titleElement = $("#storage-title");
+  const descriptionElement = $("#storage-description");
+  if (titleElement) titleElement.textContent = title;
+  if (descriptionElement) descriptionElement.textContent = description;
+}
+
+function repertoirePayload(entry, tree) {
+  return {
+    id: entry.id,
+    title: entry.title,
+    pgn: entry.pgn,
+    sans: entry.sans || [],
+    createdAt: entry.createdAt || null,
+    updatedAt: entry.updatedAt || null,
+    tree: tree.toJSON(),
+  };
+}
+
+async function initializePersistence() {
+  if (persistenceMode !== "sqlite") {
+    updateStorageLabel("Anteprima browser", "In questa modalità i dati sono salvati nella memoria del browser.");
+    renderAll();
+    return;
+  }
+
+  updateStorageLabel("Database SQLite", "Archivio locale dell’applicazione · inizializzazione…");
+  try {
+    let records = await invoke("list_repertoires");
+    const legacyEntries = readRepertoire();
+    const existingIds = new Set(records.map((record) => record.id));
+    const migrationErrors = [];
+
+    for (const entry of legacyEntries) {
+      if (existingIds.has(entry.id)) continue;
+      try {
+        const tree = entry.tree
+          ? RepertoireTree.fromJSON(entry.tree)
+          : RepertoireTree.fromPgn(entry.pgn);
+        await invoke("save_repertoire", {
+          input: repertoirePayload({
+            ...entry,
+            pgn: entry.pgn || tree.toPgn({ Event: entry.title || "Chess OS repertoire" }),
+            sans: entry.sans || tree.mainlinePath().map((edgeId) => tree.getEdge(edgeId).san),
+          }, tree),
+        });
+        existingIds.add(entry.id);
+      } catch (error) {
+        migrationErrors.push((entry.title || entry.id) + ": " + error.message);
+      }
+    }
+
+    records = await invoke("list_repertoires");
+    repertoire = records;
+    databaseReady = true;
+    if (migrationErrors.length === 0) {
+      try { localStorage.removeItem(STORAGE_KEY); } catch { /* Non bloccare l'avvio per storage non disponibile. */ }
+      updateStorageLabel("Database SQLite", "Dati salvati sul dispositivo · " + records.length + " repertori");
+    } else {
+      updateStorageLabel("SQLite · migrazione parziale", "Alcune vecchie linee non sono state importate: " + migrationErrors.length);
+      showToast("SQLite attivo, ma alcune vecchie linee non sono state migrate. Esporta i PGN per sicurezza.");
+    }
+    renderAll();
+  } catch (error) {
+    databaseReady = false;
+    updateStorageLabel("SQLite non disponibile", "Salvataggio temporaneamente disattivato · controlla il database");
+    renderAll();
+    showToast("Errore database SQLite: " + error.message);
   }
 }
 
@@ -545,7 +619,7 @@ function openLine(id) {
   const line = repertoire.find((item) => item.id === id);
   if (!line) return;
   try {
-    const loaded = RepertoireTree.fromPgn(line.pgn);
+    const loaded = line.tree ? RepertoireTree.fromJSON(line.tree) : RepertoireTree.fromPgn(line.pgn);
     rebuildTimeline(loaded);
     activeLineId = line.id;
     titleInput.value = line.title || "Linea senza nome";
@@ -559,23 +633,40 @@ function openLine(id) {
   }
 }
 
-function deleteLine(id) {
+async function deleteLine(id) {
   const line = repertoire.find((item) => item.id === id);
   if (!line) return;
   const accepted = window.confirm("Eliminare “" + (line.title || "Linea senza nome") + "” dal repertorio?");
   if (!accepted) return;
-  repertoire = repertoire.filter((item) => item.id !== id);
-  persistRepertoire();
-  if (activeLineId === id) {
-    activeLineId = null;
-    setDirty(true);
+  if (!databaseReady) {
+    showToast("Database non pronto: eliminazione non eseguita.");
+    return;
   }
-  renderAll();
-  showToast("Linea eliminata.");
+  try {
+    if (persistenceMode === "sqlite") {
+      await invoke("delete_repertoire", { id });
+    } else {
+      const next = repertoire.filter((item) => item.id !== id);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+    }
+    repertoire = repertoire.filter((item) => item.id !== id);
+    if (activeLineId === id) {
+      activeLineId = null;
+      setDirty(true);
+    }
+    renderAll();
+    showToast("Linea eliminata.");
+  } catch (error) {
+    showToast("Errore eliminazione: " + error.message);
+  }
 }
 
-function saveLine() {
+async function saveLine() {
   if (mode === "training") return;
+  if (!databaseReady) {
+    showToast("Database non pronto: il salvataggio è disattivato.");
+    return;
+  }
   if (!studioTree.edges.size) {
     showToast("Aggiungi almeno una mossa prima di salvare.");
     return;
@@ -595,16 +686,26 @@ function saveLine() {
     nodeCount: studioTree.nodes.size,
     createdAt: previous?.createdAt || new Date().toISOString(),
     updatedAt: new Date().toISOString(),
+    tree: studioTree.toJSON(),
   };
 
-  repertoire = previous
-    ? repertoire.map((item) => (item.id === id ? entry : item))
-    : [entry, ...repertoire];
-  if (!persistRepertoire()) return;
-  activeLineId = id;
-  setDirty(false);
-  renderAll();
-  showToast("Linea salvata nel repertorio.");
+  try {
+    if (persistenceMode === "sqlite") {
+      const saved = await invoke("save_repertoire", { input: repertoirePayload(entry, studioTree) });
+      const next = repertoire.filter((item) => item.id !== id);
+      repertoire = [saved, ...next];
+    } else {
+      const next = repertoire.filter((item) => item.id !== id);
+      repertoire = [entry, ...next];
+      if (!persistRepertoire()) return;
+    }
+    activeLineId = id;
+    setDirty(false);
+    renderAll();
+    showToast("Linea salvata nel database.");
+  } catch (error) {
+    showToast("Errore salvataggio SQLite: " + error.message);
+  }
 }
 
 function startTraining() {
@@ -692,6 +793,7 @@ function newPosition() {
   titleInput.value = "Nuova linea";
   setDirty(true);
   renderAll();
+void initializePersistence();
 }
 
 async function copyFen() {
