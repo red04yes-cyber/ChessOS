@@ -13,6 +13,7 @@ Le migrazioni sono registrate in `schema_migrations` e vengono eseguite in ordin
 - **v1**: `repertoires` (metadati e PGN), `repertoire_positions` (nodi/posizioni), `repertoire_moves` (archi con UCI, SAN, NAG e commenti), `app_settings`, `study_cards`, `training_sessions` e `review_logs`.
 - **v2**: indici per repertori aggiornati, ricerca delle posizioni, navigazione delle mosse e selezione delle carte dovute.
 - **v3**: aggiunge `study_cards.fsrs_json` per conservare l'intero stato serializzato di `ts-fsrs` e un indice composto per lato e scadenza.
+- **v4**: aggiunge `study_goals`, `exam_attempts` ed `exam_answers`, con indici e vincoli per obiettivi e verifiche dei repertori.
 
 Le posizioni sono memorizzate in modo separato dalle mosse: due ordini di mosse che arrivano alla stessa posizione possono puntare allo stesso nodo e conservare più archi entranti. Le mosse sono archiviate con l'ordine delle continuazioni del nodo, così la linea principale e le varianti non cambiano al riavvio.
 
@@ -25,6 +26,8 @@ Le posizioni sono memorizzate in modo separato dalle mosse: due ordini di mosse 
 - `list_review_logs`: restituisce le ultime 10.000 valutazioni.
 - `start_training_session` e `finish_training_session`: aprono e chiudono una sessione giornaliera.
 - `record_study_review`: in un'unica transazione aggiorna la carta, aggiunge il review log (incluso l'esito del richiamo prima della rivelazione) e aggiorna i contatori della sessione.
+- `list_study_goals` e `save_study_goal`: leggono e salvano obiettivi giornalieri e settimanali.
+- `start_exam`, `record_exam_answer`, `finish_exam` e `list_exam_attempts`: gestiscono tentativi, risposte, punteggi e storico degli esami. Ogni risposta è validata contro FEN e mossa effettivi del repertorio, ed è registrata nell'ordine previsto.
 
 L'interfaccia valida il grafo ricostruendolo con `RepertoireTree.fromJSON` e controlla che ciascuna mossa sia legale e coerente con la posizione di destinazione.
 
@@ -35,13 +38,14 @@ Al primo avvio desktop vengono letti gli elementi di `chess-os.repertoire.v1`. L
 ## Verifiche
 
 I test Rust coprono:
-- esecuzione idempotente delle migrazioni fino alla versione 3;
+- esecuzione idempotente delle migrazioni fino alla versione 4;
 - salvataggio e lettura di un albero con mosse;
 - aggiornamento senza duplicazione;
-- cancellazione con cascade su nodi e archi.
+- cancellazione con cascade su nodi, archi, tentativi e risposte d'esame;
+- salvataggio degli obiettivi, valutazione degli esami e rifiuto di domande alterate o fuori sequenza.
 
 I test JavaScript coprono la serializzazione round-trip del grafo, il rifiuto di archi alterati o non legali e la logica FSRS: generazione delle carte, ripristino dello stato, quattro valutazioni, selezione delle scadenze, limiti giornalieri e statistiche di richiamo.
 
 ## Limiti attuali
 
-Le carte e le sessioni sono ora usate dal ripasso FSRS; non esiste ancora sincronizzazione o backup cloud. L'esportazione PGN è disponibile come backup portabile; backup dell'intero database, ripristino da file e strumenti di migrazione con UI dedicata restano attività successive.
+Le carte, le sessioni, gli obiettivi e gli esami sono ora usati dal ripasso e dalla dashboard; non esiste ancora sincronizzazione o backup cloud. L'esportazione PGN è disponibile come backup portabile; backup dell'intero database, ripristino da file e strumenti di migrazione con UI dedicata restano attività successive.
