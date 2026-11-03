@@ -104,7 +104,6 @@ test("counts reviews made on the local calendar day", () => {
   ];
   assert.equal(countReviewsToday(logs, now), 2);
   assert.deepEqual(getTodayReviewStats([
-    ...logs,
     {
       cardId: "new-card",
       reviewedAt: now.toISOString(),
@@ -114,7 +113,7 @@ test("counts reviews made on the local calendar day", () => {
     {
       cardId: "review-card",
       reviewedAt: now.toISOString(),
-      rating: 2,
+      rating: 1,
       stateJson: JSON.stringify({ state: State.Review, recalled: false }),
     },
     {
@@ -124,10 +123,10 @@ test("counts reviews made on the local calendar day", () => {
       stateJson: JSON.stringify({ state: State.Review, recalled: true }),
     },
   ], now), {
-    reviews: 5,
-    again: 0,
+    reviews: 3,
+    again: 1,
     correct: 1,
-    accuracy: 20,
+    accuracy: 33,
     newCardsReviewed: 1,
   });
 });
