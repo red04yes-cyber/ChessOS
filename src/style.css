@@ -728,7 +728,7 @@
   }
   .title-input:hover, .title-input:focus-visible { border-color: var(--border); background: var(--surface-2); }
   .title-input:focus-visible { box-shadow: var(--focus-ring); }
-  .line-meta { color: var(--text-3); font-size: 12px; font-variant-numeric: tabular-nums; }
+  .line-meta { display: none; }
   .line-meta .saved-indicator { display: none; }
 
   .button {
