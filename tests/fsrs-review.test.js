@@ -8,6 +8,8 @@ import {
   createFsrsCard,
   gradeFsrsCard,
   getTodayReviewStats,
+  FSRS_MODEL_VERSION,
+  FSRS_PACKAGE_VERSION,
   parseUci,
   selectDailyCards,
 } from "../src/fsrs-review.js";
@@ -42,6 +44,13 @@ test("keeps existing FSRS memory when repertoire cards are rebuilt", () => {
   assert.equal(rebuilt[0].fsrs.reps, 1);
   assert.equal(rebuilt[0].fsrs.due, reviewed.card.due);
   assert.equal(rebuilt[0].createdAt, persisted[0].createdAt);
+});
+
+test("FSRS card state records and enforces its schema, model and package versions", () => {
+  const fresh = createFsrsCard(now);
+  assert.equal(fresh.fsrsModelVersion, FSRS_MODEL_VERSION);
+  assert.equal(fresh.fsrsPackageVersion, FSRS_PACKAGE_VERSION);
+  assert.throws(() => gradeFsrsCard({ ...fresh, fsrsModelVersion: "FSRS-7" }, "good", now));
 });
 
 test("FSRS-6 ratings produce ordered learning outcomes and a persisted review log", () => {
