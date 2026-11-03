@@ -29,10 +29,6 @@ const STORAGE_KEY = "chess-os.repertoire.v1";
 const REVIEW_STORAGE_KEY = "chess-os.fsrs.review-state.v1";
 const DEFAULT_FEN = new Chess().fen();
 const files = "abcdefgh";
-const symbols = {
-  w: { k: "♔", q: "♕", r: "♖", b: "♗", n: "♘", p: "♙" },
-  b: { k: "♚", q: "♛", r: "♜", b: "♝", n: "♞", p: "♟︎" },
-};
 const promotionNames = { q: "Donna", r: "Torre", b: "Alfiere", n: "Cavallo" };
 
 let game = new Chess();
@@ -2459,11 +2455,6 @@ $("#copy-fen").addEventListener("click", copyFen);
 $("#save-line").addEventListener("click", saveLine);
 $("#import-pgn").addEventListener("click", () => { void importPgn(); });
 $("#export-pgn").addEventListener("click", exportPgn);
-$("#confirm-dialog").addEventListener("click", (event) => {
-  if (event.target === $("#confirm-dialog")) {
-    $("#confirm-dialog").hidden = true;
-  }
-});
 $("#promotion-cancel").addEventListener("click", () => {
   closePromotionChooser();
   selectedSquare = null;
