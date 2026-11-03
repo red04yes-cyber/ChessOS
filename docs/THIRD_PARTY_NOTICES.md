@@ -1,14 +1,20 @@
 # Third-party notices
 
-## Stockfish 19 Lite
+## Stockfish 19 Lite / stockfish.js
 
-Chess OS depends on the npm package stockfish version 19.0.1 and bundles its single-threaded lightweight WebAssembly engine assets into the desktop/browser application.
+Chess OS depends on the npm package stockfish version 19.0.1 and bundles its single-threaded lightweight WebAssembly engine assets.
 
-- Project: https://stockfishchess.org/
-- Source: https://github.com/official-stockfish/Stockfish
-- NPM package: https://www.npmjs.com/package/stockfish
-- License declared by the upstream Stockfish package/source: GNU General Public License v3.0 (GPL-3.0).
+- Engine project: https://stockfishchess.org/
+- WebAssembly port: https://github.com/nmrugg/stockfish.js
+- Upstream engine source: https://github.com/official-stockfish/Stockfish
+- Pinned npm package: https://www.npmjs.com/package/stockfish/v/19.0.1
+- Engine files: stockfish-19-lite-single.js and stockfish-19-lite-single.wasm
+- Licence: GNU General Public License v3.0 (GPL-3.0).
 
-The engine is copied from node_modules/stockfish/bin into public/stockfish by scripts/prepare-engine.js during the predev/prebuild lifecycle. The JavaScript worker and WebAssembly binary are distributed with the application build.
+The engine worker and matching WASM file are copied from node_modules/stockfish/bin by scripts/prepare-engine.js into public/stockfish. The complete GPL-3.0 text is included in licenses/Stockfish-GPL-3.0.txt and copied to public/stockfish/COPYING.txt so it is shipped with frontend and desktop builds.
 
-Before publishing installers or binaries, review the full GPL-3.0 text, source-code offer/source availability requirements and compatibility with the intended distribution model. The Chess OS repository itself has not selected a project-wide licence. This file is an attribution notice, not legal advice and not a substitute for including all required licence texts and notices in a release package.
+The Stockfish engine assets are third-party binaries generated from the stockfish.js and Stockfish source projects. Before publishing installers or binaries, review the full GPL-3.0 terms, including the requirements for providing Corresponding Source and installation information where applicable. The source repositories and pinned npm package above identify the code used to prepare the bundled engine. This notice is attribution and documentation, not legal advice.
+
+## Other dependencies
+
+The project also uses chess.js, ts-fsrs, Vite and Tauri. Refer to the installed package metadata and their upstream repositories for the applicable licences.
