@@ -976,6 +976,15 @@ export function initializeChessSuite({ getCurrentTree, loadGeneratedTree, getCur
     });
     blindfoldIndex = 0;
     if (!blindfoldQueue.length) {
+      const board = $("#blindfold-board");
+      if (board) {
+        board.hidden = true;
+        board.replaceChildren();
+      }
+      $("#blindfold-answer").disabled = true;
+      $("#blindfold-check").disabled = true;
+      $("#blindfold-reveal").disabled = true;
+      $("#blindfold-next").disabled = true;
       message("#blindfold-prompt", "Il repertorio attivo non contiene mosse per il lato selezionato.");
       return;
     }
