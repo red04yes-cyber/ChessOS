@@ -322,6 +322,7 @@ function appendStudioMove(move) {
 
 function currentLastMove() {
   if (mode === "training") return reviewLastMove;
+  if (mode === "exam") return examLastMove;
   return studioMoveObjects[studioPly - 1] || null;
 }
 
@@ -643,6 +644,10 @@ function openPromotionChooser(from, to, legalMoves) {
 }
 
 function commitSelectedMove(selectedMove) {
+  if (mode === "exam") {
+    void recordExamMove(selectedMove);
+    return;
+  }
   if (mode === "training") {
     if (!currentReviewCard || reviewSolved || reviewRevealed) return;
     let played;
@@ -709,6 +714,7 @@ function commitSelectedMove(selectedMove) {
 }
 
 function handleSquareClick(square) {
+  if (mode === "exam" && examAnswered) return;
   const chess = activeGame();
   if (pendingPromotion) return;
   if (chess.isGameOver()) {
@@ -1126,6 +1132,492 @@ function renderReviewPanel() {
   $("#review-complete-summary").textContent =
     "Sessione completata: " + reviewCompleted + " carte ripassate, " +
     reviewAgainCount + " valutate Again. " + countReviewsToday(reviewLogs, now) + " ripassi oggi.";
+}
+
+function renderDashboardBars(selector, points) {
+  const container = $(selector);
+  if (!container) return;
+  container.replaceChildren();
+  const maximum = Math.max(1, ...points.map((point) => Number(point.reviews) || 0));
+  for (const point of points) {
+    const item = document.createElement("div");
+    item.className = "dashboard-bar-item";
+    item.title = point.reviews + " ripassi · " + (point.accuracy == null ? "nessun dato" : point.accuracy + "% richiamo");
+    const value = document.createElement("span");
+    value.className = "dashboard-bar-value";
+    value.textContent = String(point.reviews || 0);
+    const track = document.createElement("div");
+    track.className = "dashboard-bar-track";
+    const fill = document.createElement("div");
+    fill.className = "dashboard-bar-fill";
+    fill.style.height = (point.reviews ? Math.max(4, (point.reviews / maximum) * 100) : 2) + "%";
+    track.append(fill);
+    const label = document.createElement("span");
+    label.className = "dashboard-bar-label";
+    label.textContent = point.label;
+    item.append(value, track, label);
+    container.append(item);
+  }
+}
+
+function appendDashboardEmpty(container, message) {
+  const empty = document.createElement("div");
+  empty.className = "dashboard-empty";
+  empty.textContent = message;
+  container.append(empty);
+}
+
+function appendGoalProgress(container, label, actual, target, suffix = "") {
+  const row = document.createElement("div");
+  row.className = "dashboard-goal-progress-row";
+  const header = document.createElement("div");
+  header.className = "dashboard-goal-progress-head";
+  const name = document.createElement("span");
+  name.textContent = label;
+  const value = document.createElement("strong");
+  value.textContent = actual + " / " + target + suffix;
+  header.append(name, value);
+  const track = document.createElement("div");
+  track.className = "dashboard-progress-track";
+  const fill = document.createElement("div");
+  fill.className = "dashboard-progress-fill";
+  const progress = target > 0 ? Math.min(100, Math.round((actual / target) * 100)) : 0;
+  fill.style.width = progress + "%";
+  track.append(fill);
+  row.append(header, track);
+  container.append(row);
+}
+
+function renderDashboard() {
+  if (!$("#dashboard-panel")) return;
+  const now = new Date();
+  const cards = buildReviewCards(repertoire, studyCards, now);
+  const snapshot = buildDashboardSnapshot({
+    repertoires: repertoire,
+    reviewCards: cards,
+    reviewLogs,
+    sessions: reviewSessions,
+    goals: studyGoals,
+    examAttempts,
+  }, now);
+
+  $("#dashboard-stat-repertoires").textContent = String(snapshot.overview.repertoireCount);
+  $("#dashboard-stat-moves").textContent = String(snapshot.overview.totalMoves);
+  $("#dashboard-stat-today").textContent = String(snapshot.today.reviews);
+  $("#dashboard-stat-today-detail").textContent = snapshot.today.minutes + " minuti · " + snapshot.today.sessions + " sessioni";
+  $("#dashboard-stat-accuracy").textContent = snapshot.week.accuracy == null ? "—" : snapshot.week.accuracy + "%";
+  $("#dashboard-stat-week-detail").textContent = snapshot.week.recalled + " mosse ricordate su " + snapshot.week.reviews;
+  $("#dashboard-stat-due").textContent = String(snapshot.overview.dueCards);
+  $("#dashboard-daily-total").textContent = String(snapshot.today.reviews);
+  $("#dashboard-weekly-total").textContent = String(snapshot.week.reviews);
+  renderDashboardBars("#dashboard-daily-chart", snapshot.dailyTrend);
+  renderDashboardBars("#dashboard-weekly-chart", snapshot.weeklyTrend);
+
+  const goalsForm = $("#dashboard-goals-form");
+  if (!goalsForm.contains(document.activeElement)) {
+    $("#goal-daily-reviews").value = String(snapshot.today.goal.targetReviews);
+    $("#goal-daily-minutes").value = String(snapshot.today.goal.targetMinutes);
+    $("#goal-weekly-reviews").value = String(snapshot.week.goal.targetReviews);
+    $("#goal-weekly-minutes").value = String(snapshot.week.goal.targetMinutes);
+    $("#goal-target-accuracy").value = String(Math.max(snapshot.today.goal.targetAccuracy, snapshot.week.goal.targetAccuracy));
+  }
+  const goalBox = $("#dashboard-goal-progress");
+  goalBox.replaceChildren();
+  for (const [label, actual] of [["Oggi", snapshot.today], ["Questa settimana", snapshot.week]]) {
+    const group = document.createElement("div");
+    group.className = "dashboard-goal-group";
+    const heading = document.createElement("strong");
+    heading.className = "dashboard-goal-group-title";
+    heading.textContent = label;
+    group.append(heading);
+    appendGoalProgress(group, "Ripassi", actual.reviews, actual.goal.targetReviews);
+    appendGoalProgress(group, "Minuti", actual.minutes, actual.goal.targetMinutes);
+    appendGoalProgress(group, "Richiamo", actual.accuracy ?? 0, actual.goal.targetAccuracy, "%");
+    goalBox.append(group);
+  }
+
+  const repertoireList = $("#dashboard-repertoire-list");
+  repertoireList.replaceChildren();
+  if (!snapshot.repertoires.length) {
+    appendDashboardEmpty(repertoireList, "Crea e salva un repertorio in Studio per iniziare a misurare i progressi.");
+  } else {
+    for (const line of snapshot.repertoires) {
+      const row = document.createElement("div");
+      row.className = "dashboard-repertoire-row";
+      const details = document.createElement("div");
+      const title = document.createElement("strong");
+      title.className = "dashboard-repertoire-title";
+      title.textContent = line.title;
+      const detail = document.createElement("span");
+      detail.className = "dashboard-repertoire-detail";
+      detail.textContent = line.reviewedCards + "/" + line.moveCount + " schede viste · " +
+        line.reviews + " valutazioni" +
+        (line.lastReview ? " · ultimo ripasso " + new Date(line.lastReview).toLocaleDateString("it-IT") : "");
+      details.append(title, detail);
+      const metric = document.createElement("strong");
+      metric.className = "dashboard-repertoire-metric";
+      metric.textContent = line.accuracy == null ? "—" : line.accuracy + "%";
+      row.append(details, metric);
+      row.addEventListener("click", () => openLine(line.id));
+      row.tabIndex = 0;
+      row.setAttribute("role", "button");
+      row.setAttribute("aria-label", "Apri il repertorio " + line.title);
+      row.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          openLine(line.id);
+        }
+      });
+      repertoireList.append(row);
+    }
+  }
+
+  const examSelect = $("#exam-repertoire");
+  const previousSelection = examSelect.value;
+  examSelect.replaceChildren();
+  for (const line of repertoire) {
+    const option = document.createElement("option");
+    option.value = line.id;
+    option.textContent = line.title || "Linea senza nome";
+    examSelect.append(option);
+  }
+  if (repertoire.some((line) => line.id === previousSelection)) examSelect.value = previousSelection;
+  $("#exam-start").disabled = !repertoire.length || !databaseReady;
+
+  const history = $("#dashboard-exam-history");
+  history.replaceChildren();
+  if (!snapshot.exams.length) {
+    appendDashboardEmpty(history, "Gli esami completati appariranno qui.");
+  } else {
+    for (const attempt of snapshot.exams) {
+      const row = document.createElement("div");
+      row.className = "dashboard-history-row";
+      const details = document.createElement("div");
+      const title = document.createElement("strong");
+      title.className = "dashboard-history-title";
+      title.textContent = attempt.repertoireTitle || "Esame repertorio";
+      const correct = Number(attempt.correctCount ?? attempt.correct_count ?? 0);
+      const total = Number(attempt.totalQuestions ?? attempt.total_questions ?? 0);
+      const score = total ? Math.round((correct / total) * 100) : 0;
+      const started = attempt.startedAt ?? attempt.started_at;
+      const detail = document.createElement("span");
+      detail.className = "dashboard-history-detail";
+      detail.textContent = (started ? new Date(started).toLocaleDateString("it-IT") : "Data non disponibile") +
+        " · " + correct + "/" + total + " risposte corrette · " + score + "%";
+      details.append(title, detail);
+      const status = document.createElement("strong");
+      status.className = "dashboard-history-status";
+      const state = attempt.status || "completed";
+      if (state === "aborted") {
+        status.textContent = "Interrotto";
+        status.classList.add("aborted");
+      } else if (state === "in_progress") {
+        status.textContent = "In corso";
+      } else if (attempt.passed) {
+        status.textContent = "Superato";
+      } else {
+        status.textContent = "Da ripetere";
+        status.classList.add("failed");
+      }
+      row.append(details, status);
+      history.append(row);
+    }
+  }
+}
+
+function renderExamPanel() {
+  const active = $("#exam-active");
+  if (!active) return;
+  active.hidden = mode !== "exam" || !currentExamCard;
+  if (!currentExamCard) return;
+  const side = currentExamCard.side === "white" ? "Bianco" : "Nero";
+  $("#exam-question-meta").textContent = (currentExamCard.repertoireTitle || "Repertorio") +
+    " · " + side + " · domanda " + (examQuestionIndex + 1) + "/" + examTotalQuestions;
+  $("#exam-feedback").textContent = examFeedback || "Trova la mossa prevista in questa posizione.";
+  const next = $("#exam-next");
+  next.hidden = !examAnswered;
+  next.textContent = examQuestionIndex + 1 >= examTotalQuestions ? "Concludi esame" : "Domanda successiva";
+  next.disabled = isSavingExamAnswer;
+}
+
+async function saveDashboardGoals(event) {
+  event.preventDefault();
+  try {
+    const targetAccuracy = Number($("#goal-target-accuracy").value);
+    const goals = [
+      normalizeStudyGoal({
+        period: "daily",
+        targetReviews: $("#goal-daily-reviews").value,
+        targetMinutes: $("#goal-daily-minutes").value,
+        targetAccuracy,
+      }),
+      normalizeStudyGoal({
+        period: "weekly",
+        targetReviews: $("#goal-weekly-reviews").value,
+        targetMinutes: $("#goal-weekly-minutes").value,
+        targetAccuracy,
+      }),
+    ];
+    for (const goal of goals) {
+      if (persistenceMode === "sqlite") {
+        const saved = await invoke("save_study_goal", { input: goal });
+        studyGoals = studyGoals.filter((entry) => entry.period !== saved.period).concat(saved);
+      } else {
+        studyGoals = studyGoals.filter((entry) => entry.period !== goal.period).concat(goal);
+      }
+    }
+    if (persistenceMode !== "sqlite" && !persistLocalReviewState()) return;
+    $("#dashboard-goal-status").textContent = "Obiettivi aggiornati.";
+    renderAll();
+  } catch (error) {
+    $("#dashboard-goal-status").textContent = "Errore nel salvataggio: " + error.message;
+  }
+}
+
+async function startRepertoireExam(event) {
+  event.preventDefault();
+  if (!databaseReady || !repertoire.length) {
+    showToast("Salva almeno un repertorio prima di avviare un esame.");
+    return;
+  }
+  if (examAttemptId) {
+    showToast("Concludi prima l'esame in corso.");
+    return;
+  }
+  const repertoireId = $("#exam-repertoire").value;
+  const line = repertoire.find((entry) => entry.id === repertoireId);
+  if (!line) {
+    showToast("Seleziona un repertorio valido.");
+    return;
+  }
+  const side = $("#exam-side").value;
+  const count = Number($("#exam-count").value);
+  const threshold = Number($("#exam-pass-threshold").value);
+  if (!Number.isInteger(count) || count < 1 || count > 500 ||
+      !Number.isInteger(threshold) || threshold < 1 || threshold > 100) {
+    showToast("Numero di domande o soglia non validi.");
+    return;
+  }
+  const availableCards = buildReviewCards([line], studyCards, new Date());
+  const questions = selectExamQuestions(availableCards, { repertoireId, side, count });
+  if (!questions.length) {
+    showToast("Il repertorio non contiene mosse per il lato scelto.");
+    return;
+  }
+
+  const now = new Date();
+  const id = globalThis.crypto?.randomUUID?.() ?? "exam-" + Date.now();
+  const attempt = {
+    id,
+    repertoireId,
+    repertoireTitle: line.title || "Linea senza nome",
+    startedAt: now.toISOString(),
+    finishedAt: null,
+    totalQuestions: questions.length,
+    correctCount: 0,
+    passThreshold: threshold,
+    passed: false,
+    side,
+    status: "in_progress",
+  };
+  try {
+    if (persistenceMode === "sqlite") {
+      await invoke("start_exam", {
+        input: {
+          id,
+          repertoireId,
+          repertoireTitle: attempt.repertoireTitle,
+          startedAt: attempt.startedAt,
+          totalQuestions: attempt.totalQuestions,
+          passThreshold: threshold,
+          side,
+        },
+      });
+    } else {
+      examAttempts = [attempt, ...examAttempts];
+      if (!persistLocalReviewState()) return;
+    }
+  } catch (error) {
+    showToast("Non riesco ad avviare l'esame: " + error.message);
+    return;
+  }
+
+  examAttemptId = id;
+  examQueue = [...questions];
+  examQuestionIndex = 0;
+  examTotalQuestions = questions.length;
+  examCorrectCount = 0;
+  examPassThreshold = threshold;
+  examAnswered = false;
+  examFeedback = "";
+  examLastMove = null;
+  mode = "exam";
+  selectedSquare = null;
+  openNextExamQuestion();
+  if (questions.length < count) {
+    showToast("Esame avviato con " + questions.length + " domande disponibili nel repertorio.");
+  }
+}
+
+function openNextExamQuestion() {
+  currentExamCard = examQueue.shift() || null;
+  examAnswered = false;
+  examFeedback = "";
+  examLastMove = null;
+  selectedSquare = null;
+  if (!currentExamCard) {
+    void finishRepertoireExam(false);
+    return;
+  }
+  trainingGame = new Chess(currentExamCard.fen);
+  boardFlipped = currentExamCard.side === "black";
+  renderAll();
+}
+
+async function recordExamMove(selectedMove) {
+  if (!currentExamCard || examAnswered || isSavingExamAnswer) return;
+  isSavingExamAnswer = true;
+  let played;
+  try {
+    played = trainingGame.move({
+      from: selectedMove.from,
+      to: selectedMove.to,
+      ...(selectedMove.promotion ? { promotion: selectedMove.promotion } : {}),
+    });
+  } catch {
+    played = null;
+  }
+  selectedSquare = null;
+  if (!played) {
+    isSavingExamAnswer = false;
+    renderBoard();
+    showToast("Mossa non legale.");
+    return;
+  }
+
+  const selectedUci = played.from + played.to + (played.promotion || "");
+  const correct = selectedUci === currentExamCard.uci;
+  let displayedMove = played;
+  if (!correct) {
+    trainingGame.undo();
+    try {
+      displayedMove = trainingGame.move(parseUci(currentExamCard.uci));
+    } catch (error) {
+      isSavingExamAnswer = false;
+      showToast("Non riesco a mostrare la soluzione: " + error.message);
+      return;
+    }
+  }
+
+  const answer = {
+    id: globalThis.crypto?.randomUUID?.() ?? "answer-" + Date.now(),
+    attemptId: examAttemptId,
+    questionIndex: examQuestionIndex,
+    edgeId: currentExamCard.edgeId,
+    positionFen: currentExamCard.fen,
+    expectedUci: currentExamCard.uci,
+    selectedUci,
+    correct,
+    answeredAt: new Date().toISOString(),
+  };
+  try {
+    if (persistenceMode === "sqlite") {
+      await invoke("record_exam_answer", {
+        input: {
+          id: answer.id,
+          attemptId: answer.attemptId,
+          questionIndex: answer.questionIndex,
+          edgeId: answer.edgeId,
+          positionFen: answer.positionFen,
+          expectedUci: answer.expectedUci,
+          selectedUci: answer.selectedUci,
+          answeredAt: answer.answeredAt,
+        },
+      });
+      const attempt = examAttempts.find((entry) => entry.id === examAttemptId);
+      if (attempt) attempt.correctCount = Number(attempt.correctCount || 0) + (correct ? 1 : 0);
+    } else {
+      examAnswers.push(answer);
+      const attempt = examAttempts.find((entry) => entry.id === examAttemptId);
+      if (attempt) attempt.correctCount = Number(attempt.correctCount || 0) + (correct ? 1 : 0);
+      if (!persistLocalReviewState()) {
+        isSavingExamAnswer = false;
+        return;
+      }
+    }
+  } catch (error) {
+    isSavingExamAnswer = false;
+    showToast("Non riesco a registrare la risposta: " + error.message);
+    return;
+  }
+
+  if (correct) examCorrectCount += 1;
+  examAnswered = true;
+  examLastMove = displayedMove;
+  examFeedback = correct
+    ? "Risposta corretta: " + displayedMove.san + "."
+    : "Risposta errata. La mossa prevista era " + displayedMove.san + ".";
+  isSavingExamAnswer = false;
+  renderAll();
+}
+
+async function finishRepertoireExam(aborted = false) {
+  if (!examAttemptId) return;
+  const attemptId = examAttemptId;
+  const finishedAt = new Date().toISOString();
+  const result = calculateExamResult(
+    Array.from({ length: examTotalQuestions }, (_, index) => ({ correct: index < examCorrectCount })),
+    examPassThreshold,
+  );
+  try {
+    if (persistenceMode === "sqlite") {
+      await invoke("finish_exam", {
+        input: { id: attemptId, finishedAt, aborted },
+      });
+      examAttempts = await invoke("list_exam_attempts");
+    } else {
+      examAttempts = examAttempts.map((entry) => entry.id === attemptId ? {
+        ...entry,
+        finishedAt,
+        correctCount: result.correct,
+        passed: !aborted && result.passed,
+        status: aborted ? "aborted" : "completed",
+      } : entry);
+      persistLocalReviewState();
+    }
+  } catch (error) {
+    showToast("Non riesco a salvare la chiusura dell'esame: " + error.message);
+  }
+  examAttemptId = null;
+  examQueue = [];
+  currentExamCard = null;
+  examAnswered = false;
+  examLastMove = null;
+  trainingGame = null;
+  mode = "dashboard";
+  renderAll();
+  if (aborted) showToast("Esame interrotto. Il tentativo resta nello storico.");
+  else showToast(result.passed
+    ? "Esame superato: " + result.accuracy + "%."
+    : "Esame concluso: " + result.accuracy + "%. Da ripetere.");
+}
+
+function leaveExam() {
+  if (examAttemptId) void finishRepertoireExam(true);
+  else {
+    mode = "dashboard";
+    renderAll();
+  }
+}
+
+function showDashboard() {
+  if (mode === "training") leaveTraining();
+  if (mode === "exam" && examAttemptId) {
+    leaveExam();
+    return;
+  }
+  mode = "dashboard";
+  renderAll();
 }
 
 function leaveTraining() {
