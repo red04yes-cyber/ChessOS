@@ -315,3 +315,101 @@ h1 { margin: 9px 0 5px; font-size: clamp(24px, 2.2vw, 31px); line-height: 1.1; l
   background: #2a3747;
   outline: none;
 }
+
+
+/* Full chess training suite: endgames, engine, sparring, openings and tactics */
+.suite-grid { margin-top: 22px; }
+.endgame-lab { grid-column: 1 / -1; }
+.endgame-selectors {
+  display: grid;
+  grid-template-columns: minmax(180px, .8fr) minmax(260px, 1.2fr);
+  gap: 12px;
+  margin: 12px 0;
+}
+.endgame-lesson {
+  display: grid;
+  gap: 7px;
+  padding: 13px;
+  border: 1px solid #354253;
+  border-radius: 7px;
+  background: #151e29;
+  color: #b7c3d1;
+  font-size: 11px;
+  line-height: 1.6;
+}
+.endgame-lesson strong { color: #e5d3a6; font-size: 13px; }
+.endgame-lesson p { margin: 0; }
+.endgame-progress-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 5px 0 10px; }
+.endgame-progress-row .tool-description { margin: 0; text-align: right; }
+.endgame-workbench {
+  display: grid;
+  grid-template-columns: minmax(220px, 380px) minmax(220px, 1fr);
+  align-items: start;
+  gap: 16px;
+  margin-top: 14px;
+}
+.mini-board {
+  width: min(100%, 380px);
+  aspect-ratio: 1;
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  grid-template-rows: repeat(8, minmax(0, 1fr));
+  overflow: hidden;
+  border: 4px solid #2b3542;
+  border-radius: 5px;
+  box-shadow: 0 8px 20px #060a1080;
+  background: #758a7e;
+}
+.mini-square {
+  min-width: 0;
+  min-height: 0;
+  border: 0;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  font-family: "Segoe UI Symbol", "Noto Sans Symbols 2", "DejaVu Sans", serif;
+  font-size: clamp(19px, 3vw, 38px);
+  line-height: 1;
+  cursor: pointer;
+  user-select: none;
+}
+.mini-square.light { background: #d9d2bf; }
+.mini-square.dark { background: #758a7e; }
+.mini-square.selected { background: #e3bd61; }
+.mini-square.white-piece { color: #fffdf1; text-shadow: 0 2px 2px #1119, 0 0 2px #222; }
+.mini-square.black-piece { color: #202a27; text-shadow: 0 1px 1px #fff7; }
+.mini-square:focus-visible { outline: 3px solid #f6cb6c; outline-offset: -4px; z-index: 1; }
+.endgame-feedback { display: grid; gap: 9px; align-content: start; }
+.endgame-feedback p { padding: 10px; margin: 0; border: 1px solid #303d4d; border-radius: 6px; background: #192330; }
+.suite-report, .suite-moves { display: grid; gap: 7px; margin-top: 9px; max-height: 350px; overflow: auto; }
+.suite-report-row {
+  padding: 9px 10px;
+  border: 1px solid #303d4d;
+  border-radius: 6px;
+  background: #192330;
+  color: #aeb9c8;
+  font-size: 10px;
+  line-height: 1.55;
+}
+.suite-report-row strong { display: block; color: #e2c88e; font-size: 10px; }
+.suite-report-row p { margin: 5px 0 0; overflow-wrap: anywhere; }
+.suite-warning { color: #e7b566 !important; }
+.suite-moves { max-height: 110px; color: #8393a7; font-size: 10px; line-height: 1.6; overflow-wrap: anywhere; }
+#sparring-board, #tactics-board { margin: 12px auto; }
+#opening-report, #opponent-report, #endgame-tablebase-result, #current-analysis { overflow-wrap: anywhere; }
+.endgame-lab .tool-description { max-width: 1000px; }
+#game-import-tool input, #game-import-tool select, #opening-explorer-tool input, #opening-explorer-tool select, #repertoire-generator-tool input, #repertoire-generator-tool select, #sparring-tool select {
+  max-width: 180px;
+}
+#game-import-tool .tool-actions, #opening-explorer-tool .tool-actions, #repertoire-generator-tool .tool-actions, #sparring-tool .tool-actions {
+  align-items: end;
+}
+@media (max-width: 850px) {
+  .endgame-selectors { grid-template-columns: 1fr; }
+  .endgame-workbench { grid-template-columns: 1fr; }
+  .endgame-workbench .mini-board { margin-inline: auto; }
+  .endgame-progress-row { align-items: flex-start; flex-direction: column; }
+  .endgame-progress-row .tool-description { text-align: left; }
+  .endgame-lab { grid-column: auto; }
+}
