@@ -40,6 +40,7 @@ test("creates complete starter repertoires from every curated family line", () =
     const preset = createOpeningPreset(family);
     assert.equal(preset.rows, getOpeningFamilyCount(family));
     assert.ok(preset.tree.edges.size > preset.rows, family + " should include shared prefixes and multiple variations");
-    assert.ok(preset.tree.getOutgoing(preset.tree.rootId).length > 1, family + " should have alternative first moves");
+    assert.equal(preset.tree.getOutgoing(preset.tree.rootId).length, 1, family + " should start from the recognised main opening move");
+    assert.ok(preset.tree.getOutgoing(preset.tree.getOutgoing(preset.tree.rootId)[0].to).length > 1, family + " should branch into variations after the family move");
   }
 });
