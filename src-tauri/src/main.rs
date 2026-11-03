@@ -19,7 +19,9 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             db::list_repertoires,
             db::save_repertoire,
-            db::delete_repertoire
+            db::delete_repertoire,
+            db::list_study_cards,
+            db::replace_study_cards
         ])
         .run(tauri::generate_context!())
         .expect("error while running Chess OS");
