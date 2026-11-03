@@ -414,7 +414,10 @@
           <button id="promotion-cancel" class="button ghost" type="button">Annulla</button>
         </div>
       </div>
-      <div id="toast" class="toast" role="status" aria-live="polite"></div>
+      <div id="toast" class="toast" role="status" aria-live="polite" aria-atomic="true">
+        <span id="toast-message" class="toast-message"></span>
+        <button id="toast-close" class="toast-close" type="button" aria-label="Chiudi notifica" title="Chiudi notifica">×</button>
+      </div>
       <script type="module" src="/src/main.js"></script>
     </div>
   </body>
