@@ -9,46 +9,6 @@ const fmt = new Intl.NumberFormat("it-IT");
 
 export function initChessLab(options) {
   const { container, desktopApp, getGame, getMode, getPositions, getMoves, startEngine, playUciMove, importGames, getArchive = () => [], getPlayerNames = () => [], openPuzzle = () => false, openArchiveGame = () => false } = options;
-  const style = document.createElement("style");
-  style.textContent = [
-    ".chess-lab-card{min-width:0}",
-    ".lab-sections{display:grid;gap:9px}",
-    ".lab-section{border:1px solid #354253;border-radius:7px;background:#192331;padding:10px}",
-    ".lab-section summary{cursor:pointer;color:#d6deea;font-size:10px;font-weight:800;letter-spacing:.04em}",
-    ".lab-body{display:grid;gap:8px;margin-top:9px}",
-    ".lab-row{display:flex;gap:7px;align-items:center;flex-wrap:wrap}",
-    ".lab-row .text-input{min-width:0;flex:1 1 100px;padding:7px;font-size:10px}",
-    ".lab-note{color:#91a0b2;font-size:9px;line-height:1.45;margin:0}",
-    ".lab-status{color:#aebccc;font-size:10px;line-height:1.5}",
-    ".lab-status.error{color:#e99b96}",
-    ".lab-list{display:grid;gap:6px;max-height:280px;overflow:auto}",
-    ".lab-result{border:1px solid #354253;border-radius:6px;padding:8px;background:#202a37;display:grid;gap:5px}",
-    ".lab-result-head{display:flex;justify-content:space-between;gap:8px;color:#e4c17d;font-size:10px;font-weight:800}",
-    ".lab-result p{margin:0;color:#c5d0dd;font-size:10px;line-height:1.5}",
-    ".lab-result small{color:#8796a8;font-size:9px}",
-    ".lab-move{display:grid;grid-template-columns:52px minmax(0,1fr) 78px;gap:6px;align-items:center;padding:7px;border:1px solid #354253;border-radius:6px;background:#202a37}",
-    ".lab-move button{border:0;background:transparent;color:#e4c17d;text-align:left;font-weight:800;cursor:pointer}",
-    ".lab-move small{color:#c5d0dd;font-size:9px}",
-    ".lab-tag{border-radius:4px;background:#344253;color:#cbd5e1;padding:3px 6px;font-size:9px}",
-    ".lab-progress{height:5px;background:#2c394a;border-radius:5px;overflow:hidden}",
-    ".lab-progress>span{display:block;height:100%;width:0;background:#d7a64b;transition:width .15s}",
-    ".lab-file{color:#9eadbd;font-size:10px;max-width:100%}",
-    ".lab-input{width:100%;min-height:60px;background:#121923;color:#e6edf5;border:1px solid #3a4656;border-radius:5px;padding:8px;font:inherit;font-size:10px;resize:vertical}",
-    ".lab-link{color:#e2bd70;font-size:9px;text-decoration:underline}",
-    ".lab-metrics{display:flex;gap:7px;flex-wrap:wrap;color:#e6edf5;font-size:10px;line-height:1.5}",
-    ".lab-metric{border:1px solid #354253;border-radius:6px;padding:7px 9px;background:#202a37}",
-    ".lab-chart{min-height:92px;border:1px solid #354253;border-radius:6px;background:#121923;padding:6px;overflow:hidden}",
-    ".lab-chart svg{width:100%;height:100px;display:block}",
-    ".lab-chart text{font:9px sans-serif;fill:#91a0b2}",
-    ".lab-puzzle{display:grid;gap:5px;border:1px solid #80683d;border-radius:6px;padding:8px;background:#292a2b}",
-    ".lab-puzzle button{justify-self:start}",
-    ".lab-archive-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:7px;align-items:center;border:1px solid #354253;border-radius:6px;padding:7px;background:#202a37}",
-    ".lab-archive-row p{margin:0;color:#c5d0dd;font-size:10px;line-height:1.4}",
-    ".lab-account-grid{display:grid;gap:7px}",
-    ".lab-account-grid .text-input{min-width:0;width:100%;padding:7px;font-size:10px}"
-  ].join("");
-  document.head.append(style);
-
   const card = document.createElement("section");
   card.className = "detail-card chess-lab-card";
   card.innerHTML = [
