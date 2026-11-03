@@ -2,6 +2,7 @@ import { Chess } from "chess.js";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { RepertoireTree } from "./repertoire-tree.js";
+import { initializeChessSuite } from "./chess-suite.js";
 import { fenToEditorState, editorStateToFen } from "./fen-editor.js";
 import { createOpeningPreset, getOpeningFamilyCount, identifyOpeningFromFens } from "./opening-catalog.js";
 import { encodeBoardMarks, emptyBoardMarks, nagsToSymbols, normalizeNag, parseBoardMarks, stripBoardMarkTags, toggleArrowMark, toggleSquareMark } from "./board-annotations.js";
@@ -35,6 +36,7 @@ const promotionNames = { q: "Donna", r: "Torre", b: "Alfiere", n: "Cavallo" };
 
 let game = new Chess();
 let mode = "studio";
+let chessSuite = null;
 let selectedSquare = null;
 let boardFlipped = false;
 let pendingPromotion = null;
@@ -205,10 +207,49 @@ function repertoirePayload(entry, tree) {
   };
 }
 
+async function ensureDemoOpenings() {
+  const demos = [
+    { id: "demo-opening-caro-kann", family: "Caro-Kann Defense", title: "Caro-Kann · Demo" },
+    { id: "demo-opening-italian-game", family: "Italian Game", title: "Partita Italiana · Demo" },
+  ];
+  const existingIds = new Set(repertoire.map((entry) => entry.id));
+  let browserChanged = false;
+  for (const demo of demos) {
+    if (existingIds.has(demo.id)) continue;
+    const preset = createOpeningPreset(demo.family);
+    const now = new Date().toISOString();
+    const entry = {
+      id: demo.id,
+      title: demo.title,
+      pgn: preset.tree.toPgn({ Event: demo.title, Opening: demo.family }),
+      sans: preset.tree.mainlinePath().map((edgeId) => preset.tree.getEdge(edgeId).san),
+      edgeCount: preset.tree.edges.size,
+      nodeCount: preset.tree.nodes.size,
+      createdAt: now,
+      updatedAt: now,
+      tree: preset.tree.toJSON(),
+    };
+    if (persistenceMode === "sqlite") {
+      await invoke("save_repertoire", { input: repertoirePayload(entry, preset.tree) });
+    } else {
+      repertoire = [entry, ...repertoire];
+      browserChanged = true;
+    }
+    existingIds.add(demo.id);
+  }
+  if (browserChanged && !persistRepertoire()) {
+    throw new Error("Impossibile salvare i due repertori demo nel browser.");
+  }
+  if (persistenceMode === "sqlite" && demos.some((demo) => !repertoire.some((entry) => entry.id === demo.id))) {
+    repertoire = await invoke("list_repertoires");
+  }
+}
+
 async function initializePersistence() {
   if (persistenceMode !== "sqlite") {
     updateStorageLabel("Anteprima browser", "In questa modalità i dati sono salvati nella memoria del browser.");
     await loadStudyData();
+    await ensureDemoOpenings();
     renderAll();
     return;
   }
@@ -243,6 +284,8 @@ async function initializePersistence() {
     repertoire = records;
     await loadStudyData();
     databaseReady = true;
+    await ensureDemoOpenings();
+    records = repertoire;
     await refreshImportedGames();
     if (migrationErrors.length === 0) {
       try { localStorage.removeItem(STORAGE_KEY); } catch { /* Non bloccare l'avvio per storage non disponibile. */ }
@@ -551,6 +594,7 @@ function renderMode() {
   }
   $("#review-panel").hidden = !training;
   $("#exam-panel").hidden = !exam;
+  $("#chess-lab-tools").hidden = mode !== "studio";
   $("#flip-board").disabled = dashboard;
 }
 
@@ -1072,6 +1116,24 @@ async function refreshImportedGames() {
   }
   importedGames = await invoke("list_imported_games", { limit: 15 });
   renderImportedGames();
+
+  // Carica un campione consistente di partite salvate nella libreria SQLite
+  // per alimentare Opening Explorer, generatore e Tactical Trainer.
+  try {
+    const records = await invoke("list_imported_games", { limit: 50 });
+    const fullGames = await Promise.all(
+      records.map((record) => invoke("get_imported_game", { id: record.id }))
+    );
+    const pgn = fullGames.map((record) => record.pgn).filter(Boolean).join("\n\n");
+    chessSuite?.loadImportedPgn(pgn);
+    if (pgn) {
+      const count = fullGames.filter((record) => record.pgn).length;
+      const status = $("#opening-summary");
+      if (status && !status.textContent.trim()) status.textContent = "Archivio pronto: " + count + " partite importate.";
+    }
+  } catch (error) {
+    console.warn("Non riesco a preparare i PGN per gli strumenti di analisi:", error);
+  }
 }
 
 function openOnlineImportDialog() {
@@ -2458,6 +2520,30 @@ document.addEventListener("keydown", (event) => {
     event.preventDefault();
     positionForPly(studioPly + 1);
   }
+});
+
+
+chessSuite = initializeChessSuite({
+  getCurrentTree: () => studioTree,
+  loadGeneratedTree: (tree, title) => {
+    if (!confirmDiscardChanges("caricare il repertorio generato")) return;
+    rebuildTimeline(tree);
+    mode = "studio";
+    activeLineId = null;
+    titleInput.value = title;
+    setDirty(true);
+    renderAll();
+    showToast("Repertorio generato. Controlla le varianti e salva la linea nello Studio.");
+  },
+  getCurrentFen: () => activeGame().fen(),
+  getCurrentEdge: () => {
+    const edgeId = studioPath[studioPly - 1];
+    return edgeId ? studioTree.getEdge(edgeId) : null;
+  },
+  onAnnotationSaved: () => {
+    setDirty(true);
+    renderAll();
+  },
 });
 
 renderAll();
