@@ -8,6 +8,96 @@
     <title>Chess OS</title>
   </head>
   <body>
+    <svg class="piece-sprite" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false" width="0" height="0">
+      <defs>
+        <symbol id="piece-wk" viewBox="0 0 45 45">
+          <g fill="currentColor" stroke="var(--piece-outline)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M20 4h5M22.5 1.5v5M14 12.5c-1.5 3-2.1 6.4-1.6 10l-3.1 12.2h26.4l-3.1-12.2c.5-3.6-.1-7-1.6-10-2.3 2.2-4.8 3.2-8.5 3.2s-6.2-1-8.5-3.2Z"/>
+            <path d="M9.2 34.7h27.6v4H9.2z"/>
+            <path d="M18 22.5h9" fill="none"/>
+          </g>
+        </symbol>
+        <symbol id="piece-bk" viewBox="0 0 45 45">
+          <g fill="currentColor" stroke="var(--piece-outline)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M20 4h5M22.5 1.5v5M14 12.5c-1.5 3-2.1 6.4-1.6 10l-3.1 12.2h26.4l-3.1-12.2c.5-3.6-.1-7-1.6-10-2.3 2.2-4.8 3.2-8.5 3.2s-6.2-1-8.5-3.2Z"/>
+            <path d="M9.2 34.7h27.6v4H9.2z"/>
+            <path d="M18 22.5h9" fill="none"/>
+          </g>
+        </symbol>
+        <symbol id="piece-wq" viewBox="0 0 45 45">
+          <g fill="currentColor" stroke="var(--piece-outline)" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="9" cy="9" r="3.1"/><circle cx="22.5" cy="5.5" r="3.1"/><circle cx="36" cy="9" r="3.1"/>
+            <path d="m8.5 13 3.2 20h21.6l3.2-20-8.5 8-5.5-11-5.5 11-8.5-8Z"/>
+            <path d="M10 33h25v5H10z"/>
+          </g>
+        </symbol>
+        <symbol id="piece-bq" viewBox="0 0 45 45">
+          <g fill="currentColor" stroke="var(--piece-outline)" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="9" cy="9" r="3.1"/><circle cx="22.5" cy="5.5" r="3.1"/><circle cx="36" cy="9" r="3.1"/>
+            <path d="m8.5 13 3.2 20h21.6l3.2-20-8.5 8-5.5-11-5.5 11-8.5-8Z"/>
+            <path d="M10 33h25v5H10z"/>
+          </g>
+        </symbol>
+        <symbol id="piece-wr" viewBox="0 0 45 45">
+          <g fill="currentColor" stroke="var(--piece-outline)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M8 8h7v5h5V8h6v5h5V8h6v9H8z"/>
+            <path d="M11 17h23l-2 16H13z"/>
+            <path d="M9 33h27v5H9z"/>
+            <path d="M17 21v9m11-9v9" fill="none"/>
+          </g>
+        </symbol>
+        <symbol id="piece-br" viewBox="0 0 45 45">
+          <g fill="currentColor" stroke="var(--piece-outline)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M8 8h7v5h5V8h6v5h5V8h6v9H8z"/>
+            <path d="M11 17h23l-2 16H13z"/>
+            <path d="M9 33h27v5H9z"/>
+            <path d="M17 21v9m11-9v9" fill="none"/>
+          </g>
+        </symbol>
+        <symbol id="piece-wb" viewBox="0 0 45 45">
+          <g fill="currentColor" stroke="var(--piece-outline)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M22.5 5c-7.2 6.2-10.2 11-8.2 16 1.4 3.5 4.2 5.4 8.2 7.2 4-1.8 6.8-3.7 8.2-7.2 2-5-1-9.8-8.2-16Z"/>
+            <path d="m17 14 11 10M15 29h15l3 5H12zM10 34h25v4H10z"/>
+          </g>
+        </symbol>
+        <symbol id="piece-bb" viewBox="0 0 45 45">
+          <g fill="currentColor" stroke="var(--piece-outline)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M22.5 5c-7.2 6.2-10.2 11-8.2 16 1.4 3.5 4.2 5.4 8.2 7.2 4-1.8 6.8-3.7 8.2-7.2 2-5-1-9.8-8.2-16Z"/>
+            <path d="m17 14 11 10M15 29h15l3 5H12zM10 34h25v4H10z"/>
+          </g>
+        </symbol>
+        <symbol id="piece-wn" viewBox="0 0 45 45">
+          <g fill="currentColor" stroke="var(--piece-outline)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M10 34c.2-6.2 3.1-9.4 5.2-12.5L11 16c5.1-4.8 11.5-6 16.7-3.2l5.8 7.1-4 2.9c-.6 4.8 2.2 8.1 6 11.2H10Z"/>
+            <path d="m11 16 7-8 1.8 7M21 13l2-5 5 6M16 22l-3-1.5" fill="none"/>
+            <circle cx="25.5" cy="15.8" r="1.1" fill="var(--piece-outline)" stroke="none"/>
+            <path d="M8 34h29v4H8z"/>
+          </g>
+        </symbol>
+        <symbol id="piece-bn" viewBox="0 0 45 45">
+          <g fill="currentColor" stroke="var(--piece-outline)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M10 34c.2-6.2 3.1-9.4 5.2-12.5L11 16c5.1-4.8 11.5-6 16.7-3.2l5.8 7.1-4 2.9c-.6 4.8 2.2 8.1 6 11.2H10Z"/>
+            <path d="m11 16 7-8 1.8 7M21 13l2-5 5 6M16 22l-3-1.5" fill="none"/>
+            <circle cx="25.5" cy="15.8" r="1.1" fill="var(--piece-outline)" stroke="none"/>
+            <path d="M8 34h29v4H8z"/>
+          </g>
+        </symbol>
+        <symbol id="piece-wp" viewBox="0 0 45 45">
+          <g fill="currentColor" stroke="var(--piece-outline)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="22.5" cy="11" r="5.8"/>
+            <path d="M18.1 17c-1.1 4.1-3.3 8.2-6.3 13h21.4c-3-4.8-5.2-8.9-6.3-13-2.8 1.4-6 1.4-8.8 0Z"/>
+            <path d="M10 30h25v5H10zM8 35h29v4H8z"/>
+          </g>
+        </symbol>
+        <symbol id="piece-bp" viewBox="0 0 45 45">
+          <g fill="currentColor" stroke="var(--piece-outline)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="22.5" cy="11" r="5.8"/>
+            <path d="M18.1 17c-1.1 4.1-3.3 8.2-6.3 13h21.4c-3-4.8-5.2-8.9-6.3-13-2.8 1.4-6 1.4-8.8 0Z"/>
+            <path d="M10 30h25v5H10zM8 35h29v4H8z"/>
+          </g>
+        </symbol>
+      </defs>
+    </svg>
     <div id="app">
       <header class="topbar">
         <a class="brand" href="#" aria-label="Chess OS">
