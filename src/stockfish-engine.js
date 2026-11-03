@@ -8,7 +8,7 @@ function parseUciMove(uci) {
   };
 }
 
-function parseAnalysis(lines, fen) {
+export function parseStockfishAnalysis(lines, fen) {
   const info = lines
     .filter((line) => line.startsWith("info depth ") && !/\bmultipv [2-9]/.test(line))
     .at(-1) || "";
@@ -109,7 +109,7 @@ export class StockfishEngine {
         "position fen " + fen,
         "go depth " + Math.max(1, Math.min(22, depth)),
       ], (line) => line.startsWith("bestmove "), 120000);
-      return parseAnalysis(lines, fen);
+      return parseStockfishAnalysis(lines, fen);
     } finally {
       this.busy = false;
     }

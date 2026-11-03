@@ -1,6 +1,10 @@
 import { Chess } from "chess.js";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { listenForOptionalImportProgress } from "./online-import-progress.js";
+import { squareAccessibleLabel } from "./board-accessibility.js";
+import { nextBoardSquare } from "./board-navigation.js";
+import { downloadPendingAppUpdate, installPendingAppUpdate } from "./app-updater.js";
 import { RepertoireTree } from "./repertoire-tree.js";
 import { initializeChessSuite } from "./chess-suite.js";
 import { fenToEditorState, editorStateToFen } from "./fen-editor.js";
@@ -39,6 +43,7 @@ let mode = "studio";
 let chessSuite = null;
 let selectedSquare = null;
 let boardFlipped = false;
+let boardFocusSquare = null;
 let pendingPromotion = null;
 const persistenceMode = isTauri() ? "sqlite" : "browser";
 let databaseReady = persistenceMode === "browser";
@@ -57,6 +62,9 @@ let examAttempts = [];
 let examAnswers = [];
 let importedGames = [];
 let onlineImportBusy = false;
+let pendingAppUpdate = null;
+let appUpdateCheckRunning = false;
+let appUpdateInstallRunning = false;
 let reviewQueue = [];
 let examQueue = [];
 let currentExamCard = null;
@@ -286,7 +294,14 @@ async function initializePersistence() {
     databaseReady = true;
     await ensureDemoOpenings();
     records = repertoire;
-    await refreshImportedGames();
+    try {
+      await refreshImportedGames();
+    } catch (error) {
+      // Imported games are an optional library; a failed list query must not
+      // disable the repertoire database or the training features.
+      importedGames = [];
+      console.error("Libreria delle partite importate non disponibile:", error);
+    }
     if (migrationErrors.length === 0) {
       try { localStorage.removeItem(STORAGE_KEY); } catch { /* Non bloccare l'avvio per storage non disponibile. */ }
       updateStorageLabel("Database SQLite", "Dati salvati sul dispositivo · " + records.length + " repertori");
@@ -313,6 +328,55 @@ function showToast(message) {
   toast.classList.add("visible");
   window.clearTimeout(toastTimer);
   toastTimer = window.setTimeout(() => toast.classList.remove("visible"), 2600);
+}
+
+function canInstallPendingAppUpdate() {
+  return mode === "studio"
+    && !dirty
+    && !onlineImportBusy
+    && !pendingPromotion
+    && !examAttemptId
+    && !reviewSessionId;
+}
+
+async function maybeInstallPendingAppUpdate() {
+  if (!pendingAppUpdate || appUpdateInstallRunning || !canInstallPendingAppUpdate()) return;
+  appUpdateInstallRunning = true;
+  const update = pendingAppUpdate;
+  try {
+    const installed = await installPendingAppUpdate(update, canInstallPendingAppUpdate, console);
+    if (installed) {
+      pendingAppUpdate = null;
+    } else {
+      // Avoid retrying a broken installer resource indefinitely.
+      try { await update.close?.(); } catch { /* Il normale utilizzo dell'app resta disponibile. */ }
+      pendingAppUpdate = null;
+    }
+  } finally {
+    appUpdateInstallRunning = false;
+  }
+}
+
+async function checkForAppUpdate() {
+  if (!isTauri() || appUpdateCheckRunning || pendingAppUpdate) return;
+  appUpdateCheckRunning = true;
+  try {
+    const { check } = await import("@tauri-apps/plugin-updater");
+    const update = await downloadPendingAppUpdate(check, console);
+    if (!update) return;
+    pendingAppUpdate = update;
+    showToast(
+      "Aggiornamento " + update.version
+      + " scaricato. Installazione automatica quando non ci saranno modifiche o sessioni in corso."
+    );
+    await maybeInstallPendingAppUpdate();
+  } catch (error) {
+    // A missing release, offline network or invalid signing setup must never
+    // prevent Chess OS from opening or using its local database.
+    console.warn("Controllo aggiornamenti Chess OS non disponibile:", error);
+  } finally {
+    appUpdateCheckRunning = false;
+  }
 }
 
 function setDirty(value = true) {
@@ -397,6 +461,7 @@ function updateBoardCoordinates() {
 }
 
 function renderBoard() {
+  const restoreBoardFocus = boardElement.contains(document.activeElement);
   const chess = activeGame();
   const board = chess.board();
   const legalTargets = new Set(
@@ -430,6 +495,7 @@ function renderBoard() {
       const isLight = (displayRow + displayCol) % 2 === 0;
       button.type = "button";
       button.dataset.square = square;
+      button.tabIndex = square === (boardFocusSquare || selectedSquare || (boardFlipped ? "h1" : "a8")) ? 0 : -1;
       button.className = "square " + (isLight ? "light" : "dark");
       if (selectedSquare === square) button.classList.add("selected");
       if (lastSquares.has(square)) button.classList.add("last-move");
@@ -441,10 +507,9 @@ function renderBoard() {
         pieceSpan.className = "piece " + (piece.color === "w" ? "white-piece" : "black-piece");
         pieceSpan.textContent = symbols[piece.color][piece.type];
         button.append(pieceSpan);
-        button.setAttribute("aria-label", (piece.color === "w" ? "Bianco " : "Nero ") + piece.type + " in " + square);
-      } else {
-        button.setAttribute("aria-label", square);
       }
+      button.setAttribute("aria-label", squareAccessibleLabel(piece, square));
+      button.setAttribute("aria-pressed", selectedSquare === square ? "true" : "false");
       boardElement.append(button);
     }
   }
@@ -469,6 +534,9 @@ function renderBoard() {
   $("#undo").disabled = mode !== "studio" || studioPly === 0;
   $("#redo").disabled = mode !== "studio" || studioPly >= studioSans.length;
   $("#flip-board").textContent = boardFlipped ? "Vista Bianco" : "Vista Nero";
+  if (restoreBoardFocus && boardFocusSquare) {
+    boardElement.querySelector('button[data-square="' + boardFocusSquare + '"]')?.focus({ preventScroll: true });
+  }
 }
 
 function renderMoves() {
@@ -1190,21 +1258,36 @@ async function startOnlineGameImport() {
   $("#online-import-progress").textContent = "Connessione al servizio e download degli archivi…";
   let stopListening = null;
   try {
-    stopListening = await listen("online-game-import-progress", (event) => {
-      const progress = event.payload || {};
-      $("#online-import-progress").textContent =
-        "Elaborate: " + (progress.processed || 0)
-        + " · nuove: " + (progress.imported || 0)
-        + " · già presenti: " + (progress.duplicates || 0)
-        + " · non supportate: " + (progress.skipped || 0);
-    });
+    stopListening = await listenForOptionalImportProgress(
+      listen,
+      (event) => {
+        const progress = event.payload || {};
+        $("#online-import-progress").textContent =
+          "Elaborate: " + (progress.processed || 0)
+          + " · nuove: " + (progress.imported || 0)
+          + " · già presenti: " + (progress.duplicates || 0)
+          + " · non supportate: " + (progress.skipped || 0);
+      },
+      (listenError) => {
+        console.warn("Aggiornamento avanzamento non disponibile:", listenError);
+        $("#online-import-progress").textContent =
+          "Importazione avviata. Il download continua anche senza aggiornamenti in tempo reale…";
+      },
+    );
     const summary = await invoke("import_online_games", { provider, username, token });
-    await refreshImportedGames();
+    let refreshWarning = "";
+    try {
+      await refreshImportedGames();
+    } catch (refreshError) {
+      refreshWarning = " La libreria non è stata aggiornata a video: "
+        + (refreshError?.message || String(refreshError));
+    }
     const providerName = provider === "lichess" ? "Lichess" : "Chess.com";
     $("#online-import-progress").textContent =
       providerName + " — " + summary.username + ": " + summary.imported + " nuove partite importate, "
       + summary.duplicates + " già presenti e " + summary.skipped + " ignorate/non supportate."
-      + (provider === "chess_com" ? " Archivi mensili controllati: " + summary.archives + "." : "");
+      + (provider === "chess_com" ? " Archivi mensili controllati: " + summary.archives + "." : "")
+      + refreshWarning;
     $("#lichess-api-token").value = "";
     showToast(summary.imported + " partite aggiunte alla libreria.");
   } catch (error) {
@@ -1212,7 +1295,11 @@ async function startOnlineGameImport() {
     showToast("Importazione partite non riuscita.");
     try { await refreshImportedGames(); } catch { /* Mantieni la libreria già caricata. */ }
   } finally {
-    if (stopListening) stopListening();
+    if (stopListening) {
+      try { stopListening(); } catch (unlistenError) {
+        console.warn("Impossibile rimuovere il listener di avanzamento:", unlistenError);
+      }
+    }
     $("#lichess-api-token").value = "";
     onlineImportBusy = false;
     button.disabled = false;
@@ -2416,7 +2503,6 @@ function newPosition() {
   titleInput.value = "Nuova linea";
   setDirty(true);
   renderAll();
-void initializePersistence();
 }
 
 async function copyFen() {
@@ -2431,7 +2517,20 @@ async function copyFen() {
 
 boardElement.addEventListener("click", (event) => {
   const squareButton = event.target.closest("button[data-square]");
-  if (squareButton) handleSquareClick(squareButton.dataset.square);
+  if (!squareButton) return;
+  boardFocusSquare = squareButton.dataset.square;
+  handleSquareClick(boardFocusSquare);
+});
+
+boardElement.addEventListener("keydown", (event) => {
+  const squareButton = event.target.closest("button[data-square]");
+  if (!squareButton) return;
+  const nextSquare = nextBoardSquare(squareButton.dataset.square, event.key, boardFlipped);
+  if (!nextSquare) return;
+  event.preventDefault();
+  boardFocusSquare = nextSquare;
+  renderBoard();
+  boardElement.querySelector('button[data-square="' + nextSquare + '"]')?.focus({ preventScroll: true });
 });
 
 $("#open-online-import").addEventListener("click", openOnlineImportDialog);
@@ -2547,4 +2646,17 @@ chessSuite = initializeChessSuite({
 });
 
 renderAll();
-void initializePersistence();
+void initializePersistence().then(() => {
+  void checkForAppUpdate();
+});
+
+if (isTauri()) {
+  // Recheck the stable channel periodically and install as soon as the app is idle.
+  window.setInterval(() => {
+    if (pendingAppUpdate) void maybeInstallPendingAppUpdate();
+    else void checkForAppUpdate();
+  }, 30 * 60 * 1000);
+  window.setInterval(() => {
+    void maybeInstallPendingAppUpdate();
+  }, 30 * 1000);
+}

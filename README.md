@@ -26,6 +26,7 @@ Windows-first chess repertoire and training desktop app. This repository now con
 - Offline ECO opening recognition, visual FEN editor, coloured square/arrow annotations and complete Caro-Kann / Italian Game demo repertoires seeded on first start
 - Opening Explorer and Gap Finder that compare imported Chess.com / Lichess games with the active repertoire
 - Local Stockfish 19 Lite WASM analysis with evaluation, best move and principal variation
+- Signed automatic updates on Windows, installed only when no study changes or active sessions are pending
 - Tactical Trainer that generates candidate exercises from imported PGNs and checks the played solution
 - Import all finished public standard-chess games from Chess.com archives or the Lichess PGN export API, with duplicate detection and a separate local game library
 - Atomic SQLite persistence for card scheduling state, review logs and training sessions in the Tauri desktop app; localStorage fallback in browser preview
@@ -79,6 +80,8 @@ npm run tauri:build
 The NSIS installer is configured for a per-user installation (no administrator prompt by default), creates a Start Menu entry, and downloads the small WebView2 bootstrapper if the runtime is missing. The frontend and installer are also checked by the GitHub Actions workflow on pushes and pull requests to `main`.
 
 The installer, when a successful CI run produces it, is uploaded as the `chess-os-windows-installer` workflow artifact. A successful build has not yet been independently verified.
+
+See [docs/UPDATES_AND_RELEASES.md](docs/UPDATES_AND_RELEASES.md) for one-time signing setup and the mandatory per-version approval process. Pushing a version tag runs verification but does not publish a release.
 
 ## Data and SQLite
 
