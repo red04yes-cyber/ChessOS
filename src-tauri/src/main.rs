@@ -12,8 +12,7 @@ fn main() {
                 .path()
                 .app_data_dir()?
                 .join("chess-os.sqlite3");
-            let connection = db::open_database(&database_path)
-                .map_err(std::io::Error::other)?;
+            let connection = db::open_database(&database_path)?;
             app.manage(db::Database(Mutex::new(connection)));
             Ok(())
         })
