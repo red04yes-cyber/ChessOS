@@ -18,7 +18,10 @@ Windows-first chess repertoire and training desktop app. This repository now con
 - Position transposition detection so equivalent positions reached by different move orders converge on one node
 - PGN variation export with round-trip regression tests
 - Undo/redo by navigating the complete move timeline and reset in Studio mode
-- Training mode that asks the user to replay every move in a saved or current line
+- Daily FSRS-6 spaced-repetition sessions with Again / Hard / Good / Easy ratings
+- Review cards generated from repertoire position + move + side to train (White / Black)
+- Due-card selection, a daily new-card cap, review history and local statistics
+- Atomic SQLite persistence for card scheduling state, review logs and training sessions in the Tauri desktop app; localStorage fallback in browser preview
 - Vite frontend and Tauri 2 desktop shell
 - Automated JavaScript tests for legal moves, castling, en passant, promotion, PGN and terminal positions; Windows NSIS installer workflow
 
@@ -26,7 +29,7 @@ Windows-first chess repertoire and training desktop app. This repository now con
 
 This is **not** the recovered 0.7.0 application and is not yet feature-complete against the original roadmap. The following are not implemented in this rebuild:
 
-- FSRS scheduling and review history
+- Cloud sync, account system and backups
 - SQLite database backup/export and restore UI
 - Stockfish analysis / evaluation
 - Dashboard, analytics, goals and exams
