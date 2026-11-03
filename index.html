@@ -46,6 +46,7 @@
               <button class="button ghost" id="redo" aria-label="Vai alla mossa successiva" disabled>Avanti →</button>
               <button class="button ghost" id="flip-board">Vista Nero</button>
               <button class="button ghost" id="copy-fen">Copia FEN</button>
+              <button class="button ghost" id="open-fen-editor">Editor FEN</button>
               <button class="button ghost" id="reset">Nuova posizione</button>
               <button class="button primary" id="save-line">Salva linea <span>＋</span></button>
             </div>
@@ -57,9 +58,27 @@
                 <div><span class="live-dot"></span><span id="board-label">PARTITA IN CORSO</span></div>
                 <span class="turn-label" id="turn-label">Bianco al tratto</span>
               </div>
+              <div class="board-tools">
+                <label for="board-mark-tool">Strumento</label>
+                <select id="board-mark-tool" class="board-tool-select">
+                  <option value="move">Muovi i pezzi</option>
+                  <option value="square">Colora casella</option>
+                  <option value="arrow">Disegna freccia</option>
+                </select>
+                <label for="board-mark-color">Colore</label>
+                <select id="board-mark-color" class="board-tool-select">
+                  <option value="G">Verde</option>
+                  <option value="R">Rosso</option>
+                  <option value="Y">Giallo</option>
+                  <option value="B">Blu</option>
+                </select>
+                <button type="button" class="button small ghost" id="clear-board-marks">Cancella segni</button>
+                <span class="board-tool-help" id="board-tool-help">Per una freccia, seleziona la casa iniziale e quella finale.</span>
+              </div>
               <div class="board-wrap">
                 <div class="rank-labels" aria-hidden="true"><span>8</span><span>7</span><span>6</span><span>5</span><span>4</span><span>3</span><span>2</span><span>1</span></div>
                 <div id="chessboard" class="chessboard" role="group" aria-label="Scacchiera"></div>
+                <svg id="board-markings" class="board-markings" viewBox="0 0 800 800" preserveAspectRatio="none" aria-hidden="true"></svg>
                 <div class="file-labels" aria-hidden="true"><span>a</span><span>b</span><span>c</span><span>d</span><span>e</span><span>f</span><span>g</span><span>h</span></div>
               </div>
               <div class="board-footer">
@@ -76,9 +95,53 @@
                 <div class="line-meta"><span id="line-move-count">Ancora nessuna mossa</span><span class="saved-indicator" id="saved-indicator">NON SALVATA</span></div>
               </section>
 
+              <section class="detail-card opening-recognition-card">
+                <div class="card-heading"><span class="card-icon">⌕</span><span>APERTURA RICONOSCIUTA</span></div>
+                <div class="opening-recognition-row">
+                  <strong id="opening-recognized-name">Gioca le prime mosse per riconoscere l'apertura</strong>
+                  <span id="opening-recognized-eco" class="eco-code">—</span>
+                </div>
+                <small id="opening-recognized-detail">Riconoscimento locale basato sul catalogo ECO completo.</small>
+              </section>
+
+              <section class="detail-card opening-template-card">
+                <div class="card-heading"><span class="card-icon">♞</span><span>REPERTORI INIZIALI</span></div>
+                <label class="field-label" for="opening-template">Carica un repertorio completo</label>
+                <select id="opening-template" class="text-input">
+                  <option value="">Scegli un'apertura</option>
+                  <option value="Sicilian Defense">Difesa Siciliana — 400 linee</option>
+                  <option value="Italian Game">Partita Italiana — 187 linee</option>
+                  <option value="French Defense">Difesa Francese — 211 linee</option>
+                  <option value="Caro-Kann Defense">Difesa Caro-Kann — 110 linee</option>
+                </select>
+                <div class="line-meta"><span id="opening-template-count">Seleziona un'apertura</span><span>Catalogo ECO locale</span></div>
+                <button type="button" class="button small ghost" id="load-opening-template">Carica tutte le varianti</button>
+                <small class="opening-source-note">3.865 linee · 500 codici ECO · 150 famiglie. Il repertorio viene importato nella sessione corrente; premi “Salva linea” per conservarlo.</small>
+              </section>
+
               <section class="detail-card moves-card">
                 <div class="card-heading"><span class="card-icon">≋</span><span>NOTAZIONE</span></div>
                 <div id="move-list" class="move-list"><span class="empty-state">Le mosse appariranno qui.</span></div>
+              </section>
+
+              <section class="detail-card annotation-card">
+                <div class="card-heading"><span class="card-icon">✎</span><span>ANNOTAZIONI DELLA MOSSA</span></div>
+                <small id="annotation-target">Posizione iniziale · annotazione della radice</small>
+                <label class="field-label" for="move-comment">Commento</label>
+                <textarea id="move-comment" class="pgn-input annotation-input" rows="3" placeholder="Spiega il piano, l'idea o l'errore..."></textarea>
+                <label class="field-label" for="move-nag">Valutazione della mossa</label>
+                <select id="move-nag" class="text-input">
+                  <option value="">Nessuna</option>
+                  <option value="$1">! Buona mossa</option>
+                  <option value="$2">? Errore</option>
+                  <option value="$3">!! Mossa eccellente</option>
+                  <option value="$4">?? Errore grave</option>
+                  <option value="$5">!? Interessante</option>
+                  <option value="$6">?! Dubitosa</option>
+                  <option value="$10">= Posizione pari</option>
+                  <option value="$13">∞ Compensazione</option>
+                </select>
+                <button type="button" class="button small ghost" id="save-move-annotation">Salva annotazione</button>
               </section>
 
               <section class="detail-card variations-card">
@@ -101,6 +164,46 @@
           <div class="workspace-footer"><span>CHESS OS <b>·</b> I tuoi dati restano sul dispositivo</span><span>LEGAL MOVES <i>ON</i></span></div>
         </section>
       </main>
+      <div id="fen-editor-dialog" class="fen-editor-dialog" hidden role="dialog" aria-modal="true" aria-labelledby="fen-editor-title">
+        <div class="fen-editor-card">
+          <div class="fen-editor-heading">
+            <div><h2 id="fen-editor-title">Editor visuale FEN</h2><p>Seleziona un pezzo e clicca sulla scacchiera per posizionarlo. Scegli la gomma per rimuoverlo.</p></div>
+            <button type="button" class="button ghost" id="fen-editor-close">Chiudi</button>
+          </div>
+          <div class="fen-editor-layout">
+            <section class="fen-editor-board-panel">
+              <div id="fen-editor-board" class="fen-editor-board" aria-label="Editor visuale della posizione"></div>
+              <div id="fen-piece-palette" class="fen-piece-palette" aria-label="Pezzi da posizionare"></div>
+            </section>
+            <section class="fen-editor-settings">
+              <label class="field-label" for="fen-turn">Colore al tratto</label>
+              <select id="fen-turn" class="text-input"><option value="w">Bianco</option><option value="b">Nero</option></select>
+              <span class="field-label">Diritti di arrocco</span>
+              <div id="fen-castling" class="fen-castling">
+                <label><input type="checkbox" data-right="K" /> Bianco corto</label>
+                <label><input type="checkbox" data-right="Q" /> Bianco lungo</label>
+                <label><input type="checkbox" data-right="k" /> Nero corto</label>
+                <label><input type="checkbox" data-right="q" /> Nero lungo</label>
+              </div>
+              <label class="field-label" for="fen-en-passant">Casa en passant</label>
+              <input id="fen-en-passant" class="text-input" placeholder="—" maxlength="2" />
+              <div class="fen-counter-grid">
+                <label><span class="field-label">Contatore 50 mosse</span><input id="fen-halfmove" class="text-input" type="number" min="0" max="1000000" value="0" /></label>
+                <label><span class="field-label">Numero mossa</span><input id="fen-fullmove" class="text-input" type="number" min="1" max="1000000" value="1" /></label>
+              </div>
+              <label class="field-label" for="fen-editor-string">FEN (puoi anche incollarla)</label>
+              <textarea id="fen-editor-string" class="pgn-input" rows="3"></textarea>
+              <div class="fen-editor-actions">
+                <button type="button" class="button small ghost" id="fen-editor-load">Carica FEN</button>
+                <button type="button" class="button small ghost" id="fen-editor-standard">Posizione iniziale</button>
+              </div>
+              <div id="fen-editor-status" class="fen-editor-status" role="status">Costruisci la posizione.</div>
+              <button type="button" class="button primary" id="fen-editor-apply">Usa questa posizione</button>
+            </section>
+          </div>
+        </div>
+      </div>
+
       <div id="promotion-dialog" class="promotion-dialog" hidden role="dialog" aria-modal="true" aria-labelledby="promotion-title">
         <div class="promotion-card">
           <h2 id="promotion-title">Promozione del pedone</h2>
