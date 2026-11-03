@@ -940,16 +940,29 @@ fn record_exam_answer_with_connection(
         return Err("Risposta d'esame non valida.".into());
     }
     let transaction = connection.transaction().map_err(|error| error.to_string())?;
-    let attempt: Option<(i64, String)> = transaction.query_row(
-        "SELECT total_questions, status FROM exam_attempts WHERE id = ?1",
+    let attempt: Option<(i64, String, String)> = transaction.query_row(
+        "SELECT total_questions, status, repertoire_id FROM exam_attempts WHERE id = ?1",
         params![input.attempt_id],
-        |row| Ok((row.get(0)?, row.get(1)?)),
+        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
     ).optional().map_err(|error| error.to_string())?;
-    let Some((total_questions, status)) = attempt else {
+    let Some((total_questions, status, repertoire_id)) = attempt else {
         return Err("Sessione d'esame non trovata.".into());
     };
     if status != "in_progress" || input.question_index >= total_questions {
         return Err("La sessione d'esame non accetta altre risposte.".into());
+    }
+    let expected_position: Option<String> = transaction.query_row(
+        "SELECT p.fen
+         FROM repertoire_moves m
+         JOIN repertoire_positions p
+           ON p.repertoire_id = m.repertoire_id
+          AND p.position_id = m.from_position_id
+         WHERE m.repertoire_id = ?1 AND m.edge_id = ?2 AND m.uci = ?3",
+        params![repertoire_id, input.edge_id, input.expected_uci],
+        |row| row.get(0),
+    ).optional().map_err(|error| error.to_string())?;
+    if expected_position.as_deref() != Some(input.position_fen.as_str()) {
+        return Err("La domanda non corrisponde al repertorio selezionato.".into());
     }
     let correct = input.expected_uci == input.selected_uci;
     transaction.execute(
@@ -1123,6 +1136,40 @@ mod tests {
         assert_eq!(rows[0].title, "Open Game updated");
     }
 
+
+
+    #[test]
+    fn exam_answer_rejects_a_question_not_in_the_selected_repertoire() {
+        let mut connection = memory_db();
+        save_with_connection(&mut connection, fixture()).unwrap();
+        start_exam_with_connection(&mut connection, StartExamInput {
+            id: "exam-secure".into(),
+            repertoire_id: "open-game".into(),
+            repertoire_title: "Open Game".into(),
+            started_at: "2026-11-03T10:00:00Z".into(),
+            total_questions: 1,
+            pass_threshold: 70,
+            side: "white".into(),
+        }).unwrap();
+
+        let tampered = record_exam_answer_with_connection(&mut connection, RecordExamAnswerInput {
+            id: "answer-tampered".into(),
+            attempt_id: "exam-secure".into(),
+            question_index: 0,
+            edge_id: "root|e2e4".into(),
+            position_fen: "8/8/8/8/8/8/8/8 w - - 0 1".into(),
+            expected_uci: "e2e4".into(),
+            selected_uci: "e2e4".into(),
+            answered_at: "2026-11-03T10:01:00Z".into(),
+        });
+        assert!(tampered.is_err());
+        let answers: i64 = connection.query_row(
+            "SELECT COUNT(*) FROM exam_answers WHERE attempt_id = 'exam-secure'",
+            [],
+            |row| row.get(0),
+        ).unwrap();
+        assert_eq!(answers, 0);
+    }
 
     #[test]
     fn goals_and_exam_attempts_persist_and_score() {
