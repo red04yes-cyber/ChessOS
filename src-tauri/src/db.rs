@@ -1058,6 +1058,22 @@ fn finish_exam_with_connection(
         return Err("Chiusura esame non valida.".into());
     }
     let status = if input.aborted { "aborted" } else { "completed" };
+    if !input.aborted {
+        let counts: Option<(i64, i64)> = connection.query_row(
+            "SELECT a.total_questions,
+                    (SELECT COUNT(*) FROM exam_answers WHERE attempt_id = a.id)
+             FROM exam_attempts a
+             WHERE a.id = ?1 AND a.status = 'in_progress'",
+            params![input.id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        ).optional().map_err(|error| error.to_string())?;
+        let Some((total_questions, answers_recorded)) = counts else {
+            return Ok(false);
+        };
+        if answers_recorded != total_questions {
+            return Err("Non è possibile concludere un esame con domande senza risposta.".into());
+        }
+    }
     let updated = connection.execute(
         "UPDATE exam_attempts
          SET finished_at = ?1,
@@ -1404,6 +1420,37 @@ mod tests {
             answered_at: "2026-11-03T10:03:00Z".into(),
         });
         assert!(duplicate.is_err());
+    }
+
+    #[test]
+    fn completed_exam_requires_all_questions_to_be_answered() {
+        let mut connection = memory_db();
+        save_with_connection(&mut connection, fixture()).unwrap();
+        start_exam_with_connection(&mut connection, StartExamInput {
+            id: "exam-incomplete".into(),
+            repertoire_id: "open-game".into(),
+            repertoire_title: "Open Game".into(),
+            started_at: "2026-11-03T10:00:00Z".into(),
+            total_questions: 2,
+            pass_threshold: 70,
+            side: "white".into(),
+        }).unwrap();
+        assert!(finish_exam_with_connection(&mut connection, FinishExamInput {
+            id: "exam-incomplete".into(),
+            finished_at: "2026-11-03T10:01:00Z".into(),
+            aborted: false,
+        }).is_err());
+        let status: String = connection.query_row(
+            "SELECT status FROM exam_attempts WHERE id = 'exam-incomplete'",
+            [],
+            |row| row.get(0),
+        ).unwrap();
+        assert_eq!(status, "in_progress");
+        assert!(finish_exam_with_connection(&mut connection, FinishExamInput {
+            id: "exam-incomplete".into(),
+            finished_at: "2026-11-03T10:02:00Z".into(),
+            aborted: true,
+        }).unwrap());
     }
 
     #[test]
