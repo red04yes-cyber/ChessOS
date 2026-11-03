@@ -52,6 +52,8 @@ let reviewFeedback = "";
 let reviewLastMove = null;
 let reviewCardStartedAt = 0;
 let reviewSessionFinished = false;
+let isStartingReviewSession = false;
+let isSavingReview = false;
 let baseFen = DEFAULT_FEN;
 let studioStates = [DEFAULT_FEN];
 let studioSans = [];
@@ -826,6 +828,7 @@ function startTraining() {
 }
 
 async function beginDailyReviewSession() {
+  if (isStartingReviewSession) return;
   if (!databaseReady || !repertoire.length) {
     showToast("Salva almeno una linea nel repertorio prima di iniziare.");
     return;
@@ -840,6 +843,9 @@ async function beginDailyReviewSession() {
     return;
   }
 
+  isStartingReviewSession = true;
+  const startButton = $("#review-start");
+  startButton.disabled = true;
   const id = globalThis.crypto?.randomUUID?.() ?? "session-" + Date.now();
   try {
     if (persistenceMode === "sqlite") {
@@ -856,13 +862,21 @@ async function beginDailyReviewSession() {
         correctCount: 0,
         againCount: 0,
       });
-      if (!persistLocalReviewState()) return;
+      if (!persistLocalReviewState()) {
+        isStartingReviewSession = false;
+        startButton.disabled = false;
+        return;
+      }
     }
   } catch (error) {
+    isStartingReviewSession = false;
+    startButton.disabled = false;
     showToast("Non riesco ad avviare la sessione: " + error.message);
     return;
   }
 
+  isStartingReviewSession = false;
+  startButton.disabled = false;
   reviewSessionId = id;
   reviewSessionTotal = queue.length;
   reviewCompleted = 0;
@@ -924,13 +938,15 @@ async function finishReviewSession() {
 }
 
 async function rateCurrentCard(ratingName) {
-  if (!currentReviewCard || (!reviewSolved && !reviewRevealed && ratingName !== "again")) return;
+  if (isSavingReview || !currentReviewCard || (!reviewSolved && !reviewRevealed && ratingName !== "again")) return;
+  isSavingReview = true;
   const now = new Date();
   const card = currentReviewCard;
   let result;
   try {
     result = gradeFsrsCard(card.fsrs, ratingName, now);
   } catch (error) {
+    isSavingReview = false;
     showToast("Errore nello scheduling FSRS: " + error.message);
     return;
   }
@@ -988,13 +1004,18 @@ async function rateCurrentCard(ratingName) {
         session.correctCount = (session.correctCount || 0) + (result.log.rating > 1 ? 1 : 0);
         session.againCount = (session.againCount || 0) + (result.log.rating === 1 ? 1 : 0);
       }
-      if (!persistLocalReviewState()) return;
+      if (!persistLocalReviewState()) {
+        isSavingReview = false;
+        return;
+      }
     }
   } catch (error) {
+    isSavingReview = false;
     showToast("Non riesco a salvare la risposta FSRS: " + error.message);
     return;
   }
 
+  isSavingReview = false;
   studyCards = studyCards.filter((entry) => entry.id !== updatedCard.id).concat(updatedCard);
   reviewLogs = [reviewLog, ...reviewLogs.filter((entry) => entry.id !== reviewLog.id)];
   reviewCompleted += 1;
