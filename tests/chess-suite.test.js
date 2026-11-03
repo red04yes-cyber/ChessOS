@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { Chess } from "chess.js";
 import { ENDGAME_CATALOG, ENDGAME_LESSONS } from "../src/endgame-catalog.js";
 import { RepertoireTree } from "../src/repertoire-tree.js";
+import { createOpeningPreset } from "../src/opening-catalog.js";
 import { analyzeOpeningExplorer, buildRepertoireFromPgn } from "../src/chess-suite.js";
 
 test("endgame curriculum has extensive coverage and every training FEN is parseable", () => {
