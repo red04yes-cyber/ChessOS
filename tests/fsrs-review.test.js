@@ -7,6 +7,7 @@ import {
   countReviewsToday,
   createFsrsCard,
   gradeFsrsCard,
+  getTodayReviewStats,
   parseUci,
   selectDailyCards,
 } from "../src/fsrs-review.js";
@@ -92,6 +93,16 @@ test("counts reviews made on the local calendar day", () => {
     { reviewedAt: new Date(2026, 10, 2, 23, 59).toISOString() },
   ];
   assert.equal(countReviewsToday(logs, now), 2);
+  assert.deepEqual(getTodayReviewStats([
+    ...logs,
+    { reviewedAt: now.toISOString(), rating: 1 },
+    { reviewedAt: now.toISOString(), rating: 2 },
+  ], now), {
+    reviews: 4,
+    again: 1,
+    correct: 3,
+    accuracy: 75,
+  });
 });
 
 test("parses UCI moves including underpromotion", () => {
