@@ -441,6 +441,87 @@
               <p id="tactics-answer" class="tool-output" aria-live="polite"></p>
               <p id="tactics-status" class="tool-description" aria-live="polite"></p>
             </section>
+              
+<section class="detail-card feature-card" id="flashcards-tool">
+              <div class="card-heading"><span class="card-icon">✦</span><span>FLASHCARD AUTOMATICHE · FSRS</span></div>
+              <p class="tool-description">Incolla una partita PGN: Chess OS confronta le mosse con il repertorio e crea carte per le deviazioni nelle posizioni conosciute.</p>
+              <textarea id="mistake-pgn" class="pgn-input" rows="5" placeholder='[Event "Partita"]&#10;1. e4 c5 2. Nf3 d6 ...'></textarea>
+              <div class="tool-actions"><button class="button small primary" id="generate-cards">Genera carte dagli errori</button><button class="button small ghost" id="review-cards">Ripassa carte dovute</button></div>
+              <div id="flashcard-summary" class="tool-output" aria-live="polite"></div>
+              <div id="flashcard-review" class="flashcard-review"></div>
+            </section>
+
+<section class="detail-card feature-card" id="blindfold-tool">
+              <div class="card-heading"><span class="card-icon">◉</span><span>MODALITÀ BLINDFOLD</span></div>
+              <p class="tool-description">Ripeti la linea attiva senza pezzi visibili. Inserisci la notazione SAN della mossa successiva; gli errori diventano flashcard.</p>
+              <button class="button small primary" id="start-blindfold">Avvia Blindfold sulla linea attiva</button>
+              <div id="blindfold-input-wrap" class="blindfold-input-wrap" hidden>
+                <label class="field-label" for="blindfold-answer">La tua mossa (SAN)</label>
+                <div class="tool-actions"><input id="blindfold-answer" class="text-input" autocomplete="off" placeholder="es. Nf3" /><button class="button small primary" id="submit-blindfold">Verifica</button><button class="button small ghost" id="stop-blindfold">Termina</button></div>
+                <p id="blindfold-status" class="tool-output" aria-live="polite">Richiama la prossima mossa.</p>
+              </div>
+            </section>
+
+<section class="detail-card feature-card" id="heatmap-tool">
+              <div class="card-heading"><span class="card-icon">▥</span><span>HEATMAP DELLE DEBOLEZZE</span></div>
+              <p class="tool-description">La mappa usa le carte e la cronologia dei ripassi: le posizioni senza dati restano non valutate, non vengono considerate automaticamente conosciute.</p>
+              <div id="heatmap-summary" class="tool-output"></div>
+              <div id="heatmap-list" class="heatmap-list"></div>
+            </section>
+
+<section class="detail-card feature-card" id="opponent-tool">
+              <div class="card-heading"><span class="card-icon">⌖</span><span>PREPARAZIONE AVVERSARIO</span></div>
+              <p class="tool-description">Importa una o più partite PGN. Il report conta le aperture, la prima mossa del colore scelto e i risultati presenti nei PGN.</p>
+              <label class="field-label" for="opponent-side">Colore giocato dall'avversario</label>
+              <select id="opponent-side" class="text-input"><option value="black">Nero</option><option value="white">Bianco</option></select>
+              <textarea id="opponent-pgn" class="pgn-input" rows="5" placeholder='Incolla uno o più PGN, ciascuno con intestazione [Event "..."].'></textarea>
+              <div class="tool-actions"><button class="button small primary" id="analyze-opponent">Analizza partite</button></div>
+              <div id="opponent-report" class="tool-output" aria-live="polite"></div>
+            </section>
+
+<section class="detail-card feature-card transposition-tool" id="transpositions-tool">
+              <div class="card-heading"><span class="card-icon">⇄</span><span>TRASPOSIZIONI</span></div>
+              <p class="tool-description">Posizioni con più di un percorso d'ingresso nel grafo. Il conteggio usa la stessa chiave di posizione del repertorio.</p>
+              <div id="transposition-summary" class="tool-output"></div>
+              <div id="transposition-list" class="transposition-list"></div>
+            </section>
+
+<section class="detail-card feature-card endgame-lab" id="endgame-lab">
+              <div class="card-heading"><span class="card-icon">♔</span><span>ENDGAME LAB · PROGRAMMA COMPLETO</span></div>
+              <p class="tool-description">Percorso strutturato dai finali elementari agli studi avanzati: re e pedoni, torri, alfieri, cavalli, donne, matti fondamentali, fortezze, promozioni e tecnica pratica. Ogni lezione include obiettivo, metodo, errore tipico e posizione di studio.</p>
+              <div id="endgame-summary" class="tool-output"></div>
+              <div class="endgame-selectors">
+                <div><label class="field-label" for="endgame-category">Capitolo</label><select id="endgame-category" class="text-input"></select></div>
+                <div><label class="field-label" for="endgame-topic">Lezione</label><select id="endgame-topic" class="text-input"></select></div>
+              </div>
+              <div id="endgame-lesson" class="endgame-lesson"></div>
+              <div class="endgame-progress-row"><span id="endgame-progress" class="tool-output">Non ancora completato</span><div class="tool-actions"><button class="button small ghost" id="endgame-create-card">Crea flashcard FSRS</button><button class="button small ghost" id="endgame-mastered">Segna come appreso</button></div></div>
+              <label class="field-label" for="endgame-fen">FEN della posizione (puoi incollare qualsiasi finale)</label>
+              <input id="endgame-fen" class="text-input" spellcheck="false"/>
+              <div class="tool-actions">
+                <label class="field-label" for="endgame-side">Tu giochi</label>
+                <select id="endgame-side" class="text-input"><option value="white">Bianco</option><option value="black">Nero</option></select>
+                <label class="field-label" for="endgame-elo">Forza Stockfish</label>
+                <select id="endgame-elo" class="text-input"><option value="1320">1320</option><option value="1500">1500</option><option value="1700" selected>1700</option><option value="1900">1900</option><option value="2100">2100</option><option value="2500">2500</option></select>
+                <button class="button small primary" id="endgame-start-practice">Allena contro Stockfish</button>
+                <button class="button small ghost" id="endgame-stop-practice">Termina allenamento</button>
+              </div>
+              <div class="tool-actions">
+                <button class="button small ghost" id="endgame-load">Carica posizione</button>
+                <button class="button small primary" id="endgame-analyze">Analizza Stockfish</button>
+                <button class="button small ghost" id="endgame-engine-move">Mossa motore</button>
+                <button class="button small ghost" id="endgame-tablebase">Syzygy · fino a 7 pezzi</button>
+              </div>
+              <div class="endgame-workbench">
+                <div id="endgame-board" class="mini-board" aria-label="Scacchiera Endgame Lab"></div>
+                <div class="endgame-feedback">
+                  <p id="endgame-status" class="tool-output" aria-live="polite">Carica una lezione o incolla una FEN.</p>
+                  <p id="endgame-evaluation" class="tool-output" aria-live="polite">L'analisi Stockfish valuta la posizione; la Syzygy tablebase fornisce il risultato teorico per posizioni coperte.</p>
+                  <p id="endgame-tablebase-result" class="tool-output" aria-live="polite"></p>
+                </div>
+              </div>
+              <p class="tool-description">Copertura didattica: i concetti classici e avanzati sono organizzati in capitoli. La verifica teorica esatta è disponibile tramite Syzygy per posizioni standard fino a sette pezzi; per posizioni più grandi si usa Stockfish.</p>
+            </section>
           </section>
 
           <div class="workspace-footer"><span>CHESS OS <b>·</b> I tuoi dati restano sul dispositivo</span><span>LEGAL MOVES <i>ON</i></span></div>

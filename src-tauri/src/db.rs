@@ -1158,6 +1158,34 @@ pub fn list_exam_attempts(database: State<'_, Database>) -> Result<Vec<ExamAttem
 }
 
 
+#[tauri::command]
+pub fn get_app_setting(database: State<'_, Database>, key: String) -> Result<Option<String>, String> {
+    if key.trim().is_empty() || key.len() > 200 {
+        return Err("Chiave impostazione non valida.".into());
+    }
+    let connection = database.0.lock().map_err(|_| "Database non disponibile.".to_string())?;
+    connection.query_row(
+        "SELECT value FROM app_settings WHERE key = ?1",
+        params![key],
+        |row| row.get(0),
+    ).optional().map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn set_app_setting(database: State<'_, Database>, key: String, value: String) -> Result<bool, String> {
+    if key.trim().is_empty() || key.len() > 200 || value.len() > 20_000_000 {
+        return Err("Impostazione non valida o troppo grande.".into());
+    }
+    let connection = database.0.lock().map_err(|_| "Database non disponibile.".to_string())?;
+    connection.execute(
+        "INSERT INTO app_settings (key, value, updated_at)
+         VALUES (?1, ?2, ?3)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
+        params![key, value, now_timestamp()],
+    ).map_err(|error| error.to_string())?;
+    Ok(true)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

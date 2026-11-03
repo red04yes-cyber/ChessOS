@@ -3,6 +3,7 @@ import { invoke, isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { RepertoireTree } from "./repertoire-tree.js";
 import { initializeChessSuite } from "./chess-suite.js";
+import { initializeExtendedTraining } from "./extended-training.js";
 import { fenToEditorState, editorStateToFen } from "./fen-editor.js";
 import { createOpeningPreset, getOpeningFamilyCount, identifyOpeningFromFens } from "./opening-catalog.js";
 import { encodeBoardMarks, emptyBoardMarks, nagsToSymbols, normalizeNag, parseBoardMarks, stripBoardMarkTags, toggleArrowMark, toggleSquareMark } from "./board-annotations.js";
@@ -44,6 +45,7 @@ const promotionNames = { q: "Donna", r: "Torre", b: "Alfiere", n: "Cavallo" };
 let game = new Chess();
 let mode = "studio";
 let chessSuite = null;
+let extendedTraining = null;
 let selectedSquare = null;
 let boardFlipped = false;
 let pendingPromotion = null;
@@ -1139,6 +1141,7 @@ function renderAll() {
   renderExamPanel();
   renderImportedGames();
   renderBackupList();
+  extendedTraining?.refresh();
 }
 
 function renderImportedGames() {
@@ -3128,7 +3131,34 @@ chessSuite = initializeChessSuite({
     setDirty(true);
     renderAll();
   },
+  onImportedGames: (pgn) => extendedTraining?.loadImportedPgn(pgn),
 });
+extendedTraining = initializeExtendedTraining({
+  getCurrentTree: () => studioTree,
+  getCurrentMoves: () => studioMoveObjects,
+  getBaseFen: () => baseFen,
+  getCurrentTitle: () => titleInput.value,
+  loadPath: (edgeIds) => {
+    syncStudioPath(edgeIds);
+    selectedSquare = null;
+    mode = "studio";
+    renderAll();
+  },
+  toast: showToast,
+});
+function createEndgameFlashcard() {
+  const lesson = chessSuite?.getCurrentEndgameLesson?.();
+  if (!lesson) {
+    showToast("Seleziona prima una lezione Endgame.", { type: "warning" });
+    return;
+  }
+  extendedTraining?.addConceptCard({
+    front: "Richiama la tecnica: " + lesson.title + ". " + lesson.focus,
+    back: "Obiettivo: " + lesson.objective + "\n\nMetodo: " + lesson.method + "\n\nErrore tipico: " + lesson.errors,
+    fen: lesson.fen,
+  });
+}
+$("#endgame-create-card")?.addEventListener("click", createEndgameFlashcard);
 
 renderAll();
 void initializePersistence();

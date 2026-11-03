@@ -39,6 +39,8 @@ fn main() {
             db::start_exam,
             db::record_exam_answer,
             db::finish_exam,
+            db::get_app_setting,
+            db::set_app_setting,
             external_games::import_online_games,
             external_games::list_imported_games,
             external_games::get_imported_game,
