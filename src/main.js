@@ -93,6 +93,7 @@ let studioPly = 0;
 let studioTree = new RepertoireTree(DEFAULT_FEN);
 let studioPath = [];
 let toastTimer = null;
+let confirmDialogActive = false;
 let boardDrag = null;
 let suppressBoardClick = false;
 let pendingBoardAnimation = null;
@@ -298,9 +299,93 @@ function setDirty(value = true) {
   }
 }
 
-function confirmDiscardChanges(action) {
+function confirmDialog(options) {
+  if (confirmDialogActive) return Promise.resolve(options.cancelValue);
+  const dialog = $("#confirm-dialog");
+  const actionsElement = $("#confirm-actions");
+  const title = $("#confirm-title");
+  const message = $("#confirm-message");
+  const previousFocus = document.activeElement;
+  const actions = Array.isArray(options.actions) ? options.actions : [];
+  const controls = [];
+  let settled = false;
+
+  title.textContent = options.title || "Conferma";
+  message.textContent = options.message || "";
+  actionsElement.replaceChildren();
+
+  return new Promise((resolve) => {
+    confirmDialogActive = true;
+    const finish = (value) => {
+      if (settled) return;
+      settled = true;
+      dialog.hidden = true;
+      dialog.removeEventListener("keydown", onKeyDown);
+      dialog.removeEventListener("click", onBackdropClick);
+      actionsElement.replaceChildren();
+      confirmDialogActive = false;
+      if (previousFocus instanceof HTMLElement && previousFocus.isConnected) {
+        previousFocus.focus({ preventScroll: true });
+      }
+      resolve(value);
+    };
+    const onBackdropClick = (event) => {
+      if (event.target === dialog) finish(options.cancelValue);
+    };
+    const onKeyDown = (event) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        finish(options.cancelValue);
+        return;
+      }
+      if (event.key !== "Tab" || !controls.length) return;
+      const first = controls[0];
+      const last = controls[controls.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    for (const action of actions) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = action.className || "button";
+      button.textContent = action.label;
+      button.addEventListener("click", () => finish(action.value));
+      controls.push(button);
+      actionsElement.append(button);
+    }
+
+    dialog.addEventListener("keydown", onKeyDown);
+    dialog.addEventListener("click", onBackdropClick);
+    dialog.hidden = false;
+    const initial = actions.find((action) => action.value === options.initialValue)
+      || actions.find((action) => action.safe)
+      || actions[0];
+    const initialButton = actionsElement.children[actions.indexOf(initial)];
+    initialButton?.focus({ preventScroll: true });
+  });
+}
+
+async function confirmDiscardChanges(action) {
   if (!dirty) return true;
-  return window.confirm("Ci sono modifiche non salvate. Vuoi eliminarle e " + action + "?");
+  const choice = await confirmDialog({
+    title: "Modifiche non salvate",
+    message: "Il repertorio contiene modifiche non salvate. Prima di " + action + ", puoi salvarle oppure scartarle.",
+    cancelValue: "cancel",
+    initialValue: "cancel",
+    actions: [
+      { value: "save", label: "Salva e continua", className: "button primary" },
+      { value: "discard", label: "Scarta modifiche", className: "button danger" },
+      { value: "cancel", label: "Continua a modificare", className: "button", safe: true },
+    ],
+  });
+  if (choice === "save") return await saveLine();
+  return choice === "discard";
 }
 
 function gameStatus(chess) {
@@ -918,7 +1003,7 @@ async function startOnlineGameImport() {
 }
 
 async function openImportedGame(id) {
-  if (!confirmDiscardChanges("aprire una partita importata")) return;
+  if (!await confirmDiscardChanges("aprire una partita importata")) return;
   try {
     if (mode === "exam" && examAttemptId) await finishRepertoireExam(true);
     if (mode === "training" && reviewSessionId && !reviewSessionFinished) {
@@ -948,7 +1033,17 @@ async function openImportedGame(id) {
 async function removeImportedGame(id) {
   const record = importedGames.find((item) => item.id === id);
   if (!record) return;
-  if (!window.confirm("Rimuovere questa partita dalla libreria locale? Il repertorio non verrà modificato.")) return;
+  const accepted = await confirmDialog({
+    title: "Rimuovere la partita importata?",
+    message: "La partita verrà rimossa dalla libreria locale. I repertori esistenti non verranno modificati.",
+    cancelValue: false,
+    initialValue: false,
+    actions: [
+      { value: false, label: "Annulla", className: "button", safe: true },
+      { value: true, label: "Rimuovi partita", className: "button danger" },
+    ],
+  });
+  if (!accepted) return;
   try {
     await invoke("delete_imported_game", { id });
     await refreshImportedGames();
@@ -1130,20 +1225,22 @@ function handleSquareClick(square) {
   commitSelectedMove(choices[0]);
 }
 
-function openLine(id) {
+async function openLine(id) {
   if (mode === "exam" && examAttemptId) {
-    void finishRepertoireExam(true).then(() => openLine(id));
-    return;
+    await finishRepertoireExam(true);
   }
   if (mode === "training" && reviewSessionId && !reviewSessionFinished) {
-    void markReviewSessionFinished().catch((error) => {
-      showToast("Non riesco a chiudere la sessione: " + error.message);
-    });
+    try {
+      await markReviewSessionFinished();
+    } catch (error) {
+      showToast("Non riesco a chiudere la sessione: " + error.message, { type: "error" });
+      return;
+    }
     reviewSessionId = null;
     reviewSessionFinished = false;
   }
   const line = repertoire.find((item) => item.id === id);
-  if (!line || !confirmDiscardChanges("aprire un'altra linea")) return;
+  if (!line || !await confirmDiscardChanges("aprire un'altra linea")) return;
   try {
     const loaded = line.tree ? RepertoireTree.fromJSON(line.tree) : RepertoireTree.fromPgn(line.pgn);
     rebuildTimeline(loaded);
@@ -1162,7 +1259,16 @@ function openLine(id) {
 async function deleteLine(id) {
   const line = repertoire.find((item) => item.id === id);
   if (!line) return;
-  const accepted = window.confirm("Eliminare “" + (line.title || "Repertorio senza nome") + "” dal repertorio?");
+  const accepted = await confirmDialog({
+    title: "Eliminare il repertorio?",
+    message: "“" + (line.title || "Repertorio senza nome") + "” verrà eliminato definitivamente da questo dispositivo. Esporta il PGN se vuoi conservarne una copia.",
+    cancelValue: false,
+    initialValue: false,
+    actions: [
+      { value: false, label: "Annulla", className: "button", safe: true },
+      { value: true, label: "Elimina repertorio", className: "button danger" },
+    ],
+  });
   if (!accepted) return;
   if (mode === "exam" && examAttemptId) {
     await finishRepertoireExam(true);
@@ -1202,14 +1308,14 @@ async function deleteLine(id) {
 }
 
 async function saveLine() {
-  if (mode !== "studio") return;
+  if (mode !== "studio") return false;
   if (!databaseReady) {
     showToast("Database non pronto: il salvataggio è disattivato.", { type: "error" });
-    return;
+    return false;
   }
   if (!studioTree.edges.size) {
     showToast("Aggiungi almeno una mossa prima di salvare.");
-    return;
+    return false;
   }
 
   const pgn = timelinePgn();
@@ -1237,14 +1343,16 @@ async function saveLine() {
     } else {
       const next = repertoire.filter((item) => item.id !== id);
       repertoire = [entry, ...next];
-      if (!persistRepertoire()) return;
+      if (!persistRepertoire()) return false;
     }
     activeLineId = id;
     setDirty(false);
     renderAll();
-    showToast("Linea salvata nel database.");
+    showToast("Repertorio salvato.", { type: "success" });
+    return true;
   } catch (error) {
     showToast("Errore salvataggio SQLite: " + error.message, { type: "error" });
+    return false;
   }
 }
 
@@ -2061,7 +2169,7 @@ function leaveTraining() {
   renderAll();
 }
 
-function importPgn() {
+async function importPgn() {
   const text = $("#pgn-input").value.trim();
   if (!text) {
     showToast("Incolla prima un testo PGN.");
@@ -2069,7 +2177,7 @@ function importPgn() {
   }
   try {
     const imported = RepertoireTree.fromPgn(text);
-    if (!confirmDiscardChanges("importare questo PGN")) return;
+    if (!await confirmDiscardChanges("importare questo PGN")) return;
     rebuildTimeline(imported);
     mode = "studio";
     activeLineId = null;
@@ -2077,7 +2185,7 @@ function importPgn() {
     setDirty(true);
     closePromotionChooser();
     renderAll();
-    showToast("PGN importato: varianti e trasposizioni caricate.");
+    showToast("PGN importato: varianti e trasposizioni caricate.", { type: "success" });
   } catch (error) {
     showToast("PGN non valido: " + error.message, { type: "error" });
   }
@@ -2101,7 +2209,7 @@ function exportPgn() {
   showToast("File PGN esportato.");
 }
 
-function newPosition() {
+async function newPosition() {
   if (mode === "exam") {
     leaveExam();
     return;
@@ -2113,7 +2221,7 @@ function newPosition() {
     leaveTraining();
     return;
   }
-  if (!confirmDiscardChanges("iniziare una nuova linea")) return;
+  if (!await confirmDiscardChanges("iniziare un nuovo repertorio")) return;
   baseFen = DEFAULT_FEN;
   studioTree = new RepertoireTree(DEFAULT_FEN);
   syncStudioPath([]);
@@ -2123,7 +2231,10 @@ function newPosition() {
   closePromotionChooser();
   titleInput.value = "Nuovo repertorio";
   setDirty(true);
-  function initializeUiPreferences() {
+  renderAll();
+}
+
+function initializeUiPreferences() {
   const controls = [
     ["#ui-theme-select", "theme"],
     ["#board-theme-select", "boardTheme"],
@@ -2150,12 +2261,6 @@ function initializeKeyboardControls() {
   $("#to-end")?.addEventListener("click", () => {
     if (mode === "studio") positionForPly(studioSans.length);
   });
-}
-
-initializeUiPreferences();
-initializeKeyboardControls();
-renderAll();
-void initializePersistence();
 }
 
 async function copyFen() {
@@ -2338,8 +2443,8 @@ document.querySelectorAll("#review-grades [data-rating]").forEach((button) => {
   button.addEventListener("click", () => { void rateCurrentCard(button.dataset.rating); });
 });
 $("#review-exit").addEventListener("click", leaveTraining);
-$("#new-line").addEventListener("click", newPosition);
-$("#reset").addEventListener("click", newPosition);
+$("#new-line").addEventListener("click", () => { void newPosition(); });
+$("#reset").addEventListener("click", () => { void newPosition(); });
 $("#undo").addEventListener("click", () => {
   if (mode === "studio" && studioPly > 0) positionForPly(studioPly - 1);
 });
@@ -2352,8 +2457,13 @@ $("#flip-board").addEventListener("click", () => {
 });
 $("#copy-fen").addEventListener("click", copyFen);
 $("#save-line").addEventListener("click", saveLine);
-$("#import-pgn").addEventListener("click", importPgn);
+$("#import-pgn").addEventListener("click", () => { void importPgn(); });
 $("#export-pgn").addEventListener("click", exportPgn);
+$("#confirm-dialog").addEventListener("click", (event) => {
+  if (event.target === $("#confirm-dialog")) {
+    $("#confirm-dialog").hidden = true;
+  }
+});
 $("#promotion-cancel").addEventListener("click", () => {
   closePromotionChooser();
   selectedSquare = null;
@@ -2419,7 +2529,7 @@ document.addEventListener("keydown", (event) => {
   }
   if (event.ctrlKey && event.key.toLowerCase() === "n") {
     event.preventDefault();
-    if (mode === "studio") newPosition();
+    if (mode === "studio" && !editing) void newPosition();
     return;
   }
   if (!editing && event.key.toLowerCase() === "f" && !event.ctrlKey && !event.altKey) {
@@ -2444,5 +2554,7 @@ document.addEventListener("keydown", (event) => {
   }
 });
 
+initializeUiPreferences();
+initializeKeyboardControls();
 renderAll();
 void initializePersistence();
