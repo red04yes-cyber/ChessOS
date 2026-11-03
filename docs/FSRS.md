@@ -17,7 +17,7 @@ The graph can merge transpositions. In that case, the shared position/move edge 
 
 ## Daily session
 
-The daily queue contains every due learning/relearning/review card for the selected side plus at most 20 due new cards. Due review cards are not capped. New cards are ordered after already-due review cards. A card is scheduled only after the learner chooses Again, Hard, Good or Easy, and the next due date is displayed through the scheduler state.
+The daily queue contains every due learning/relearning/review card for the selected side plus the remaining portion of a cumulative limit of 20 new cards per local calendar day. The limit is computed from review logs in the New state, so opening multiple sessions cannot reset it. Due review cards are not capped. New cards are ordered after already-due review cards. A card is scheduled only after the learner chooses Again, Hard, Good or Easy, and the next due date is displayed through the scheduler state. Review logs retain whether the move was solved before revealing the answer; recall accuracy uses that outcome independently from the FSRS grade.
 
 Again can be selected immediately after an incorrect attempt. After a correct answer or after revealing the solution, all four ratings are available.
 
