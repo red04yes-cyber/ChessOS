@@ -76,12 +76,14 @@ export async function fetchChessComGames(username, maxGames = 100) {
   // Chess.com raccomanda richieste seriali: non parallelizzare gli archivi.
   for (const archiveUrl of [...archives].reverse()) {
     if (pgnParts.length >= max) break;
-    const response = await fetch(archiveUrl + "/pgn", { headers: { Accept: "application/x-chess-pgn" } });
+    const response = await fetch(archiveUrl, { headers: { Accept: "application/json" } });
     if (response.status === 429) throw new Error("Chess.com ha imposto un limite temporaneo durante il download. Riprova più tardi.");
     if (!response.ok) continue;
-    const monthPgn = (await response.text()).trim();
-    if (!monthPgn) continue;
-    const games = splitPgnGames(monthPgn);
+    const archive = await response.json();
+    if (!Array.isArray(archive.games)) continue;
+    const games = archive.games
+      .map((game) => typeof game.pgn === "string" ? game.pgn.trim() : "")
+      .filter(Boolean);
     pgnParts.push(...games.slice(0, Math.max(0, max - pgnParts.length)));
   }
   if (!pgnParts.length) throw new Error("Nessuna partita PGN pubblica disponibile nei mesi consultati.");
@@ -309,7 +311,9 @@ export function initializeChessSuite({ getCurrentTree, loadGeneratedTree, getCur
     const fenInput = $("#endgame-fen");
     if (fenInput) fenInput.value = endgameLesson.fen;
     const progress = endgameCards[endgameLesson.id];
-    message("#endgame-progress", progress?.mastered ? "Padroneggiato" : progress?.completed ? "Completato · da consolidare" : "Non ancora completato");
+    message("#endgame-progress", progress?.mastered ? "Padroneggiato" : progress?.completed ? "Completato · da consolidare" : progress?.attempts ? "Tentativi effettuati · da completare" : "Non ancora completato");
+    const masteredButton = $("#endgame-mastered");
+    if (masteredButton) masteredButton.textContent = progress?.mastered ? "Rimuovi stato appreso" : "Segna come appreso";
     updateEndgameSummary();
   }
   function loadEndgamePosition() {
@@ -345,13 +349,19 @@ export function initializeChessSuite({ getCurrentTree, loadGeneratedTree, getCur
   }
   function markEndgameMastered() {
     const progress = endgameCards[endgameLesson.id] || { attempts: 0, completed: false, mastered: false };
-    progress.completed = true;
-    progress.mastered = true;
-    progress.masteredAt = new Date().toISOString();
+    if (progress.mastered) {
+      progress.mastered = false;
+      progress.completed = false;
+      delete progress.masteredAt;
+    } else {
+      progress.completed = true;
+      progress.mastered = true;
+      progress.masteredAt = new Date().toISOString();
+    }
     endgameCards[endgameLesson.id] = progress;
     saveEndgameProgress();
     renderEndgameLesson();
-    message("#endgame-status", "Lezione segnata come appresa. Puoi ripeterla e rimuovere la spunta in seguito.");
+    message("#endgame-status", progress.mastered ? "Lezione segnata come appresa." : "Stato di padronanza rimosso.");
   }
 
   async function probeEndgameTablebase() {
@@ -373,7 +383,6 @@ export function initializeChessSuite({ getCurrentTree, loadGeneratedTree, getCur
       progress.attempts += 1;
       progress.lastWdl = data.category || null;
       progress.lastProbedAt = new Date().toISOString();
-      progress.completed = true;
       progress.mastered = Boolean(progress.mastered);
       endgameCards[endgameLesson.id] = progress;
       saveEndgameProgress();
