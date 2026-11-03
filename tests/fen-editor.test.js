@@ -39,3 +39,43 @@ test("validates side-specific en-passant targets and the pawn that just advanced
   assert.throws(() => editorStateToFen({ ...afterE5, enPassant: "e3" }), /colore che deve muovere/i);
   assert.throws(() => editorStateToFen({ ...afterE5, pieces: { ...afterE5.pieces, e5: undefined } }), /doppia spinta/i);
 });
+
+
+test("rejects invalid square names and unknown piece codes", () => {
+  const base = fenToEditorState(new Chess().fen());
+  assert.throws(() => editorStateToFen({
+    ...base,
+    pieces: { ...base.pieces, z9: "wQ" },
+  }), /Pezzo o casa non valido/i);
+  assert.throws(() => editorStateToFen({
+    ...base,
+    pieces: { ...base.pieces, a3: "wX" },
+  }), /Pezzo o casa non valido/i);
+});
+
+test("rejects invalid side-to-move, duplicate castling rights and unsupported rights", () => {
+  const base = fenToEditorState(new Chess().fen());
+  assert.throws(() => editorStateToFen({ ...base, turn: "x" }), /deve muovere/i);
+  assert.throws(() => editorStateToFen({ ...base, castling: ["K", "K"] }), /Diritti di arrocco/i);
+  assert.throws(() => editorStateToFen({ ...base, castling: ["K", "X"] }), /Diritti di arrocco/i);
+});
+
+test("enforces non-negative halfmove and positive fullmove counters", () => {
+  const base = fenToEditorState(new Chess().fen());
+  assert.throws(() => editorStateToFen({ ...base, halfmove: -1 }), /Contatore/i);
+  assert.throws(() => editorStateToFen({ ...base, halfmove: 1.5 }), /Contatore/i);
+  assert.throws(() => editorStateToFen({ ...base, fullmove: 0 }), /Numero della mossa/i);
+  assert.throws(() => editorStateToFen({ ...base, fullmove: 2.5 }), /Numero della mossa/i);
+});
+
+test("rejects an occupied en-passant target square", () => {
+  const base = fenToEditorState(new Chess().fen());
+  const afterE5 = {
+    ...base,
+    pieces: { ...base.pieces, e7: undefined, e5: "bP", d5: "wP", e6: "wN" },
+    turn: "w",
+    enPassant: "e6",
+    halfmove: 0,
+  };
+  assert.throws(() => editorStateToFen(afterE5), /casa en passant/i);
+});

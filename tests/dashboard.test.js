@@ -92,3 +92,76 @@ test("validates daily/weekly study goals", () => {
     period: "daily", targetReviews: 20, targetMinutes: 30, targetAccuracy: 101,
   }));
 });
+
+
+test("ignores malformed review timestamps and reads legacy snake_case fields", () => {
+  const snapshot = buildDashboardSnapshot({
+    repertoires: [{ id: "r1", title: "Linea" }],
+    reviewCards: [{ id: "card-1", repertoireId: "r1", repertoire_id: "r1", fsrs: { due: now.toISOString() } }],
+    reviewLogs: [
+      {
+        card_id: "card-1",
+        reviewed_at: now.toISOString(),
+        elapsed_ms: 90_000,
+        rating: 3,
+        state_json: JSON.stringify({ recalled: true }),
+      },
+      { cardId: "card-1", reviewedAt: "not-a-date", elapsedMs: 60_000, rating: 1 },
+    ],
+    sessions: [{ started_at: now.toISOString() }],
+  }, now);
+
+  assert.equal(snapshot.today.reviews, 1);
+  assert.equal(snapshot.today.minutes, 2);
+  assert.equal(snapshot.today.accuracy, 100);
+  assert.equal(snapshot.today.sessions, 1);
+  assert.equal(snapshot.repertoires[0].reviews, 1);
+});
+
+test("returns neutral empty-state metrics when no reviews or cards exist", () => {
+  const snapshot = buildDashboardSnapshot({}, now);
+  assert.equal(snapshot.today.reviews, 0);
+  assert.equal(snapshot.today.accuracy, null);
+  assert.equal(snapshot.overview.totalReviews, 0);
+  assert.equal(snapshot.overview.overallAccuracy, null);
+  assert.equal(snapshot.overview.dueCards, 0);
+});
+
+test("starts the week on Monday for a Sunday input and rejects invalid day keys", () => {
+  const sunday = new Date(2026, 10, 1, 14, 30);
+  const monday = startOfLocalWeek(sunday);
+  assert.equal(monday.getDay(), 1);
+  assert.equal(localDayKey(monday), "2026-10-26");
+  assert.equal(localDayKey(new Date("invalid")), "");
+});
+
+test("returns fewer exam questions when the eligible pool is smaller than requested", () => {
+  const selected = selectExamQuestions(cards, {
+    repertoireId: "r1",
+    side: "both",
+    count: 500,
+    random: () => 0.5,
+  });
+  assert.equal(selected.length, 2);
+  assert.equal(new Set(selected.map((card) => card.id)).size, 2);
+  assert.deepEqual(selectExamQuestions(cards, { repertoireId: "missing", count: 10 }), []);
+});
+
+test("handles empty exams and rejects invalid question counts and thresholds", () => {
+  assert.deepEqual(calculateExamResult([], 70), {
+    total: 0, correct: 0, incorrect: 0, accuracy: 0, passed: false, passThreshold: 70,
+  });
+  assert.throws(() => selectExamQuestions(cards, { repertoireId: "r1", count: 0 }), /Numero di domande/i);
+  assert.throws(() => selectExamQuestions(cards, { repertoireId: "r1", count: 501 }), /Numero di domande/i);
+  assert.throws(() => calculateExamResult([], 0), /Soglia/i);
+  assert.throws(() => calculateExamResult([], 101), /Soglia/i);
+});
+
+test("accepts study-goal boundaries and rejects fractional values", () => {
+  assert.deepEqual(normalizeStudyGoal({
+    period: "weekly", targetReviews: 10_000, targetMinutes: 1, targetAccuracy: 100,
+  }), { period: "weekly", targetReviews: 10_000, targetMinutes: 1, targetAccuracy: 100 });
+  assert.throws(() => normalizeStudyGoal({
+    period: "daily", targetReviews: 1.5, targetMinutes: 20, targetAccuracy: 80,
+  }), /ripassi/i);
+});

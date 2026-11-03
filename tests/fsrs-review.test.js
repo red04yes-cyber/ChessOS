@@ -136,3 +136,44 @@ test("parses UCI moves including underpromotion", () => {
   assert.deepEqual(parseUci("e2e4"), { from: "e2", to: "e4" });
   assert.throws(() => parseUci("invalid"));
 });
+
+
+test("excludes malformed and future due dates from daily review selection", () => {
+  const cards = buildReviewCards([line], [], now);
+  const malformed = {
+    ...cards[0],
+    fsrs: { ...cards[0].fsrs, due: "not-a-date" },
+  };
+  const future = {
+    ...cards[1],
+    fsrs: { ...cards[1].fsrs, due: "2026-11-04T12:00:00.000Z" },
+  };
+  assert.equal(countDueCards([malformed, future], now), 0);
+  assert.deepEqual(selectDailyCards([malformed, future], now), []);
+});
+
+test("does not replace a saved card when its FSRS model version is newer", () => {
+  const first = buildReviewCards([line], [], now);
+  const savedState = { ...first[0].fsrs, fsrsModelVersion: "FSRS-7" };
+  const rebuilt = buildReviewCards([line], [{
+    id: first[0].id,
+    fsrs: savedState,
+  }], now);
+  assert.equal(rebuilt[0].fsrs.fsrsModelVersion, "FSRS-7");
+  assert.equal(rebuilt[0].fsrs.due, savedState.due);
+});
+
+test("skips an unreadable repertoire without losing cards from valid repertoires", () => {
+  const cards = buildReviewCards([
+    { id: "broken", pgn: "1. e4 Qh9 *" },
+    line,
+  ], [], now);
+  assert.equal(cards.length, 4);
+  assert.ok(cards.every((card) => card.repertoireId === line.id));
+});
+
+test("rejects malformed FSRS dates and unknown ratings", () => {
+  const fresh = createFsrsCard(now);
+  assert.throws(() => gradeFsrsCard({ ...fresh, due: "not-a-date" }, "good", now));
+  assert.throws(() => gradeFsrsCard(fresh, "perfect", now), /Valutazione FSRS/i);
+});

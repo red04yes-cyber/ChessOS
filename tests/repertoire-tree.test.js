@@ -132,3 +132,50 @@ test("rejects a tampered stored move graph", () => {
   serialized.edges[0].uci = "e2e5";
   assert.throws(() => RepertoireTree.fromJSON(serialized), /Mossa salvata non coerente/i);
 });
+
+
+test("supports an empty PGN and exports a valid empty repertoire", () => {
+  const tree = RepertoireTree.fromPgn("");
+  assert.equal(tree.nodes.size, 1);
+  assert.equal(tree.edges.size, 0);
+  assert.match(tree.toPgn(), /\*/);
+});
+
+test("rejects a closing variation parenthesis without a matching opener", () => {
+  assert.throws(() => RepertoireTree.fromPgn("1. e4 ) e5 *"), /parentesi di variante PGN non bilanciata/i);
+});
+
+test("merges metadata when the same move is added twice", () => {
+  const tree = new RepertoireTree();
+  const firstBoard = new Chess();
+  const firstMove = firstBoard.move("e4");
+  const firstEdge = tree.addMove(tree.rootId, firstMove, firstBoard.fen());
+
+  const secondBoard = new Chess();
+  const secondMove = secondBoard.move("e4");
+  const secondEdge = tree.addMove(tree.rootId, secondMove, secondBoard.fen(), {
+    comment: "Central control",
+    nag: "$1",
+  });
+
+  assert.equal(secondEdge, firstEdge);
+  assert.equal(tree.getOutgoing(tree.rootId).length, 1);
+  assert.equal(firstEdge.comment, "Central control");
+  assert.deepEqual(firstEdge.nags, ["$1"]);
+});
+
+test("rejects serialized edges that reference missing positions", () => {
+  const tree = RepertoireTree.fromPgn("1. e4 e5 *");
+  const serialized = tree.toJSON();
+  serialized.edges[0].to = "missing-position";
+  assert.throws(() => RepertoireTree.fromJSON(serialized), /Collegamento tra posizioni/i);
+});
+
+test("keeps repeated positions as distinct nodes when merging would create a cycle", () => {
+  const tree = RepertoireTree.fromPgn("1. Nf3 Nf6 2. Ng1 Ng8 *");
+  const path = tree.mainlinePath();
+  const returnEdge = tree.getEdge(path[3]);
+  assert.ok(returnEdge);
+  assert.equal(tree.getNode(returnEdge.to).key, tree.getNode(tree.rootId).key);
+  assert.notEqual(returnEdge.to, tree.rootId);
+});

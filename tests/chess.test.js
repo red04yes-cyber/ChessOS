@@ -64,3 +64,26 @@ test("recognises stalemate and insufficient material", () => {
   const insufficient = new Chess("8/8/8/8/8/8/4k3/7K w - - 0 1");
   assert.equal(insufficient.isInsufficientMaterial(), true);
 });
+
+
+test("prevents a pinned piece from exposing its king", () => {
+  const chess = new Chess("4r1k1/8/8/8/4R3/8/8/4K3 w - - 0 1");
+  const legalMoves = chess.moves({ square: "e4", verbose: true });
+  assert.ok(legalMoves.length > 0);
+  assert.ok(legalMoves.every((move) => move.to[0] === "e"));
+});
+
+test("uses file disambiguation when two knights can reach the same square", () => {
+  const chess = new Chess("6k1/8/8/8/1N3N2/8/8/6K1 w - - 0 1");
+  assert.equal(chess.move({ from: "b4", to: "d5" }).san, "Nbd5");
+  chess.undo();
+  assert.equal(chess.move({ from: "f4", to: "d5" }).san, "Nfd5");
+});
+
+test("detects threefold repetition after the initial position occurs three times", () => {
+  const chess = new Chess();
+  for (const san of ["Nf3", "Nf6", "Ng1", "Ng8", "Nf3", "Nf6", "Ng1", "Ng8"]) {
+    chess.move(san);
+  }
+  assert.equal(chess.isThreefoldRepetition(), true);
+});

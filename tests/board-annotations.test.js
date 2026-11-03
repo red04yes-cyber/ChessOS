@@ -49,3 +49,32 @@ test("round trips move comments and visual markings through PGN storage", () => 
   assert.deepEqual(parseBoardMarks(restoredEdge.comment), parseBoardMarks(edge.comment));
   assert.equal(stripBoardMarkTags(restoredEdge.comment), "Plan the center.");
 });
+
+
+test("ignores malformed square and arrow tokens while preserving valid marks", () => {
+  assert.deepEqual(parseBoardMarks(
+    "Plan [%csl Ge4,Rz9,Xd5] [%cal Gg1f3,Yz1a1,Ba1a1]",
+  ), {
+    squares: [{ color: "G", square: "e4" }],
+    arrows: [{ color: "G", from: "g1", to: "f3" }],
+  });
+});
+
+test("filters invalid marks when encoding and preserves ordinary comments", () => {
+  const encoded = encodeBoardMarks("Keep this note", {
+    squares: [{ square: "z9", color: "G" }, { square: "e4", color: "X" }, null],
+    arrows: [{ from: "a1", to: "a1", color: "G" }, { from: "a1", to: "h8", color: "X" }],
+  });
+  assert.equal(encoded, "Keep this note");
+  assert.equal(stripBoardMarkTags("Keep [%csl Ge4] and [%cal Gg1f3] this"), "Keep and this");
+});
+
+test("recolors an existing square or arrow without creating duplicates", () => {
+  let marks = toggleSquareMark(emptyBoardMarks(), "e4", "G");
+  marks = toggleSquareMark(marks, "e4", "R");
+  assert.deepEqual(marks.squares, [{ square: "e4", color: "R" }]);
+
+  marks = toggleArrowMark(marks, "g1", "f3", "G");
+  marks = toggleArrowMark(marks, "g1", "f3", "B");
+  assert.deepEqual(marks.arrows, [{ from: "g1", to: "f3", color: "B" }]);
+});
