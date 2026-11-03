@@ -23,6 +23,7 @@ Windows-first chess repertoire and training desktop app. This repository now con
 - Review cards generated from repertoire position + move + side to train (White / Black)
 - Due-card selection, a daily new-card cap, review history and local statistics
 - Dashboard with daily/weekly trends, repertoire coverage, recall accuracy, study goals and persisted repertoire exams
+- Import all finished public standard-chess games from Chess.com archives or the Lichess PGN export API, with duplicate detection and a separate local game library
 - Atomic SQLite persistence for card scheduling state, review logs and training sessions in the Tauri desktop app; localStorage fallback in browser preview
 - Vite frontend and Tauri 2 desktop shell
 - Automated JavaScript tests for legal moves, PGN, FSRS scheduling and daily review; Rust SQLite tests and Windows NSIS installer workflow
@@ -36,8 +37,6 @@ This is **not** the recovered 0.7.0 application and is not yet feature-complete 
 - Stockfish analysis / evaluation
 
 The old archive fragments remain under `recovery/` for provenance only. They are not build inputs.
-
-The feature roadmap, including the additional training and opponent-preparation ideas, is tracked in [docs/ROADMAP.md](docs/ROADMAP.md). It also records that transposition handling is already implemented in the repertoire graph.
 
 ## Requirements
 
@@ -70,17 +69,13 @@ npm run tauri:build
 
 The NSIS installer is configured for a per-user installation (no administrator prompt by default), creates a Start Menu entry, and downloads the small WebView2 bootstrapper if the runtime is missing. The frontend and installer are also checked by the GitHub Actions workflow on pushes and pull requests to `main`.
 
-The latest completed Windows CI run (#134) generated the NSIS installer, installed and launched it, upgraded 0.1.0 to a test 0.1.1 build, verified SQLite data retention across upgrade and uninstall, generated a SHA-256 sidecar, and uploaded the installer/checksum as a 90-day artifact. A separate manual acceptance test on a clean Windows 10/11 VM or PC is still required.
+The installer, when a successful CI run produces it, is uploaded as the `chess-os-windows-installer` workflow artifact. A successful build has not yet been independently verified.
 
 ## Data and SQLite
 
-The Tauri desktop app stores repertoire data and FSRS review state in `chess-os.sqlite3` inside the application data directory managed by Tauri. Versioned migrations create normalized repertoire, position and move-edge tables, plus `study_cards`, `training_sessions` and `review_logs`. The latest migration stores the complete serialized FSRS card state alongside its next due date and summary fields. Saving a review updates the card, appends its review log and updates the session counters atomically. The browser preview stores equivalent review state in `localStorage` as a development fallback.
+The Tauri desktop app stores repertoire data and FSRS review state in `chess-os.sqlite3` inside the application data directory managed by Tauri. Versioned migrations create normalized repertoire, position and move-edge tables, plus `study_cards`, `training_sessions` and `review_logs`. The latest migration stores the complete serialized FSRS card state alongside its next due date and summary fields. Saving a review updates the card, appends its review log and updates the session counters atomically. The browser preview stores equivalent review state in `localStorage` as a development fallback. Online game import is available in the Tauri desktop app; Chess.com imports public archive data, while Lichess requires a personal API token entered for the request and never saved by ChessOS. See [docs/ONLINE_GAME_IMPORT.md](docs/ONLINE_GAME_IMPORT.md).
 
 On first desktop startup, Chess OS imports legacy `chess-os.repertoire.v1` entries from WebView `localStorage` that are not already in SQLite. The legacy key is removed only after all entries have imported successfully. To back up a repertoire today, export it as PGN; a full SQLite backup/restore interface is still planned. See [docs/DATABASE.md](docs/DATABASE.md) for schema and migration details, and [docs/FSRS.md](docs/FSRS.md) for the fixed scheduler version, parameters and review-card model.
-
-## Release preparation
-
-Release checklist, clean-Windows acceptance steps, branch-protection instructions and draft 0.1.0 notes: [docs/RELEASING.md](docs/RELEASING.md) and [docs/releases/v0.1.0.md](docs/releases/v0.1.0.md). The current CI runs an installer upgrade/data-preservation smoke test and produces a SHA-256 sidecar; manual testing on a separate Windows 10/11 machine is still required.
 
 ## License
 

@@ -1,5 +1,6 @@
 import { Chess } from "chess.js";
 import { invoke, isTauri } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { RepertoireTree } from "./repertoire-tree.js";
 import {
   buildReviewCards,
@@ -49,6 +50,8 @@ let reviewSessions = [];
 let studyGoals = [];
 let examAttempts = [];
 let examAnswers = [];
+let importedGames = [];
+let onlineImportBusy = false;
 let reviewQueue = [];
 let examQueue = [];
 let currentExamCard = null;
@@ -232,6 +235,7 @@ async function initializePersistence() {
     repertoire = records;
     await loadStudyData();
     databaseReady = true;
+    await refreshImportedGames();
     if (migrationErrors.length === 0) {
       try { localStorage.removeItem(STORAGE_KEY); } catch { /* Non bloccare l'avvio per storage non disponibile. */ }
       updateStorageLabel("Database SQLite", "Dati salvati sul dispositivo · " + records.length + " repertori");
@@ -608,6 +612,190 @@ function renderAll() {
   renderReviewPanel();
   renderDashboard();
   renderExamPanel();
+  renderImportedGames();
+}
+
+function renderImportedGames() {
+  const list = $("#imported-games-list");
+  if (!list) return;
+  list.replaceChildren();
+
+  if (persistenceMode !== "sqlite") {
+    const empty = document.createElement("div");
+    empty.className = "repertoire-empty";
+    empty.textContent = "Disponibile nell'app desktop.";
+    list.append(empty);
+    return;
+  }
+  if (!importedGames.length) {
+    const empty = document.createElement("div");
+    empty.className = "repertoire-empty";
+    empty.textContent = "Nessuna partita importata. Usa il pulsante + per collegare un archivio.";
+    list.append(empty);
+    return;
+  }
+
+  for (const record of importedGames) {
+    const row = document.createElement("div");
+    row.className = "imported-game-row";
+    const open = document.createElement("button");
+    open.type = "button";
+    open.className = "imported-game-open";
+    const title = document.createElement("span");
+    title.className = "imported-game-title";
+    title.textContent = (record.white || "Bianco") + " – " + (record.black || "Nero");
+    const detail = document.createElement("small");
+    const provider = record.provider === "lichess" ? "Lichess" : "Chess.com";
+    detail.textContent = [record.playedAt, provider, record.result].filter(Boolean).join(" · ");
+    open.append(title, detail);
+    open.addEventListener("click", () => { void openImportedGame(record.id); });
+
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "imported-game-delete";
+    remove.textContent = "×";
+    remove.title = "Rimuovi partita importata";
+    remove.setAttribute("aria-label", "Rimuovi partita " + title.textContent);
+    remove.addEventListener("click", () => { void removeImportedGame(record.id); });
+    row.append(open, remove);
+    list.append(row);
+  }
+}
+
+async function refreshImportedGames() {
+  if (persistenceMode !== "sqlite" || !databaseReady) {
+    importedGames = [];
+    renderImportedGames();
+    return;
+  }
+  importedGames = await invoke("list_imported_games", { limit: 15 });
+  renderImportedGames();
+}
+
+function openOnlineImportDialog() {
+  const dialog = $("#online-import-dialog");
+  if (!dialog) return;
+  $("#online-import-progress").textContent = persistenceMode === "sqlite"
+    ? "Le partite saranno salvate solo in locale. Gli import successivi saltano automaticamente quelle già presenti."
+    : "L'importazione API è disponibile nella versione desktop di ChessOS.";
+  $("#start-online-import").disabled = persistenceMode !== "sqlite" || onlineImportBusy;
+  dialog.hidden = false;
+  updateOnlineImportProvider();
+  $("#online-username").focus();
+}
+
+function closeOnlineImportDialog() {
+  if (onlineImportBusy) return;
+  $("#online-import-dialog").hidden = true;
+  $("#lichess-api-token").value = "";
+}
+
+function updateOnlineImportProvider() {
+  const isLichess = $("#online-provider").value === "lichess";
+  $("#lichess-token-field").hidden = !isLichess;
+  $("#online-import-progress").textContent = isLichess
+    ? "Inserisci un token API personale Lichess valido. Il token viene usato solo per questa richiesta e non viene salvato."
+    : "Inserisci lo username Chess.com. Verranno letti in sequenza tutti gli archivi mensili pubblici disponibili.";
+}
+
+async function startOnlineGameImport() {
+  if (onlineImportBusy) return;
+  if (persistenceMode !== "sqlite") {
+    $("#online-import-progress").textContent = "Apri ChessOS come app desktop per importare e salvare le partite.";
+    return;
+  }
+  const provider = $("#online-provider").value;
+  const username = $("#online-username").value.trim();
+  const token = provider === "lichess" ? $("#lichess-api-token").value.trim() : null;
+  if (!username) {
+    $("#online-import-progress").textContent = "Inserisci prima lo username.";
+    $("#online-username").focus();
+    return;
+  }
+  if (provider === "lichess" && !token) {
+    $("#online-import-progress").textContent = "Per Lichess è necessario un token API personale valido.";
+    $("#lichess-api-token").focus();
+    return;
+  }
+
+  onlineImportBusy = true;
+  const button = $("#start-online-import");
+  button.disabled = true;
+  button.textContent = "Importazione in corso…";
+  $("#cancel-online-import").disabled = true;
+  $("#online-import-progress").textContent = "Connessione al servizio e download degli archivi…";
+  let stopListening = null;
+  try {
+    stopListening = await listen("online-game-import-progress", (event) => {
+      const progress = event.payload || {};
+      $("#online-import-progress").textContent =
+        "Elaborate: " + (progress.processed || 0)
+        + " · nuove: " + (progress.imported || 0)
+        + " · già presenti: " + (progress.duplicates || 0)
+        + " · non supportate: " + (progress.skipped || 0);
+    });
+    const summary = await invoke("import_online_games", { provider, username, token });
+    await refreshImportedGames();
+    const providerName = provider === "lichess" ? "Lichess" : "Chess.com";
+    $("#online-import-progress").textContent =
+      providerName + " — " + summary.username + ": " + summary.imported + " nuove partite importate, "
+      + summary.duplicates + " già presenti e " + summary.skipped + " ignorate/non supportate."
+      + (provider === "chess_com" ? " Archivi mensili controllati: " + summary.archives + "." : "");
+    $("#lichess-api-token").value = "";
+    showToast(summary.imported + " partite aggiunte alla libreria.");
+  } catch (error) {
+    $("#online-import-progress").textContent = "Importazione non completata: " + (error?.message || String(error));
+    showToast("Importazione partite non riuscita.");
+    try { await refreshImportedGames(); } catch { /* Mantieni la libreria già caricata. */ }
+  } finally {
+    if (stopListening) stopListening();
+    $("#lichess-api-token").value = "";
+    onlineImportBusy = false;
+    button.disabled = false;
+    button.textContent = "Importa tutte le partite";
+    $("#cancel-online-import").disabled = false;
+  }
+}
+
+async function openImportedGame(id) {
+  if (!confirmDiscardChanges("aprire una partita importata")) return;
+  try {
+    if (mode === "exam" && examAttemptId) await finishRepertoireExam(true);
+    if (mode === "training" && reviewSessionId && !reviewSessionFinished) {
+      await markReviewSessionFinished();
+    }
+    const record = await invoke("get_imported_game", { id });
+    const loaded = RepertoireTree.fromPgn(record.pgn);
+    rebuildTimeline(loaded);
+    activeLineId = null;
+    mode = "studio";
+    trainingGame = null;
+    trainingMoves = [];
+    trainingIndex = 0;
+    reviewSessionId = null;
+    reviewSessionFinished = false;
+    titleInput.value = (record.white || "Bianco") + " – " + (record.black || "Nero");
+    setDirty(false);
+    selectedSquare = null;
+    closePromotionChooser();
+    renderAll();
+    showToast("Partita caricata. Usa «Salva linea» per conservarla nel repertorio.");
+  } catch (error) {
+    showToast("Non riesco ad aprire questa partita: " + (error?.message || String(error)));
+  }
+}
+
+async function removeImportedGame(id) {
+  const record = importedGames.find((item) => item.id === id);
+  if (!record) return;
+  if (!window.confirm("Rimuovere questa partita dalla libreria locale? Il repertorio non verrà modificato.")) return;
+  try {
+    await invoke("delete_imported_game", { id });
+    await refreshImportedGames();
+    showToast("Partita rimossa dalla libreria importata.");
+  } catch (error) {
+    showToast("Errore durante la rimozione: " + (error?.message || String(error)));
+  }
 }
 
 function closePromotionChooser() {
@@ -1778,6 +1966,14 @@ boardElement.addEventListener("click", (event) => {
   if (squareButton) handleSquareClick(squareButton.dataset.square);
 });
 
+$("#open-online-import").addEventListener("click", openOnlineImportDialog);
+$("#import-online-games-sidebar").addEventListener("click", openOnlineImportDialog);
+$("#online-provider").addEventListener("change", updateOnlineImportProvider);
+$("#start-online-import").addEventListener("click", () => { void startOnlineGameImport(); });
+$("#cancel-online-import").addEventListener("click", closeOnlineImportDialog);
+$("#online-import-dialog").addEventListener("click", (event) => {
+  if (event.target === $("#online-import-dialog")) closeOnlineImportDialog();
+});
 $("#nav-dashboard").addEventListener("click", showDashboard);
 $("#nav-studio").addEventListener("click", () => {
   if (mode === "training") {
@@ -1832,6 +2028,10 @@ promotionDialog.addEventListener("click", (event) => {
 titleInput.addEventListener("input", () => setDirty(true));
 
 document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && !$("#online-import-dialog").hidden) {
+    closeOnlineImportDialog();
+    return;
+  }
   if (event.key === "Escape" && pendingPromotion) {
     closePromotionChooser();
     selectedSquare = null;
