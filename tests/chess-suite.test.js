@@ -7,7 +7,7 @@ import { analyzeOpeningExplorer, buildRepertoireFromPgn } from "../src/chess-sui
 
 test("endgame curriculum has extensive coverage and every training FEN is parseable", () => {
   assert.equal(ENDGAME_CATALOG.length, 10);
-  assert.ok(ENDGAME_LESSONS.length >= 130);
+  assert.equal(ENDGAME_LESSONS.length, 131);
   for (const section of ENDGAME_CATALOG) {
     assert.ok(section.lessons.length > 0);
     for (const lesson of section.lessons) {
