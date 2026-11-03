@@ -29,3 +29,38 @@ test("loads a non-standard starting position from PGN", () => {
   chess.loadPgn('[SetUp "1"]\n[FEN "k7/8/8/8/8/8/8/4K3 w - - 0 1"]\n\n1. Kf2');
   assert.equal(chess.history().length, 1);
 });
+
+test("supports kingside and queenside castling", () => {
+  const chess = new Chess("r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1");
+  assert.equal(chess.move({ from: "e1", to: "g1" }).san, "O-O");
+  assert.equal(chess.get("f1").type, "r");
+  assert.equal(chess.get("g1").type, "k");
+  chess.undo();
+  assert.equal(chess.move({ from: "e1", to: "c1" }).san, "O-O-O");
+  assert.equal(chess.get("d1").type, "r");
+});
+
+test("supports en passant captures", () => {
+  const chess = new Chess();
+  for (const san of ["e4", "a6", "e5", "d5"]) chess.move(san);
+  const capture = chess.move({ from: "e5", to: "d6" });
+  assert.equal(capture.flags.includes("e"), true);
+  assert.equal(chess.get("d5"), null);
+  assert.equal(chess.get("d6").type, "p");
+});
+
+test("supports all four promotion choices, including underpromotion", () => {
+  for (const promotion of ["q", "r", "b", "n"]) {
+    const chess = new Chess("7k/P7/8/8/8/8/8/7K w - - 0 1");
+    const move = chess.move({ from: "a7", to: "a8", promotion });
+    assert.equal(move.promotion, promotion);
+    assert.equal(chess.get("a8").type, promotion);
+  }
+});
+
+test("recognises stalemate and insufficient material", () => {
+  const stalemate = new Chess("7k/5Q2/6K1/8/8/8/8/8 b - - 0 1");
+  assert.equal(stalemate.isStalemate(), true);
+  const insufficient = new Chess("8/8/8/8/8/8/4k3/4K3 w - - 0 1");
+  assert.equal(insufficient.isInsufficientMaterial(), true);
+});
