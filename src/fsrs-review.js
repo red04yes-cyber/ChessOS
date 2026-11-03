@@ -108,7 +108,12 @@ export function buildReviewCards(repertoires, persistedCards = [], now = new Dat
         const savedState = storedFsrsState(saved);
         let fsrsCard = createFsrsCard(now);
         if (savedState) {
-          try { fsrsCard = serializeFsrsCard(hydrateFsrsCard(savedState)); } catch { /* Ricrea solo lo stato corrotto. */ }
+          try {
+            fsrsCard = serializeFsrsCard(hydrateFsrsCard(savedState));
+          } catch {
+            // Never replace an unreadable or newer card with a fresh card silently.
+            fsrsCard = savedState;
+          }
         }
         cards.push({
           id,
