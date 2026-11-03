@@ -362,7 +362,7 @@
 
             <section class="detail-card feature-card" id="tactics-tool">
               <div class="card-heading"><span class="card-icon">✧</span><span>TACTICS TRAINER · ESERCIZI DALLE TUE PARTITE</span></div>
-              <p class="tool-description">Stockfish cerca posizioni in cui una mossa giocata perde una possibilità tattica e crea esercizi sulla migliore risposta. I candidati sono indicativi e puoi verificarli sulla scacchiera.</p>
+              <p class="tool-description">Stockfish cerca posizioni con perdita valutativa significativa, una mossa forzante e un margine netto sulla seconda scelta. I candidati restano euristici: la profondità limitata non certifica un puzzle da torneo.</p>
               <label class="field-label" for="tactics-pgn">Partite PGN da analizzare</label>
               <textarea id="tactics-pgn" class="pgn-input" rows="3" placeholder="Usa la libreria importata o incolla partite PGN…"></textarea>
               <div class="tool-actions">
@@ -373,6 +373,94 @@
               <div id="tactics-board" class="mini-board" aria-label="Scacchiera Tactics Trainer"></div>
               <p id="tactics-answer" class="tool-output" aria-live="polite"></p>
               <p id="tactics-status" class="tool-description" aria-live="polite"></p>
+            </section>
+
+            <section class="detail-card feature-card" id="game-report-tool">
+              <div class="card-heading"><span class="card-icon">▤</span><span>REPORT ANALISI PARTITA</span></div>
+              <p class="tool-description">Valuta le mosse con Stockfish, classifica imprecisioni, errori ed errori gravi e mostra la variante suggerita. Le valutazioni sono stime dipendenti dalla profondità e dal motore.</p>
+              <label class="field-label" for="game-report-pgn">Partite PGN (massimo 3 analizzate)</label>
+              <textarea id="game-report-pgn" class="pgn-input" rows="3" placeholder="Usa la libreria importata o incolla partite PGN…"></textarea>
+              <div class="tool-actions">
+                <button class="button small primary" id="game-report-run" type="button">Analizza con Stockfish</button>
+                <button class="button small ghost" id="mistake-cards-create" type="button" disabled>Crea flashcard dagli errori</button>
+              </div>
+              <p id="game-report-status" class="tool-output" aria-live="polite">Pronto per analizzare fino a 48 semimosse per partita.</p>
+              <div id="game-report-results" class="suite-report"></div>
+            </section>
+
+            <section class="detail-card feature-card" id="mistake-flashcards-tool">
+              <div class="card-heading"><span class="card-icon">▧</span><span>FLASHCARD AUTOMATICHE · ERRORI</span></div>
+              <p class="tool-description">Le posizioni rilevate dal report vengono trasformate in carte di ripasso FSRS-6. Le carte sono salvate localmente in questa installazione e non sostituiscono le carte del repertorio.</p>
+              <div id="mistake-cards-summary" class="tool-output" aria-live="polite">Nessuna carta generata.</div>
+              <button class="button small primary" id="mistake-cards-start" type="button" disabled>Ripassa carte scadute</button>
+              <div id="mistake-card-session" hidden>
+                <p id="mistake-card-front" class="tool-output"></p>
+                <div id="mistake-card-board" class="mini-board" aria-label="Posizione della flashcard"></div>
+                <label class="field-label" for="mistake-card-answer">La tua mossa (SAN o UCI)</label>
+                <input id="mistake-card-answer" class="text-input" autocomplete="off" placeholder="es. Nf3 oppure g1f3" />
+                <div class="tool-actions">
+                  <button class="button small primary" id="mistake-card-check" type="button">Verifica</button>
+                  <button class="button small ghost" id="mistake-card-reveal" type="button">Mostra soluzione</button>
+                </div>
+                <p id="mistake-card-feedback" class="tool-output" aria-live="polite"></p>
+                <div id="mistake-card-grades" class="tool-actions" hidden>
+                  <button class="button small grade-again" type="button" data-rating="again">Again</button>
+                  <button class="button small grade-hard" type="button" data-rating="hard">Hard</button>
+                  <button class="button small grade-good" type="button" data-rating="good">Good</button>
+                  <button class="button small grade-easy" type="button" data-rating="easy">Easy</button>
+                </div>
+              </div>
+            </section>
+
+            <section class="detail-card feature-card" id="blindfold-tool">
+              <div class="card-heading"><span class="card-icon">◉</span><span>BLINDFOLD · RICHIAMO SENZA SCACCHIERA</span></div>
+              <p class="tool-description">Ripeti la variante principale del repertorio attivo senza vedere la posizione. Inserisci la mossa in SAN o UCI; la FEN viene mostrata solo quando riveli la soluzione.</p>
+              <div class="tool-actions">
+                <label class="field-label" for="blindfold-side">Lato da richiamare</label>
+                <select id="blindfold-side" class="text-input">
+                  <option value="both">Entrambi</option>
+                  <option value="white">Solo Bianco</option>
+                  <option value="black">Solo Nero</option>
+                </select>
+                <button class="button small primary" id="blindfold-start" type="button">Avvia Blindfold</button>
+              </div>
+              <p id="blindfold-prompt" class="tool-output" aria-live="polite">Avvia una sessione dal repertorio attivo.</p>
+              <label class="field-label" for="blindfold-answer">Mossa da ricordare (SAN o UCI)</label>
+              <input id="blindfold-answer" class="text-input" autocomplete="off" placeholder="es. e4 oppure e2e4" />
+              <div class="tool-actions">
+                <button class="button small primary" id="blindfold-check" type="button">Verifica mossa</button>
+                <button class="button small ghost" id="blindfold-reveal" type="button">Rivela soluzione</button>
+                <button class="button small ghost" id="blindfold-next" type="button" disabled>Avanti</button>
+              </div>
+              <p id="blindfold-feedback" class="tool-output" aria-live="polite"></p>
+            </section>
+
+            <section class="detail-card feature-card" id="weakness-heatmap-tool">
+              <div class="card-heading"><span class="card-icon">▦</span><span>HEATMAP · DEBOLEZZE DEL REPERTORIO</span></div>
+              <p class="tool-description">Ordina le posizioni del repertorio in base a errori, accuratezza dei ripassi e carte scadute. Senza cronologia sufficiente, la posizione è indicata come non misurabile anziché inventare un punteggio.</p>
+              <button class="button small primary" id="weakness-heatmap-run" type="button">Aggiorna heatmap</button>
+              <p id="weakness-heatmap-status" class="tool-output" aria-live="polite">La heatmap usa lo storico FSRS del repertorio aperto nello Studio.</p>
+              <div id="weakness-heatmap-report" class="suite-report"></div>
+            </section>
+
+            <section class="detail-card feature-card" id="opponent-preparation-tool">
+              <div class="card-heading"><span class="card-icon">♜</span><span>PREPARAZIONE STATISTICA AVVERSARIO</span></div>
+              <p class="tool-description">Dai PGN ricava aperture, colori, risultati e mosse più frequenti dell'avversario. Inserisci il nome come appare nelle intestazioni PGN per filtrare le sue partite.</p>
+              <label class="field-label" for="opponent-prep-name">Nome avversario (opzionale)</label>
+              <input id="opponent-prep-name" class="text-input" autocomplete="off" placeholder="Nome esatto nell'intestazione PGN" />
+              <div class="tool-actions">
+                <label class="field-label" for="opponent-prep-side">Colore analizzato se il nome è vuoto</label>
+                <select id="opponent-prep-side" class="text-input">
+                  <option value="both">Entrambi</option>
+                  <option value="white">Bianco</option>
+                  <option value="black">Nero</option>
+                </select>
+                <button class="button small primary" id="opponent-prep-run" type="button">Genera preparazione</button>
+              </div>
+              <label class="field-label" for="opponent-prep-pgn">Partite PGN</label>
+              <textarea id="opponent-prep-pgn" class="pgn-input" rows="3" placeholder="Usa la libreria importata o incolla partite PGN…"></textarea>
+              <p id="opponent-prep-status" class="tool-output" aria-live="polite">In attesa dei dati PGN.</p>
+              <div id="opponent-prep-report" class="suite-report"></div>
             </section>
           </section>
 
