@@ -476,7 +476,8 @@ function selectVariation(edgeId) {
 
 
 function currentBoardMarks() {
-  if (mode !== "studio" || studioPly === 0) {
+  if (mode !== "studio") return emptyBoardMarks();
+  if (studioPly === 0) {
     try { return JSON.parse(studioTree.headers.ChessOSRootMarks || "{}"); } catch { return emptyBoardMarks(); }
   }
   const edge = studioTree.getEdge(studioPath[studioPly - 1]);
@@ -818,10 +819,12 @@ function applyFenEditorPosition() {
     const fen = editorStateToFen(state);
     if (!confirmDiscardChanges("sostituire la posizione corrente")) return;
     baseFen = fen;
-    studioTree = new RepertoireTree(fen, { Event:"Chess OS custom position", SetUp:"1", FEN:fen });
+    studioTree = new RepertoireTree(fen, { Event:"Chess OS custom position" });
     syncStudioPath([]);
     activeLineId = null;
     mode = "studio";
+    boardMarkTool = "move";
+    boardMarkAnchor = null;
     titleInput.value = "Posizione personalizzata";
     selectedSquare = null;
     closePromotionChooser();
@@ -974,7 +977,7 @@ function commitSelectedMove(selectedMove) {
 
 function handleSquareClick(square) {
   const chess = activeGame();
-  if (boardMarkTool !== "move") {
+  if (mode === "studio" && boardMarkTool !== "move") {
     handleBoardMarkSquare(square);
     return;
   }
