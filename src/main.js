@@ -1,6 +1,8 @@
 import { Chess } from "chess.js";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { RepertoireTree } from "./repertoire-tree.js";
+import { initializeChessSuite } from "./chess-suite.js";
+import { initializeExtendedTraining } from "./extended-training.js";
 import {
   buildReviewCards,
   countDueCards,
@@ -83,6 +85,8 @@ let studioPly = 0;
 let studioTree = new RepertoireTree(DEFAULT_FEN);
 let studioPath = [];
 let toastTimer = null;
+let chessSuite = null;
+let extendedTraining = null;
 
 const $ = (selector) => document.querySelector(selector);
 const boardElement = $("#chessboard");
@@ -608,6 +612,8 @@ function renderAll() {
   renderReviewPanel();
   renderDashboard();
   renderExamPanel();
+  chessSuite?.refresh();
+  extendedTraining?.refresh();
 }
 
 function closePromotionChooser() {
@@ -767,6 +773,7 @@ function handleSquareClick(square) {
 }
 
 function openLine(id) {
+  extendedTraining?.stopBlindfold();
   if (mode === "exam" && examAttemptId) {
     void finishRepertoireExam(true).then(() => openLine(id));
     return;
@@ -1679,6 +1686,7 @@ function showDashboard() {
 }
 
 function leaveTraining() {
+  extendedTraining?.stopBlindfold();
   if (reviewSessionId && !reviewSessionFinished) {
     void markReviewSessionFinished().catch((error) => {
       showToast("Non riesco a chiudere la sessione: " + error.message);
@@ -1738,6 +1746,7 @@ function exportPgn() {
 }
 
 function newPosition() {
+  extendedTraining?.stopBlindfold();
   if (mode === "exam") {
     leaveExam();
     return;
@@ -1759,7 +1768,39 @@ function newPosition() {
   closePromotionChooser();
   titleInput.value = "Nuova linea";
   setDirty(true);
-  renderAll();
+  chessSuite = initializeChessSuite({
+  getCurrentTree: () => studioTree,
+  loadGeneratedTree: (tree, title) => {
+    rebuildTimeline(tree);
+    mode = "studio";
+    activeLineId = null;
+    titleInput.value = title;
+    setDirty(true);
+    renderAll();
+    showToast("Repertorio generato. Controlla e salva la linea nello Studio.");
+  },
+  getCurrentFen: () => activeGame().fen(),
+  getCurrentEdge: () => studioPly > 0 ? studioTree.getEdge(studioPath[studioPly - 1]) : null,
+  onAnnotationSaved: () => {
+    setDirty(true);
+    renderAll();
+  },
+  onImportedGames: (pgn) => extendedTraining?.loadImportedPgn(pgn),
+});
+extendedTraining = initializeExtendedTraining({
+  getCurrentTree: () => studioTree,
+  getCurrentMoves: () => studioMoveObjects,
+  getBaseFen: () => baseFen,
+  getCurrentTitle: () => titleInput.value,
+  loadPath: (edgeIds) => {
+    syncStudioPath(edgeIds);
+    selectedSquare = null;
+    mode = "studio";
+    renderAll();
+  },
+  toast: showToast,
+});
+renderAll();
 void initializePersistence();
 }
 
@@ -1830,6 +1871,9 @@ promotionDialog.addEventListener("click", (event) => {
   }
 });
 titleInput.addEventListener("input", () => setDirty(true));
+$("#backup-export")?.addEventListener("click", () => { void exportFullBackup(); });
+$("#backup-import")?.addEventListener("click", () => { void importFullBackup(); });
+$("#endgame-create-card")?.addEventListener("click", () => { void createEndgameFlashcard(); });
 
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && pendingPromotion) {
