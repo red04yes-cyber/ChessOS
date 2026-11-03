@@ -1730,3 +1730,465 @@
     }
   }
 }
+
+
+/* === Desktop workspace refinement === */
+@layer utilities {
+  .topbar {
+    height: 56px;
+    padding-inline: clamp(16px, 2vw, 28px);
+    gap: 18px;
+  }
+
+  .topbar-center {
+    flex: 1 1 auto;
+    justify-content: center;
+    min-width: 0;
+    gap: 12px;
+  }
+
+  .topbar-repertoire {
+    max-width: min(38vw, 420px);
+    overflow: hidden;
+    color: var(--text-1);
+    font-size: 13px;
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .topbar-state {
+    flex: 0 0 auto;
+    padding: 4px 9px;
+    border: 1px solid var(--border);
+    border-radius: 99px;
+    background: var(--surface-2);
+    color: var(--text-2);
+    font-size: 12px;
+    font-weight: 550;
+  }
+
+  .topbar-state[data-state="saved"] {
+    border-color: color-mix(in srgb, var(--success) 35%, var(--border));
+    background: var(--success-soft);
+    color: var(--success);
+  }
+
+  .topbar-state[data-state="dirty"] {
+    border-color: color-mix(in srgb, var(--warning) 38%, var(--border));
+    background: var(--warning-soft);
+    color: var(--warning);
+  }
+
+  .topbar-right {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 9px;
+  }
+
+  .app-shell {
+    height: calc(100dvh - 56px);
+    min-height: 0;
+    grid-template-columns: clamp(220px, 17vw, 280px) minmax(0, 1fr);
+  }
+
+  .sidebar {
+    min-height: 0;
+    overflow: hidden;
+    padding: 20px 14px 14px;
+  }
+
+  .primary-nav {
+    display: grid;
+    gap: 3px;
+  }
+
+  .sidebar-heading {
+    margin-top: 26px;
+  }
+
+  .repertoire-list {
+    min-height: 0;
+    flex: 1 1 auto;
+    overflow-y: auto;
+    align-content: start;
+    padding-right: 2px;
+  }
+
+  .workspace {
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+    padding: 17px clamp(16px, 2vw, 28px) 12px;
+  }
+
+  .page-heading {
+    min-height: 72px;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 18px;
+    margin-bottom: 12px;
+  }
+
+  .heading-copy {
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+
+  .page-heading h1 {
+    margin: 3px 0 4px;
+    line-height: 1.12;
+  }
+
+  .title-input {
+    display: block;
+    width: min(100%, 520px);
+    min-height: 34px;
+    padding: 0 4px;
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    outline: none;
+    background: transparent;
+    color: var(--text-1);
+    font-family: var(--font-ui);
+    font-size: clamp(23px, 2vw, 28px);
+    font-weight: 700;
+    letter-spacing: -0.025em;
+    line-height: 1.2;
+    text-overflow: ellipsis;
+    transition: background-color var(--dur-fast) ease, border-color var(--dur-fast) ease;
+  }
+
+  .title-input:hover:not(:read-only) {
+    border-color: var(--border);
+    background: var(--surface-2);
+  }
+
+  .title-input:focus-visible {
+    border-color: var(--accent);
+    background: var(--surface-2);
+    box-shadow: var(--focus-ring);
+  }
+
+  .title-input:read-only {
+    cursor: default;
+  }
+
+  .visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    clip-path: inset(50%);
+  }
+
+  .page-heading p {
+    max-width: 680px;
+    font-size: 13px;
+  }
+
+  .heading-actions {
+    flex: 0 0 auto;
+    gap: 6px;
+  }
+
+  .action-menu {
+    position: relative;
+  }
+
+  .action-menu > summary {
+    display: inline-flex;
+    min-height: 36px;
+    align-items: center;
+    gap: 7px;
+    list-style: none;
+    cursor: pointer;
+  }
+
+  .action-menu > summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .action-menu-panel {
+    position: absolute;
+    z-index: var(--z-menu);
+    top: calc(100% + 7px);
+    right: 0;
+    width: 190px;
+    display: grid;
+    gap: 3px;
+    padding: 6px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background: var(--surface-2);
+    box-shadow: var(--shadow-2);
+  }
+
+  .action-menu-panel .button {
+    justify-content: flex-start;
+    width: 100%;
+  }
+
+  .study-grid {
+    min-height: 0;
+    height: 100%;
+    flex: 1 1 auto;
+    align-items: stretch;
+    grid-template-columns: minmax(420px, 1fr) minmax(320px, clamp(320px, 27vw, 390px));
+    gap: clamp(12px, 1.4vw, 20px);
+  }
+
+  .board-panel {
+    min-height: 0;
+    height: 100%;
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr) auto auto;
+    gap: 8px;
+    padding: 13px 14px 11px;
+  }
+
+  .board-topline {
+    min-height: 27px;
+  }
+
+  .side-to-move {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .board-view-label {
+    color: var(--text-3);
+    font-size: 11px;
+    font-weight: 650;
+    letter-spacing: 0.07em;
+  }
+
+  .board-wrap {
+    width: min(100%, 760px, calc(100dvh - 270px));
+    min-width: 0;
+    max-width: 100%;
+    align-self: center;
+    margin: 0 auto;
+  }
+
+  .chessboard {
+    box-shadow: var(--shadow-2);
+  }
+
+  .board-navigation {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 7px;
+    min-height: 40px;
+  }
+
+  .board-navigation .icon-button {
+    width: 36px;
+    height: 36px;
+    min-width: 36px;
+    padding: 0;
+    font-size: 19px;
+  }
+
+  .board-navigation .icon-button:disabled {
+    opacity: 0.4;
+  }
+
+  .board-nav-divider {
+    width: 1px;
+    height: 24px;
+    margin-inline: 5px;
+    background: var(--border-strong);
+  }
+
+  .board-footer {
+    min-height: 34px;
+    align-self: end;
+    padding-top: 7px;
+    font-size: 12px;
+  }
+
+  .details-panel {
+    min-height: 0;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding-right: 3px;
+  }
+
+  .details-panel > * {
+    flex: 0 0 auto;
+  }
+
+  .details-panel .moves-card {
+    min-height: 150px;
+  }
+
+  .details-panel .move-list {
+    max-height: min(25dvh, 220px);
+  }
+
+  .line-card {
+    padding: 12px 14px;
+  }
+
+  .line-card .card-heading {
+    margin-bottom: 8px;
+  }
+
+  .tools-card {
+    min-width: 0;
+  }
+
+  .tools-card > summary {
+    list-style: none;
+    cursor: pointer;
+  }
+
+  .tools-card > summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .tools-card[open] > summary {
+    margin-bottom: 12px;
+  }
+
+  .tools-card .engine-card,
+  .tools-card .import-card {
+    padding-top: 10px;
+    border-top: 1px solid var(--border-subtle);
+  }
+
+  .tools-card .engine-card + .import-card {
+    margin-top: 15px;
+  }
+
+  .workspace-footer {
+    display: none;
+  }
+
+  #save-line {
+    min-width: 82px;
+  }
+
+  body[data-mode="training"] #save-line,
+  body[data-mode="training"] #reset {
+    display: none;
+  }
+
+  @media (max-width: 1180px) {
+    .app-shell {
+      grid-template-columns: 220px minmax(0, 1fr);
+    }
+
+    .workspace {
+      padding-inline: 16px;
+    }
+
+    .study-grid {
+      grid-template-columns: minmax(420px, 1fr) minmax(305px, 320px);
+      gap: 12px;
+    }
+
+    .page-heading {
+      gap: 10px;
+    }
+
+    .heading-actions {
+      gap: 4px;
+    }
+
+    .heading-actions > .button,
+    .action-menu > summary {
+      padding-inline: 9px;
+      font-size: 12px;
+    }
+  }
+
+  @media (max-height: 780px) and (min-width: 851px) {
+    .workspace {
+      padding-top: 11px;
+      padding-bottom: 8px;
+    }
+
+    .page-heading {
+      min-height: 64px;
+      margin-bottom: 8px;
+    }
+
+    .board-panel {
+      padding: 9px 11px;
+      gap: 5px;
+    }
+
+    .board-wrap {
+      width: min(100%, 760px, calc(100dvh - 250px));
+    }
+
+    .board-navigation {
+      min-height: 36px;
+    }
+
+    .board-navigation .icon-button {
+      width: 32px;
+      height: 32px;
+      min-width: 32px;
+    }
+  }
+
+  @media (max-width: 850px) {
+    .app-shell {
+      height: auto;
+      min-height: calc(100vh - 56px);
+    }
+
+    .workspace {
+      height: auto;
+      min-height: 0;
+      overflow: visible;
+    }
+
+    .study-grid {
+      height: auto;
+      flex: none;
+      grid-template-columns: 1fr;
+    }
+
+    .board-panel {
+      height: auto;
+      grid-template-rows: auto auto auto auto;
+    }
+
+    .board-wrap {
+      width: min(100%, 660px);
+      margin: 8px auto;
+    }
+
+    .details-panel {
+      height: auto;
+      overflow: visible;
+    }
+
+    .details-panel .move-list {
+      max-height: 260px;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .title-input,
+    .topbar-state,
+    .board-navigation .icon-button {
+      transition: none;
+    }
+  }
+}
