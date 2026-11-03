@@ -6,8 +6,9 @@ const ANNOTATION_NAGS = { "!": "$1", "?": "$2", "!!": "$3", "??": "$4", "!?": "$
 function positionKey(fen) {
   const fields = fen.trim().split(/\s+/);
   if (fields.length < 6) throw new Error("FEN non valida.");
-  // Il contatore delle 50 mosse fa parte dello stato; il numero di mossa no.
-  return fields.slice(0, 5).join(" ");
+  // La chiave transposizionale usa la posizione, il tratto, l'arrocco e l'en passant.
+  // I contatori FEN restano nel percorso effettivo, non nella chiave della posizione.
+  return fields.slice(0, 4).join(" ");
 }
 
 function tokenizeMovetext(source) {
@@ -106,17 +107,38 @@ export class RepertoireTree {
     this.rootFen = rootFen;
     this.headers = { ...headers };
     this.nodes = new Map();
+    this.nodesByPosition = new Map();
     this.edges = new Map();
     this.rootId = this.ensureNode(rootFen).id;
   }
 
   ensureNode(fen) {
     const key = positionKey(fen);
-    const existing = this.nodes.get(key);
-    if (existing) return existing;
-    const node = { id: key, key, fen, incoming: [], outgoing: [] };
-    this.nodes.set(key, node);
+    const existingId = this.nodesByPosition.get(key)?.[0];
+    if (existingId) return this.nodes.get(existingId);
+    return this.createNode(fen, key);
+  }
+
+  createNode(fen, key) {
+    const matches = this.nodesByPosition.get(key) || [];
+    const id = matches.length ? key + "#" + (matches.length + 1) : key;
+    const node = { id, key, fen, incoming: [], outgoing: [] };
+    this.nodes.set(id, node);
+    this.nodesByPosition.set(key, [...matches, id]);
     return node;
+  }
+
+  canReach(startId, destinationId) {
+    const pending = [startId];
+    const visited = new Set();
+    while (pending.length) {
+      const current = pending.pop();
+      if (current === destinationId) return true;
+      if (visited.has(current)) continue;
+      visited.add(current);
+      for (const edge of this.getOutgoing(current)) pending.push(edge.to);
+    }
+    return false;
   }
 
   getNode(id) {
@@ -142,13 +164,20 @@ export class RepertoireTree {
     if (!from) throw new Error("Il nodo di partenza non esiste.");
     const uci = moveUci(move);
     const id = fromNodeId + "|" + uci;
-    const target = this.ensureNode(targetFen);
     let edge = this.edges.get(id);
     if (edge) {
       if (metadata.comment && !edge.comment) edge.comment = metadata.comment;
       if (metadata.nag && !edge.nags.includes(metadata.nag)) edge.nags.push(metadata.nag);
       return edge;
     }
+
+    const key = positionKey(targetFen);
+    const candidates = (this.nodesByPosition.get(key) || [])
+      .map((nodeId) => this.getNode(nodeId));
+    // Converge sulle transposizioni, ma duplica il nodo se il collegamento creerebbe un ciclo.
+    let target = candidates.find((candidate) => !this.canReach(candidate.id, fromNodeId));
+    if (!target) target = this.createNode(targetFen, key);
+
     edge = {
       id,
       from: fromNodeId,
