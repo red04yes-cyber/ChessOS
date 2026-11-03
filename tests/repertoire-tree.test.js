@@ -6,13 +6,15 @@ import { RepertoireTree } from "../src/repertoire-tree.js";
 const sampleWithVariations = [
   '[Event "RAV round-trip"]',
   "",
-  "1. e4 (1. d4 d5) e5 2. Nf3 (2. Bc4) Nc6 *",
+  "1. e4 (1. d4 d5 (1... Nf6)) e5 2. Nf3 (2. Bc4) Nc6 *",
 ].join("\n");
 
 test("imports RAV alternatives into the correct branching positions", () => {
   const tree = RepertoireTree.fromPgn(sampleWithVariations);
   const rootMoves = tree.getOutgoing(tree.rootId).map((edge) => edge.san);
   assert.deepEqual(rootMoves, ["e4", "d4"]);
+  const d4 = tree.getOutgoing(tree.rootId).find((edge) => edge.san === "d4");
+  assert.deepEqual(tree.getOutgoing(d4.to).map((edge) => edge.san), ["d5", "Nf6"]);
 
   const e4 = tree.getOutgoing(tree.rootId).find((edge) => edge.san === "e4");
   const afterE4 = tree.getOutgoing(e4.to);
