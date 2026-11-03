@@ -1,5 +1,13 @@
 # Quality gates — Chess OS
 
+## Lockfile e riproducibilità
+
+`package-lock.json` e `src-tauri/Cargo.lock` sono versionati. Ogni modifica a `package.json` o `Cargo.toml` deve aggiornare il relativo lockfile nello stesso commit. CI usa `npm ci` e `cargo` con `--locked` dove applicabile; non rigenera silenziosamente le dipendenze durante test e build.
+
+Per aggiornare le dipendenze in modo intenzionale:
+- Node: `npm install`, verificare il diff di `package-lock.json`, poi eseguire `npm audit --audit-level=high`.
+- Rust: `cargo update --manifest-path src-tauri/Cargo.toml`, verificare il diff di `src-tauri/Cargo.lock`, quindi eseguire `cargo audit --file src-tauri/Cargo.lock`.
+
 ## CI obbligatoria
 
 - Node 22 con `npm ci` da `package-lock.json` versionato.
