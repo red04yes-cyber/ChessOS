@@ -12,6 +12,7 @@ Le migrazioni sono registrate in `schema_migrations` e vengono eseguite in ordin
 
 - **v1**: `repertoires` (metadati e PGN), `repertoire_positions` (nodi/posizioni), `repertoire_moves` (archi con UCI, SAN, NAG e commenti), `app_settings`, `study_cards`, `training_sessions` e `review_logs`.
 - **v2**: indici per repertori aggiornati, ricerca delle posizioni, navigazione delle mosse e selezione delle carte dovute.
+- **v3**: aggiunge `study_cards.fsrs_json` per conservare l'intero stato serializzato di `ts-fsrs` e un indice composto per lato e scadenza.
 
 Le posizioni sono memorizzate in modo separato dalle mosse: due ordini di mosse che arrivano alla stessa posizione possono puntare allo stesso nodo e conservare più archi entranti. Le mosse sono archiviate con l'ordine delle continuazioni del nodo, così la linea principale e le varianti non cambiano al riavvio.
 
@@ -20,6 +21,10 @@ Le posizioni sono memorizzate in modo separato dalle mosse: due ordini di mosse 
 - `list_repertoires`: legge metadati e grafo completo per ogni repertorio.
 - `save_repertoire`: salva metadati, nodi e archi in una singola transazione.
 - `delete_repertoire`: elimina il repertorio; le foreign key rimuovono anche il suo grafo.
+- `list_study_cards`: restituisce carte, posizione FEN, UCI/SAN, lato, scadenza e stato FSRS.
+- `list_review_logs`: restituisce le ultime 10.000 valutazioni.
+- `start_training_session` e `finish_training_session`: aprono e chiudono una sessione giornaliera.
+- `record_study_review`: in un'unica transazione aggiorna la carta, aggiunge il review log e aggiorna i contatori della sessione.
 
 L'interfaccia valida il grafo ricostruendolo con `RepertoireTree.fromJSON` e controlla che ciascuna mossa sia legale e coerente con la posizione di destinazione.
 
@@ -30,13 +35,13 @@ Al primo avvio desktop vengono letti gli elementi di `chess-os.repertoire.v1`. L
 ## Verifiche
 
 I test Rust coprono:
-- esecuzione idempotente delle migrazioni;
+- esecuzione idempotente delle migrazioni fino alla versione 3;
 - salvataggio e lettura di un albero con mosse;
 - aggiornamento senza duplicazione;
 - cancellazione con cascade su nodi e archi.
 
-I test JavaScript coprono la serializzazione round-trip del grafo e il rifiuto di archi alterati o non legali.
+I test JavaScript coprono la serializzazione round-trip del grafo, il rifiuto di archi alterati o non legali e la logica FSRS: generazione delle carte, ripristino dello stato, quattro valutazioni, selezione delle scadenze, limiti giornalieri e statistiche di richiamo.
 
 ## Limiti attuali
 
-Le tabelle per carte e sessioni sono predisposte ma non ancora usate dall'allenamento. L'esportazione PGN è disponibile come backup portabile; backup dell'intero database, ripristino da file e migrazione tra versioni dell'app con UI dedicata restano attività successive. Non c'è sincronizzazione cloud.
+Le carte e le sessioni sono ora usate dal ripasso FSRS; non esiste ancora sincronizzazione o backup cloud. L'esportazione PGN è disponibile come backup portabile; backup dell'intero database, ripristino da file e strumenti di migrazione con UI dedicata restano attività successive.
