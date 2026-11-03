@@ -1147,6 +1147,31 @@ async function copyFen() {
   }
 }
 
+async function createEndgameFlashcard() {
+  const lesson = chessSuite?.getCurrentEndgameLesson?.();
+  if (!lesson) { showToast("Seleziona prima una lezione Endgame."); return; }
+  const front = "Richiama la tecnica: " + lesson.title + ". " + lesson.focus;
+  if (studyCards.some((card) => card.type === "endgame-concept" && card.front === front)) {
+    showToast("Esiste già una flashcard per questa lezione.");
+    return;
+  }
+  try {
+    const card = createErrorFlashcard({
+      fen: lesson.fen,
+      expectedSan: lesson.objective,
+      source: "endgame-lesson",
+    });
+    card.type = "endgame-concept";
+    card.front = front;
+    card.back = "Obiettivo: " + lesson.objective + "\n\nMetodo: " + lesson.method + "\n\nErrore tipico: " + lesson.errors;
+    card.expectedSan = [];
+    studyCards = [card, ...studyCards];
+    await persistStudyCards();
+    renderAllTools();
+    showToast("Flashcard Endgame creata e aggiunta al ripasso FSRS.");
+  } catch (error) { showToast("Flashcard Endgame non salvata: " + error.message); }
+}
+
 async function exportFullBackup() {
   const button = $("#backup-export");
   if (button) { button.disabled = true; button.textContent = "Preparazione backup…"; }
@@ -1287,6 +1312,7 @@ $("#submit-blindfold").addEventListener("click", submitBlindfoldAnswer);
 $("#blindfold-answer").addEventListener("keydown", (event) => { if (event.key === "Enter") submitBlindfoldAnswer(); });
 $("#analyze-opponent").addEventListener("click", runOpponentAnalysis);
 $("#backup-export").addEventListener("click", exportFullBackup);
+$("#endgame-create-card").addEventListener("click", createEndgameFlashcard);
 $("#backup-import").addEventListener("click", importFullBackup);
 $("#new-line").addEventListener("click", newPosition);
 $("#reset").addEventListener("click", newPosition);
