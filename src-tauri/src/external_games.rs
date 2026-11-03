@@ -10,6 +10,7 @@ use crate::db::Database;
 
 const BATCH_SIZE: usize = 50;
 const MAX_GAME_PGN_BYTES: usize = 5 * 1024 * 1024;
+const MAX_ARCHIVE_BYTES: usize = 128 * 1024 * 1024;
 const USER_AGENT: &str = "ChessOS/0.1 (https://github.com/red04yes-cyber/ChessOS)";
 
 #[derive(Debug, Clone)]
@@ -371,7 +372,7 @@ pub async fn import_online_games(
 
     let client = Client::builder()
         .user_agent(USER_AGENT)
-        .timeout(Duration::from_secs(12 * 60 * 60))
+        .timeout(Duration::from_secs(30 * 60))
         .build()
         .map_err(|error| format!("Impossibile inizializzare il client HTTP: {}", error))?;
 
@@ -404,14 +405,56 @@ pub async fn import_online_games(
                 "https://api.chess.com/pub/player/{}/games/{}/{}/pgn",
                 username, year, month
             );
-            let response = client.get(&pgn_url).header("Accept", "application/x-chess-pgn").send().await
+            let response = client.get(&pgn_url)
+                .header("Accept", "application/x-chess-pgn")
+                .send().await
                 .map_err(|error| format!("Download interrotto dopo {} partite elaborate: {}", counts.processed, error))?;
             check_http_status(response.status(), "chess.com")?;
-            let body = response.bytes().await
-                .map_err(|error| format!("Download PGN interrotto dopo {} partite elaborate: {}", counts.processed, error))?;
-            let mut buffer = body.to_vec();
-            let games = take_complete_games(&mut buffer, true);
-            process_games(database.inner(), &app, &provider, &username, games, &mut batch, &mut counts)?;
+
+            // Stream each monthly archive instead of buffering the full PGN in
+            // memory. Completed games are validated/persisted as soon as the
+            // next Event header arrives.
+            let mut response = response;
+            let mut buffer: Vec<u8> = Vec::new();
+            let mut archive_bytes = 0usize;
+            loop {
+                let chunk = match response.chunk().await {
+                    Ok(Some(chunk)) => chunk,
+                    Ok(None) => break,
+                    Err(error) => {
+                        let complete = take_complete_games(&mut buffer, false);
+                        process_games(database.inner(), &app, &provider, &username, complete, &mut batch, &mut counts)?;
+                        let _ = persist_batch(database.inner(), &mut batch, &mut counts);
+                        emit_progress(&app, &provider, &username, &counts, "interrupted");
+                        return Err(format!(
+                            "Download dell'archivio {}/{} interrotto dopo {} partite elaborate: {}. Le partite già salvate restano disponibili.",
+                            year, month, counts.processed, error
+                        ));
+                    }
+                };
+
+                archive_bytes = archive_bytes.saturating_add(chunk.len());
+                if archive_bytes > MAX_ARCHIVE_BYTES {
+                    let complete = take_complete_games(&mut buffer, false);
+                    process_games(database.inner(), &app, &provider, &username, complete, &mut batch, &mut counts)?;
+                    let _ = persist_batch(database.inner(), &mut batch, &mut counts);
+                    emit_progress(&app, &provider, &username, &counts, "interrupted");
+                    return Err(format!(
+                        "L'archivio {}/{} supera il limite di sicurezza di 128 MiB. Le partite già elaborate sono state salvate.",
+                        year, month
+                    ));
+                }
+
+                buffer.extend_from_slice(&chunk);
+                let complete = take_complete_games(&mut buffer, false);
+                process_games(database.inner(), &app, &provider, &username, complete, &mut batch, &mut counts)?;
+                if counts.processed > 0 && counts.processed % 100 == 0 {
+                    emit_progress(&app, &provider, &username, &counts, "download");
+                }
+            }
+
+            let remaining = take_complete_games(&mut buffer, true);
+            process_games(database.inner(), &app, &provider, &username, remaining, &mut batch, &mut counts)?;
             persist_batch(database.inner(), &mut batch, &mut counts)?;
             emit_progress(&app, &provider, &username, &counts, "download");
         }
