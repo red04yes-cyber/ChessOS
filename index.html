@@ -42,7 +42,10 @@
               <p id="page-subtitle">Costruisci le tue linee, una mossa alla volta.</p>
             </div>
             <div class="heading-actions">
-              <button class="button ghost" id="undo">↶ <span>Annulla</span></button>
+              <button class="button ghost" id="undo" aria-label="Vai alla mossa precedente">← Indietro</button>
+              <button class="button ghost" id="redo" aria-label="Vai alla mossa successiva" disabled>Avanti →</button>
+              <button class="button ghost" id="flip-board">Vista Nero</button>
+              <button class="button ghost" id="copy-fen">Copia FEN</button>
               <button class="button ghost" id="reset">Nuova posizione</button>
               <button class="button primary" id="save-line">Salva linea <span>＋</span></button>
             </div>
@@ -91,6 +94,14 @@
           <div class="workspace-footer"><span>CHESS OS <b>·</b> I tuoi dati restano sul dispositivo</span><span>LEGAL MOVES <i>ON</i></span></div>
         </section>
       </main>
+      <div id="promotion-dialog" class="promotion-dialog" hidden role="dialog" aria-modal="true" aria-labelledby="promotion-title">
+        <div class="promotion-card">
+          <h2 id="promotion-title">Promozione del pedone</h2>
+          <p>Scegli il pezzo da ottenere.</p>
+          <div id="promotion-options" class="promotion-options"></div>
+          <button id="promotion-cancel" class="button ghost" type="button">Annulla</button>
+        </div>
+      </div>
       <div id="toast" class="toast" role="status" aria-live="polite"></div>
       <script type="module" src="/src/main.js"></script>
     </div>
