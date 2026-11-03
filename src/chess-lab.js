@@ -64,7 +64,7 @@ export function initChessLab(options) {
     '<div class="lab-row"><select id="lab-platform" class="text-input"><option value="chesscom">Chess.com</option><option value="lichess">Lichess</option></select><input id="lab-username" class="text-input" maxlength="30" placeholder="Username pubblico" autocomplete="off" /><button class="button small ghost" id="lab-import-account">Scarica partite</button></div>',
     '<textarea id="lab-pgn-text" class="lab-input" rows="3" placeholder="Oppure incolla uno o più PGN…"></textarea><div class="lab-row"><button class="button small primary" id="lab-import-text">Importa PGN</button></div>',
     '<div class="lab-status" id="lab-import-status">Fino a 100 partite per importazione. Le partite valide vengono conservate anche se altre non superano la verifica.</div><div class="lab-list" id="lab-import-errors"></div>',
-    '<p class="lab-note">I profili remoti devono essere pubblici. L'importazione non richiede la password dell'account.</p>',
+    '<p class="lab-note">I profili remoti devono essere pubblici. L&#39;importazione non richiede la password dell&#39;account.</p>',
     '</div></details>',
     '</div>'
   ].join("");
