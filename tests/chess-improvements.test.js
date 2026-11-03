@@ -102,7 +102,7 @@ test("game report classifies a played move only when Stockfish prefers another m
   const report = await analyzeGameWithStockfish([
     '[Event "Test"]', '[White "Alice"]', '[Black "Bob"]', '[Result "*"]', "",
     "1. e4 e5 *",
-  ].join("\\n"), engine, { maxGames: 1, maxPlies: 4, depth: 10 });
+  ].join("\n"), engine, { maxGames: 1, maxPlies: 4, depth: 10 });
 
   assert.equal(report.gamesRead, 1);
   assert.equal(report.pliesAnalyzed, 2);
