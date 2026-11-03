@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { Chess } from "chess.js";
 import {
   buildOpeningIndex, createOpeningPreset, getOpeningFamilyCount,
-  getOpeningRows, identifyOpeningFromFens, openingCatalogueStats,
+  getOpeningRows, identifyOpeningFromFens, openingCatalogueStats, positionSignature,
 } from "../src/opening-catalog.js";
 
 test("bundles every ECO code A00-E99 and the complete curated Lichess entry set", () => {
@@ -51,4 +51,42 @@ test("creates complete starter repertoires from every curated family line", () =
     }
     assert.ok(hasBranches, family + " should include its full set of named alternatives");
   }
+});
+
+
+test("keeps castling rights and en-passant state in position signatures but ignores counters", () => {
+  const base = "8/8/8/8/8/8/8/8 w KQkq - 0 1";
+  assert.equal(positionSignature(base), positionSignature("8/8/8/8/8/8/8/8 w KQkq - 99 42"));
+  assert.notEqual(positionSignature(base), positionSignature("8/8/8/8/8/8/8/8 w KQkq e3 0 1"));
+  assert.notEqual(positionSignature(base), positionSignature("8/8/8/8/8/8/8/8 w - - 0 1"));
+});
+
+test("deduplicates identical catalogue rows in the opening index", () => {
+  const row = getOpeningRows()[0];
+  const result = buildOpeningIndex([row, { ...row }]);
+  const chess = new Chess();
+  chess.loadPgn(row.pgn);
+  const matches = result.index.get(positionSignature(chess.fen()));
+  assert.equal(result.errors.length, 0);
+  assert.equal(matches.filter((entry) => entry.eco === row.eco && entry.name === row.name).length, 1);
+});
+
+test("reports an invalid catalogue entry without discarding valid rows", () => {
+  const valid = getOpeningRows()[0];
+  const result = buildOpeningIndex([
+    valid,
+    { eco: "Z99", name: "Invalid test row", pgn: "1. e4 Qh9 *" },
+  ]);
+  assert.equal(result.errors.length, 1);
+  assert.equal(result.errors[0].eco, "Z99");
+  assert.ok(result.index.size > 0);
+});
+
+test("returns no opening for empty or unmatched position histories", () => {
+  assert.equal(identifyOpeningFromFens([]), null);
+  assert.equal(identifyOpeningFromFens(["not a FEN"]), null);
+});
+
+test("rejects requests for unknown starter repertoire families", () => {
+  assert.throws(() => createOpeningPreset("Unknown opening family"), /non trovato/i);
 });
