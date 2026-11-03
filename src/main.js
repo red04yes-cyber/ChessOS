@@ -1,6 +1,10 @@
 import { Chess } from "chess.js";
 import { invoke, isTauri } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { RepertoireTree } from "./repertoire-tree.js";
+import { formatUciScore, parseUciInfo, uciPvToSan } from "./engine-uci.js";
+import { initChessLab } from "./chess-lab.js";
+import { parsePgnCollection } from "./pgn-import.js";
 import "./style.css";
 
 const STORAGE_KEY = "chess-os.repertoire.v1";
@@ -34,6 +38,17 @@ let studioPly = 0;
 let studioTree = new RepertoireTree(DEFAULT_FEN);
 let studioPath = [];
 let toastTimer = null;
+const desktopApp = isTauri();
+let engineStarted = false;
+let engineStarting = false;
+let engineSearching = false;
+let engineShuttingDown = false;
+let engineRequestId = 0;
+let engineFen = "";
+let engineSideToMove = "w";
+const engineRows = new Map();
+let engineEventsError = null;
+let chessLab = null;
 
 const $ = (selector) => document.querySelector(selector);
 const boardElement = $("#chessboard");
@@ -41,6 +56,15 @@ const titleInput = $("#line-title");
 const moveListElement = $("#move-list");
 const promotionDialog = $("#promotion-dialog");
 const promotionOptions = $("#promotion-options");
+
+const engineEventsReady = desktopApp
+  ? Promise.all([
+      listen("stockfish://line", (event) => handleStockfishLine(event.payload)),
+      listen("stockfish://exit", (event) => handleStockfishExit(event.payload)),
+    ]).then((unlisten) => unlisten).catch((error) => {
+      engineEventsError = error;
+    })
+  : Promise.resolve([]);
 
 function readRepertoire() {
   try {
@@ -144,6 +168,183 @@ function showToast(message) {
   toast.classList.add("visible");
   window.clearTimeout(toastTimer);
   toastTimer = window.setTimeout(() => toast.classList.remove("visible"), 2600);
+}
+
+function setEngineStatus(message, state = "normal") {
+  const element = $("#engine-status");
+  if (!element) return;
+  element.textContent = message;
+  element.className = "engine-status" + (state === "normal" ? "" : " " + state);
+}
+
+function updateEngineControls() {
+  const supported = desktopApp;
+  $("#engine-start").disabled = !supported || engineStarted || engineStarting;
+  $("#engine-analyze").disabled = !supported || !engineStarted || engineStarting;
+  $("#engine-stop").disabled = !supported || !engineStarted || !engineSearching;
+  $("#engine-shutdown").disabled = !supported || !engineStarted || engineStarting || engineShuttingDown;
+}
+
+function renderEngineResults() {
+  const container = $("#engine-results");
+  if (!container) return;
+  container.replaceChildren();
+  if (!engineRows.size) {
+    const empty = document.createElement("span");
+    empty.className = "empty-state";
+    empty.textContent = "In attesa delle prime linee di analisi…";
+    container.append(empty);
+    return;
+  }
+
+  for (const [rank, info] of [...engineRows.entries()].sort((a, b) => a[0] - b[0])) {
+    const row = document.createElement("div");
+    row.className = "engine-line";
+    const number = document.createElement("span");
+    number.className = "engine-line-rank";
+    number.textContent = "LINEA " + rank;
+    const score = document.createElement("span");
+    score.className = "engine-line-score";
+    score.textContent = formatUciScore(info, engineSideToMove);
+    const depth = document.createElement("small");
+    depth.className = "engine-line-depth";
+    depth.textContent = "DEPTH " + info.depth;
+    score.append(depth);
+    const pv = document.createElement("span");
+    pv.className = "engine-line-pv";
+    pv.textContent = uciPvToSan(engineFen, info.pv) || "—";
+    row.append(number, score, pv);
+    container.append(row);
+  }
+}
+
+function handleStockfishLine(payload) {
+  if (!payload || typeof payload.line !== "string") return;
+  const requestId = Number(payload.requestId ?? payload.request_id ?? 0);
+  if (payload.line.startsWith("info ") && requestId === engineRequestId) {
+    const info = parseUciInfo(payload.line);
+    if (info && info.multipv >= 1 && info.multipv <= 5) {
+      engineRows.set(info.multipv, info);
+      renderEngineResults();
+    }
+  } else if (payload.line.startsWith("bestmove ") && requestId === engineRequestId) {
+    engineSearching = false;
+    updateEngineControls();
+    setEngineStatus(payload.line.includes("(none)") ? "Analisi completata · nessuna mossa legale" : "Analisi completata", "ready");
+  }
+}
+
+function handleStockfishExit(payload) {
+  engineStarted = false;
+  engineStarting = false;
+  engineSearching = false;
+  updateEngineControls();
+  if (engineShuttingDown) return;
+  setEngineStatus(payload?.reason || "Stockfish si è arrestato inaspettatamente.", "error");
+}
+
+async function startStockfish() {
+  if (!desktopApp) {
+    setEngineStatus("Stockfish è disponibile nell'app desktop Windows, non nell'anteprima browser.", "error");
+    return false;
+  }
+  if (engineStarted) return true;
+  engineStarting = true;
+  updateEngineControls();
+  setEngineStatus("Avvio Stockfish 19…", "running");
+  try {
+    await engineEventsReady;
+    if (engineEventsError) throw engineEventsError;
+    await invoke("stockfish_start");
+    engineStarted = true;
+    setEngineStatus("Stockfish 19 pronto", "ready");
+    updateEngineControls();
+    return true;
+  } catch (error) {
+    engineStarted = false;
+    setEngineStatus("Avvio non riuscito: " + error.message, "error");
+    showToast("Stockfish non disponibile: " + error.message);
+    updateEngineControls();
+    return false;
+  } finally {
+    engineStarting = false;
+    updateEngineControls();
+  }
+}
+
+async function analyzeCurrentPosition() {
+  if (!(await startStockfish())) return;
+  const chess = activeGame();
+  engineRequestId += 1;
+  engineFen = chess.fen();
+  engineSideToMove = chess.turn();
+  engineRows.clear();
+  renderEngineResults();
+  const depth = Number($("#engine-depth").value) || 16;
+  const multiPv = Number($("#engine-multipv").value) || 1;
+  engineSearching = true;
+  setEngineStatus("Analisi in corso…", "running");
+  updateEngineControls();
+  try {
+    await invoke("stockfish_analyze", {
+      fen: engineFen,
+      depth,
+      multiPv,
+      requestId: engineRequestId,
+    });
+  } catch (error) {
+    engineSearching = false;
+    setEngineStatus("Errore di analisi: " + error.message, "error");
+    showToast("Analisi Stockfish non riuscita: " + error.message);
+    updateEngineControls();
+  }
+}
+
+async function stopStockfishAnalysis() {
+  if (!engineStarted || !engineSearching) return;
+  try {
+    await invoke("stockfish_stop_analysis");
+    engineSearching = false;
+    setEngineStatus("Analisi interrotta", "ready");
+  } catch (error) {
+    engineSearching = false;
+    setEngineStatus("Errore arresto analisi: " + error.message, "error");
+    showToast(error.message);
+  } finally {
+    updateEngineControls();
+  }
+}
+
+async function shutdownStockfish() {
+  if (!engineStarted || engineShuttingDown) return;
+  engineShuttingDown = true;
+  try {
+    if (engineSearching) await stopStockfishAnalysis();
+    await invoke("stockfish_shutdown");
+    engineStarted = false;
+    engineSearching = false;
+    engineRows.clear();
+    renderEngineResults();
+    setEngineStatus("Motore spento", "normal");
+  } catch (error) {
+    setEngineStatus("Errore chiusura motore: " + error.message, "error");
+    showToast("Chiusura Stockfish non riuscita: " + error.message);
+  } finally {
+    engineShuttingDown = false;
+    updateEngineControls();
+  }
+}
+
+function stopAnalysisForChangedPosition() {
+  if (!engineSearching || !engineFen || engineFen === activeGame().fen()) return;
+  engineSearching = false;
+  engineRows.clear();
+  renderEngineResults();
+  setEngineStatus("Analisi interrotta · posizione cambiata", "ready");
+  invoke("stockfish_stop_analysis").catch((error) => {
+    setEngineStatus("Errore arresto analisi: " + error.message, "error");
+  });
+  updateEngineControls();
 }
 
 function setDirty(value = true) {
@@ -461,11 +662,13 @@ function selectVariation(edgeId) {
 }
 
 function renderAll() {
+  stopAnalysisForChangedPosition();
   renderBoard();
   renderMoves();
   renderVariations();
   renderRepertoire();
   renderMode();
+  chessLab?.onPositionChanged();
 }
 
 function closePromotionChooser() {
@@ -576,6 +779,10 @@ function commitSelectedMove(selectedMove) {
 function handleSquareClick(square) {
   const chess = activeGame();
   if (pendingPromotion) return;
+  if (chessLab && !chessLab.canHumanMove()) {
+    showToast("Attendi la mossa di Stockfish.");
+    return;
+  }
   if (chess.isGameOver()) {
     showToast(gameStatus(chess));
     return;
@@ -623,6 +830,7 @@ function handleSquareClick(square) {
 function openLine(id) {
   const line = repertoire.find((item) => item.id === id);
   if (!line || !confirmDiscardChanges("aprire un'altra linea")) return;
+  chessLab?.stopPlay();
   try {
     const loaded = line.tree ? RepertoireTree.fromJSON(line.tree) : RepertoireTree.fromPgn(line.pgn);
     rebuildTimeline(loaded);
@@ -713,7 +921,34 @@ async function saveLine() {
   }
 }
 
+function openGeneratedPuzzle(fen, solutionUci) {
+  if (!confirmDiscardChanges("aprire il puzzle generato")) return false;
+  const puzzle = new Chess(fen);
+  const expected = puzzle.moves({ verbose: true }).find((move) =>
+    move.from + move.to + (move.promotion || "") === solutionUci
+  );
+  if (!expected) return false;
+
+  chessLab?.stopPlay();
+  trainingStartFen = fen;
+  trainingGame = new Chess(fen);
+  trainingMoves = [{
+    from: expected.from,
+    to: expected.to,
+    san: expected.san,
+    ...(expected.promotion ? { promotion: expected.promotion } : {}),
+  }];
+  trainingIndex = 0;
+  selectedSquare = null;
+  mode = "training";
+  closePromotionChooser();
+  renderAll();
+  showToast("Puzzle generato: trova la mossa che evita l'errore.");
+  return true;
+}
+
 function startTraining() {
+  chessLab?.stopPlay();
   trainingMoves = studioMoveObjects.map((move) => ({
     from: move.from,
     to: move.to,
@@ -744,6 +979,79 @@ function leaveTraining() {
   renderAll();
 }
 
+function importedGameFingerprint(tree) {
+  const headers = tree.headers || {};
+  const players = [headers.White || "", headers.Black || ""].map((value) => String(value).trim().toLowerCase());
+  const date = String(headers.Date || "").trim();
+  const site = String(headers.Site || "").trim().toLowerCase();
+  const moves = tree.mainlinePath().map((edgeId) => tree.getEdge(edgeId).uci).join(" ");
+  return [date, players.join("|"), site, moves].join("::");
+}
+
+async function saveImportedGames(games) {
+  if (!databaseReady) return { saved: 0, skipped: 0, errors: [{ index: 0, message: "Database non pronto." }] };
+  if (!confirmDiscardChanges("importare le partite selezionate")) {
+    return { saved: 0, skipped: 0, errors: [{ index: 0, message: "Importazione annullata: modifiche non salvate." }] };
+  }
+
+  const knownGames = new Set();
+  for (const line of repertoire) {
+    try {
+      const tree = line.tree ? RepertoireTree.fromJSON(line.tree) : RepertoireTree.fromPgn(line.pgn);
+      knownGames.add(importedGameFingerprint(tree));
+    } catch {
+      // Una linea storica non valida non deve bloccare l'importazione dell'archivio.
+    }
+  }
+  const savedEntries = [];
+  const errors = [];
+  let skipped = 0;
+  for (const [offset, item] of games.entries()) {
+    try {
+      const tree = item.tree;
+      const fingerprint = importedGameFingerprint(tree);
+      if (knownGames.has(fingerprint)) {
+        skipped += 1;
+        continue;
+      }
+      knownGames.add(fingerprint);
+      const now = new Date().toISOString();
+      const title = String(item.title || "Partita importata " + (offset + 1)).trim().slice(0, 70);
+      const entry = {
+        id: globalThis.crypto?.randomUUID?.() ?? "game-" + Date.now() + "-" + offset,
+        title,
+        pgn: tree.toPgn({ Event: title }),
+        sans: tree.mainlinePath().map((edgeId) => tree.getEdge(edgeId).san),
+        edgeCount: tree.edges.size,
+        nodeCount: tree.nodes.size,
+        createdAt: now,
+        updatedAt: now,
+        tree: tree.toJSON(),
+      };
+      let saved;
+      if (persistenceMode === "sqlite") {
+        saved = await invoke("save_repertoire", { input: repertoirePayload(entry, tree) });
+        repertoire = [saved, ...repertoire.filter((line) => line.id !== saved.id)];
+      } else {
+        saved = entry;
+        const next = [saved, ...repertoire.filter((line) => line.id !== saved.id)];
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+        repertoire = next;
+      }
+      savedEntries.push(saved);
+    } catch (error) {
+      errors.push({ index: item.index || offset + 1, message: error instanceof Error ? error.message : String(error) });
+    }
+  }
+
+  if (savedEntries.length) {
+    setDirty(false);
+    openLine(savedEntries[0].id);
+    renderAll();
+  }
+  return { saved: savedEntries.length, skipped, errors };
+}
+
 function importPgn() {
   const text = $("#pgn-input").value.trim();
   if (!text) {
@@ -753,6 +1061,7 @@ function importPgn() {
   try {
     const imported = RepertoireTree.fromPgn(text);
     if (!confirmDiscardChanges("importare questo PGN")) return;
+    chessLab?.stopPlay();
     rebuildTimeline(imported);
     mode = "studio";
     activeLineId = null;
@@ -790,6 +1099,7 @@ function newPosition() {
     return;
   }
   if (!confirmDiscardChanges("iniziare una nuova linea")) return;
+  chessLab?.stopPlay();
   baseFen = DEFAULT_FEN;
   studioTree = new RepertoireTree(DEFAULT_FEN);
   syncStudioPath([]);
@@ -875,4 +1185,49 @@ document.addEventListener("keydown", (event) => {
 });
 
 renderAll();
+if (!desktopApp) {
+  setEngineStatus("Disponibile nell'app desktop Windows, non nell'anteprima browser.", "error");
+}
+renderEngineResults();
+updateEngineControls();
+$("#engine-start").addEventListener("click", () => { void startStockfish(); });
+$("#engine-analyze").addEventListener("click", () => { void analyzeCurrentPosition(); });
+$("#engine-stop").addEventListener("click", () => { void stopStockfishAnalysis(); });
+$("#engine-shutdown").addEventListener("click", () => { void shutdownStockfish(); });
+chessLab = initChessLab({
+  container: document.querySelector(".details-panel"),
+  desktopApp,
+  getGame: () => activeGame(),
+  getMode: () => mode,
+  getPositions: () => [...studioStates],
+  getMoves: () => [...studioMoveObjects],
+  startEngine: startStockfish,
+  playUciMove: (uci) => {
+    if (mode !== "studio" || !/^[a-h][1-8][a-h][1-8][qrbn]?$/.test(uci)) return false;
+    const move = game.moves({ verbose: true }).find((candidate) =>
+      candidate.from === uci.slice(0, 2)
+      && candidate.to === uci.slice(2, 4)
+      && (candidate.promotion || "") === (uci[4] || "")
+    );
+    if (!move) return false;
+    commitSelectedMove(move);
+    return true;
+  },
+  importGames: saveImportedGames,
+  getArchive: () => [...repertoire],
+  getHeaders: () => ({ ...(studioTree.headers || {}) }),
+  getPlayerNames: () => {
+    try {
+      const profiles = JSON.parse(localStorage.getItem("chess-os.connected-accounts.v1") || "{}");
+      return [profiles.chesscom, profiles.lichess].filter((name) => typeof name === "string" && name.trim());
+    } catch {
+      return [];
+    }
+  },
+  openPuzzle: openGeneratedPuzzle,
+  openArchiveGame: (id) => {
+    openLine(id);
+    return activeLineId === id && !dirty;
+  },
+});
 void initializePersistence();

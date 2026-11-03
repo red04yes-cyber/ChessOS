@@ -42,6 +42,9 @@
         "displayLanguageSelector": false,
         "startMenuFolder": "Chess OS"
       }
-    }
+    },
+    "resources": [
+      "resources/stockfish/*"
+    ]
   }
 }
