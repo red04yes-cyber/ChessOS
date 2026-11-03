@@ -12,7 +12,10 @@ Windows-first chess repertoire and training desktop app. This repository now con
 - Check, checkmate, stalemate and draw status
 - Create, rename, save, open and delete repertoire lines
 - Local persistence in browser/Tauri WebView storage
-- PGN import and export
+- PGN import and export, including recursive annotation variations (RAV)
+- Repertoire graph with move nodes/edges, branch navigation and in-place variation editing
+- Position transposition detection so equivalent positions reached by different move orders converge on one node
+- PGN variation export with round-trip regression tests
 - Undo/redo by navigating the complete move timeline and reset in Studio mode
 - Training mode that asks the user to replay every move in a saved or current line
 - Vite frontend and Tauri 2 desktop shell
@@ -25,7 +28,6 @@ This is **not** the recovered 0.7.0 application and is not yet feature-complete 
 - FSRS scheduling and review history
 - SQLite database and schema migrations
 - Stockfish analysis / evaluation
-- Repertoire tree editor, transpositions and advanced RAV variation editing
 - Dashboard, analytics, goals and exams
 - Cloud sync, account system and backups
 
