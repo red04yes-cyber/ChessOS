@@ -101,10 +101,17 @@ test("serializes and restores the full repertoire graph for persistent storage",
     restored.getOutgoing(restored.rootId).map((edge) => edge.san),
     original.getOutgoing(original.rootId).map((edge) => edge.san),
   );
-  assert.deepEqual(
-    [...restored.edges.values()].map((edge) => [edge.id, edge.from, edge.to, edge.uci, edge.san, edge.nags, edge.comment]),
-    [...original.edges.values()].map((edge) => [edge.id, edge.from, edge.to, edge.uci, edge.san, edge.nags, edge.comment]),
-  );
+  const edgeSnapshot = (tree) => [...tree.edges.values()]
+    .map((edge) => [edge.id, edge.from, edge.to, edge.uci, edge.san, edge.nags, edge.comment])
+    .sort((a, b) => a[0].localeCompare(b[0]));
+  assert.deepEqual(edgeSnapshot(restored), edgeSnapshot(original));
+
+  for (const node of original.nodes.values()) {
+    assert.deepEqual(
+      restored.getOutgoing(node.id).map((edge) => edge.id),
+      original.getOutgoing(node.id).map((edge) => edge.id),
+    );
+  }
 });
 
 test("rejects a tampered stored move graph", () => {
