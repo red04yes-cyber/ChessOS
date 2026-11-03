@@ -2,26 +2,39 @@ import { Chess } from "chess.js";
 import "./style.css";
 
 const STORAGE_KEY = "chess-os.repertoire.v1";
+const DEFAULT_FEN = new Chess().fen();
+const files = "abcdefgh";
 const symbols = {
   w: { k: "♔", q: "♕", r: "♖", b: "♗", n: "♘", p: "♙" },
-  b: { k: "♚", q: "♛", r: "♜", b: "♝", n: "♞", p: "♟" },
+  b: { k: "♚", q: "♛", r: "♜", b: "♝", n: "♞", p: "♟︎" },
 };
+const promotionNames = { q: "Donna", r: "Torre", b: "Alfiere", n: "Cavallo" };
 
 let game = new Chess();
 let mode = "studio";
 let selectedSquare = null;
+let boardFlipped = false;
+let pendingPromotion = null;
 let repertoire = readRepertoire();
 let activeLineId = null;
 let dirty = false;
 let trainingGame = null;
 let trainingMoves = [];
 let trainingIndex = 0;
+let trainingStartFen = DEFAULT_FEN;
+let baseFen = DEFAULT_FEN;
+let studioStates = [DEFAULT_FEN];
+let studioSans = [];
+let studioMoveObjects = [];
+let studioPly = 0;
 let toastTimer = null;
 
 const $ = (selector) => document.querySelector(selector);
 const boardElement = $("#chessboard");
 const titleInput = $("#line-title");
 const moveListElement = $("#move-list");
+const promotionDialog = $("#promotion-dialog");
+const promotionOptions = $("#promotion-options");
 
 function readRepertoire() {
   try {
@@ -64,13 +77,77 @@ function setDirty(value = true) {
 }
 
 function gameStatus(chess) {
-  if (chess.isCheckmate()) return `Scacco matto · vince il ${chess.turn() === "w" ? "Nero" : "Bianco"}`;
-  if (chess.isStalemate()) return "Stallo";
+  if (chess.isCheckmate()) return "Scacco matto · vince il " + (chess.turn() === "w" ? "Nero" : "Bianco");
+  if (chess.isStalemate()) return "Stallo · patta";
   if (chess.isThreefoldRepetition()) return "Patta · triplice ripetizione";
   if (chess.isInsufficientMaterial()) return "Patta · materiale insufficiente";
   if (chess.isDraw()) return "Patta";
-  if (chess.isCheck()) return "Scacco";
-  return "Partita in corso";
+  if (chess.isCheck()) return "Scacco al " + (chess.turn() === "w" ? "Bianco" : "Nero");
+  return (chess.turn() === "w" ? "Bianco" : "Nero") + " al tratto";
+}
+
+function positionForPly(ply) {
+  if (!Number.isInteger(ply) || ply < 0 || ply >= studioStates.length) return;
+  if (!game.load(studioStates[ply])) {
+    showToast("Non riesco a ripristinare questa posizione.");
+    return;
+  }
+  studioPly = ply;
+  selectedSquare = null;
+  closePromotionChooser();
+  renderAll();
+}
+
+function rebuildTimeline(loadedGame) {
+  const headers = loadedGame.header();
+  baseFen = headers.FEN || DEFAULT_FEN;
+  const moves = loadedGame.history({ verbose: true });
+  const replay = new Chess(baseFen);
+  studioStates = [replay.fen()];
+  studioSans = [];
+  studioMoveObjects = [];
+
+  for (const previousMove of moves) {
+    const move = replay.move(previousMove.san);
+    studioMoveObjects.push(move);
+    studioSans.push(move.san);
+    studioStates.push(replay.fen());
+  }
+
+  game = replay;
+  studioPly = studioSans.length;
+  selectedSquare = null;
+  pendingPromotion = null;
+}
+
+function timelinePgn() {
+  const replay = new Chess(baseFen);
+  for (const san of studioSans) replay.move(san);
+  return replay.pgn();
+}
+
+function appendStudioMove(move) {
+  studioSans = studioSans.slice(0, studioPly);
+  studioMoveObjects = studioMoveObjects.slice(0, studioPly);
+  studioStates = studioStates.slice(0, studioPly + 1);
+  studioSans.push(move.san);
+  studioMoveObjects.push(move);
+  studioStates.push(game.fen());
+  studioPly += 1;
+}
+
+function currentLastMove() {
+  if (mode === "training") return trainingMoves[trainingIndex - 1] || null;
+  return studioMoveObjects[studioPly - 1] || null;
+}
+
+function updateBoardCoordinates() {
+  const ranks = Array.from($(".rank-labels").children);
+  const rankValues = boardFlipped ? ["1", "2", "3", "4", "5", "6", "7", "8"] : ["8", "7", "6", "5", "4", "3", "2", "1"];
+  ranks.forEach((node, index) => { node.textContent = rankValues[index]; });
+  const fileNodes = Array.from($(".file-labels").children);
+  const fileValues = boardFlipped ? ["h", "g", "f", "e", "d", "c", "b", "a"] : ["a", "b", "c", "d", "e", "f", "g", "h"];
+  fileNodes.forEach((node, index) => { node.textContent = fileValues[index]; });
 }
 
 function renderBoard() {
@@ -81,44 +158,69 @@ function renderBoard() {
       ? chess.moves({ square: selectedSquare, verbose: true }).map((move) => move.to)
       : [],
   );
+  const lastMove = currentLastMove();
+  const lastSquares = new Set(lastMove ? [lastMove.from, lastMove.to] : []);
+  let checkedKingSquare = null;
+
+  if (chess.isCheck()) {
+    for (let row = 0; row < 8; row += 1) {
+      for (let col = 0; col < 8; col += 1) {
+        const piece = board[row][col];
+        if (piece && piece.type === "k" && piece.color === chess.turn()) {
+          checkedKingSquare = files[col] + String(8 - row);
+        }
+      }
+    }
+  }
 
   boardElement.replaceChildren();
-  board.forEach((rank, rowIndex) => {
-    rank.forEach((piece, columnIndex) => {
-      const square = String.fromCharCode(97 + columnIndex) + String(8 - rowIndex);
+  for (let displayRow = 0; displayRow < 8; displayRow += 1) {
+    for (let displayCol = 0; displayCol < 8; displayCol += 1) {
+      const rowIndex = boardFlipped ? 7 - displayRow : displayRow;
+      const colIndex = boardFlipped ? 7 - displayCol : displayCol;
+      const piece = board[rowIndex][colIndex];
+      const square = files[colIndex] + String(8 - rowIndex);
       const button = document.createElement("button");
-      const isLight = (rowIndex + columnIndex) % 2 === 0;
+      const isLight = (displayRow + displayCol) % 2 === 0;
       button.type = "button";
       button.dataset.square = square;
-      button.className = `square ${isLight ? "light" : "dark"}`;
+      button.className = "square " + (isLight ? "light" : "dark");
       if (selectedSquare === square) button.classList.add("selected");
+      if (lastSquares.has(square)) button.classList.add("last-move");
+      if (checkedKingSquare === square) button.classList.add("in-check");
       if (legalTargets.has(square)) button.classList.add(piece ? "capture-target" : "legal-target");
+
       if (piece) {
         const pieceSpan = document.createElement("span");
-        pieceSpan.className = `piece ${piece.color === "w" ? "white-piece" : "black-piece"}`;
+        pieceSpan.className = "piece " + (piece.color === "w" ? "white-piece" : "black-piece");
         pieceSpan.textContent = symbols[piece.color][piece.type];
         button.append(pieceSpan);
-        button.setAttribute("aria-label", `${piece.color === "w" ? "Bianco" : "Nero"} ${piece.type} in ${square}`);
+        button.setAttribute("aria-label", (piece.color === "w" ? "Bianco " : "Nero ") + piece.type + " in " + square);
       } else {
         button.setAttribute("aria-label", square);
       }
       boardElement.append(button);
-    });
-  });
+    }
+  }
 
-  const turn = chess.turn() === "w" ? "Bianco" : "Nero";
-  $("#turn-label").textContent = `${turn} al tratto`;
+  updateBoardCoordinates();
+  $("#turn-label").textContent = (chess.turn() === "w" ? "Bianco" : "Nero") + " al tratto";
   $("#game-status").textContent = gameStatus(chess);
-  $("#move-count").textContent = `${chess.history().length} ${chess.history().length === 1 ? "mossa" : "mosse"}`;
-  $("#line-move-count").textContent = chess.history().length
-    ? `${chess.history().length} semimosse registrate`
-    : "Ancora nessuna mossa";
+  const currentCount = mode === "training" ? trainingIndex : studioPly;
+  const totalCount = mode === "training" ? trainingMoves.length : studioSans.length;
+  $("#move-count").textContent = currentCount + " / " + totalCount + " semimosse";
+  $("#line-move-count").textContent = mode === "training"
+    ? trainingIndex + " / " + trainingMoves.length + " mosse eseguite"
+    : studioPly + " / " + studioSans.length + " semimosse · posizione " + (studioPly + 1);
   $("#board-label").textContent = mode === "training" ? "MODALITÀ ALLENAMENTO" : "PARTITA / ANALISI";
-  $("#undo").disabled = mode === "training" || chess.history().length === 0;
+  $("#undo").disabled = mode === "training" || studioPly === 0;
+  $("#redo").disabled = mode === "training" || studioPly >= studioSans.length;
+  $("#flip-board").textContent = boardFlipped ? "Vista Bianco" : "Vista Nero";
 }
 
 function renderMoves() {
-  const moves = mode === "training" ? trainingMoves.map((move) => move.san) : game.history();
+  const moves = mode === "training" ? trainingMoves : studioMoveObjects;
+  const cursor = mode === "training" ? trainingIndex : studioPly;
   moveListElement.replaceChildren();
 
   if (!moves.length) {
@@ -134,16 +236,24 @@ function renderMoves() {
     row.className = "move-row";
     const number = document.createElement("span");
     number.className = "move-number";
-    number.textContent = `${Math.floor(index / 2) + 1}.`;
+    number.textContent = Math.floor(index / 2) + 1 + ".";
     row.append(number);
 
     for (let offset = 0; offset < 2 && index + offset < moves.length; offset += 1) {
       const moveIndex = index + offset;
-      const san = document.createElement("span");
-      san.className = "san";
-      san.textContent = moves[moveIndex];
-      if (mode === "training" && moveIndex < trainingIndex) san.classList.add("played");
-      if (mode === "training" && moveIndex === trainingIndex) san.classList.add("next-move");
+      const san = document.createElement("button");
+      san.type = "button";
+      san.className = "san-move";
+      san.textContent = moves[moveIndex].san;
+      san.disabled = mode === "training";
+      if (moveIndex < cursor) san.classList.add("played");
+      if (moveIndex === cursor - 1) san.classList.add("current-move");
+      if (mode === "studio") {
+        const ply = moveIndex + 1;
+        san.setAttribute("aria-label", "Vai alla posizione dopo " + san.textContent);
+        san.setAttribute("aria-pressed", String(ply === studioPly));
+        san.addEventListener("click", () => positionForPly(ply));
+      }
       row.append(san);
     }
     moveListElement.append(row);
@@ -175,7 +285,7 @@ function renderRepertoire() {
     name.textContent = line.title || "Linea senza nome";
     const meta = document.createElement("small");
     const count = Array.isArray(line.sans) ? line.sans.length : 0;
-    meta.textContent = `${count} ${count === 1 ? "semimossa" : "semimosse"}`;
+    meta.textContent = count + " " + (count === 1 ? "semimossa" : "semimosse");
     open.append(name, meta);
     open.addEventListener("click", () => openLine(line.id));
 
@@ -184,7 +294,7 @@ function renderRepertoire() {
     remove.className = "remove-line";
     remove.textContent = "×";
     remove.title = "Elimina linea";
-    remove.setAttribute("aria-label", `Elimina ${line.title || "linea"}`);
+    remove.setAttribute("aria-label", "Elimina " + (line.title || "linea"));
     remove.addEventListener("click", () => deleteLine(line.id));
 
     row.append(open, remove);
@@ -203,6 +313,7 @@ function renderMode() {
     : "Costruisci le tue linee, una mossa alla volta.";
   $("#save-line").disabled = training;
   $("#reset").textContent = training ? "Esci dal ripasso" : "Nuova posizione";
+  $("#flip-board").disabled = false;
 }
 
 function renderAll() {
@@ -212,110 +323,118 @@ function renderAll() {
   renderMode();
 }
 
-function openLine(id) {
-  const line = repertoire.find((item) => item.id === id);
-  if (!line) return;
-  try {
-    const loaded = new Chess();
-    loaded.loadPgn(line.pgn);
-    game = loaded;
-    activeLineId = line.id;
-    titleInput.value = line.title || "Linea senza nome";
-    setDirty(false);
-    mode = "studio";
-    trainingGame = null;
+function closePromotionChooser() {
+  pendingPromotion = null;
+  promotionDialog.hidden = true;
+  promotionOptions.replaceChildren();
+}
+
+function openPromotionChooser(from, to, legalMoves) {
+  const chess = activeGame();
+  pendingPromotion = { from, to, legalMoves };
+  promotionOptions.replaceChildren();
+  const color = chess.turn();
+
+  for (const type of ["q", "r", "b", "n"]) {
+    const choice = legalMoves.find((move) => move.promotion === type);
+    if (!choice) continue;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "promotion-choice";
+    button.setAttribute("aria-label", "Promuovi a " + promotionNames[type]);
+    const piece = document.createElement("span");
+    piece.className = "piece " + (color === "w" ? "white-piece" : "black-piece");
+    piece.textContent = symbols[color][type];
+    const label = document.createElement("small");
+    label.textContent = promotionNames[type];
+    button.append(piece, label);
+    button.addEventListener("click", () => {
+      const selectedMove = pendingPromotion?.legalMoves.find((move) => move.promotion === type);
+      closePromotionChooser();
+      if (selectedMove) commitSelectedMove(selectedMove);
+    });
+    promotionOptions.append(button);
+  }
+
+  promotionDialog.hidden = false;
+  const firstChoice = promotionOptions.querySelector("button");
+  firstChoice?.focus();
+}
+
+function commitSelectedMove(selectedMove) {
+  if (mode === "training") {
+    const expected = trainingMoves[trainingIndex];
+    if (!expected) return;
+    let played;
+    try {
+      played = trainingGame.move({
+        from: selectedMove.from,
+        to: selectedMove.to,
+        ...(selectedMove.promotion ? { promotion: selectedMove.promotion } : {}),
+      });
+    } catch {
+      played = null;
+    }
+
+    if (!played) {
+      selectedSquare = null;
+      renderBoard();
+      showToast("Mossa non legale.");
+      return;
+    }
+
+    const correct = played.from === expected.from
+      && played.to === expected.to
+      && (played.promotion || undefined) === (expected.promotion || undefined);
+    if (!correct) {
+      trainingGame.undo();
+      selectedSquare = null;
+      renderBoard();
+      showToast("Non è la mossa della linea. Riprova.");
+      return;
+    }
+
+    trainingIndex += 1;
     selectedSquare = null;
     renderAll();
-  } catch (error) {
-    showToast(`PGN non leggibile: ${error.message}`);
-  }
-}
-
-function deleteLine(id) {
-  const line = repertoire.find((item) => item.id === id);
-  if (!line) return;
-  const accepted = window.confirm(`Eliminare “${line.title || "Linea senza nome"}” dal repertorio?`);
-  if (!accepted) return;
-  repertoire = repertoire.filter((item) => item.id !== id);
-  persistRepertoire();
-  if (activeLineId === id) {
-    activeLineId = null;
-    setDirty(true);
-  }
-  renderAll();
-  showToast("Linea eliminata.");
-}
-
-function saveLine() {
-  if (mode === "training") return;
-  if (!game.history().length) {
-    showToast("Aggiungi almeno una mossa prima di salvare.");
+    showToast(trainingIndex === trainingMoves.length ? "Linea completata. Ottimo lavoro!" : "Mossa corretta.");
     return;
   }
 
-  const pgn = game.pgn();
-  const sans = game.history();
-  const title = titleInput.value.trim() || "Linea senza nome";
-  const id = activeLineId || (globalThis.crypto?.randomUUID?.() ?? `line-${Date.now()}`);
-  const previous = repertoire.find((item) => item.id === id);
-  const entry = {
-    id,
-    title,
-    pgn,
-    sans,
-    createdAt: previous?.createdAt || new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  };
+  if (game.isGameOver()) {
+    showToast(gameStatus(game));
+    return;
+  }
 
-  repertoire = previous
-    ? repertoire.map((item) => (item.id === id ? entry : item))
-    : [entry, ...repertoire];
-  if (!persistRepertoire()) return;
-  activeLineId = id;
-  setDirty(false);
-  renderAll();
-  showToast("Linea salvata nel repertorio.");
-}
-
-function startTraining(line = null) {
-  let sourceGame = new Chess();
+  let played;
   try {
-    if (line) sourceGame.loadPgn(line.pgn);
-    else sourceGame.loadPgn(game.pgn());
-  } catch (error) {
-    showToast(`Impossibile avviare il ripasso: ${error.message}`);
+    played = game.move({
+      from: selectedMove.from,
+      to: selectedMove.to,
+      ...(selectedMove.promotion ? { promotion: selectedMove.promotion } : {}),
+    });
+  } catch {
+    played = null;
+  }
+  selectedSquare = null;
+  if (!played) {
+    renderBoard();
+    showToast("Mossa non legale.");
     return;
   }
 
-  trainingMoves = sourceGame.history({ verbose: true });
-  if (!trainingMoves.length) {
-    showToast("Salva o crea una linea con almeno una mossa per allenarti.");
-    return;
-  }
-  trainingGame = new Chess();
-  trainingIndex = 0;
-  selectedSquare = null;
-  if (line) {
-    activeLineId = line.id;
-    titleInput.value = line.title || "Linea senza nome";
-    setDirty(false);
-  }
-  mode = "training";
-  renderAll();
-  showToast("Ripasso avviato: trova la prima mossa.");
-}
-
-function leaveTraining() {
-  mode = "studio";
-  trainingGame = null;
-  trainingMoves = [];
-  trainingIndex = 0;
-  selectedSquare = null;
+  appendStudioMove(played);
+  setDirty(true);
   renderAll();
 }
 
 function handleSquareClick(square) {
   const chess = activeGame();
+  if (pendingPromotion) return;
+  if (chess.isGameOver()) {
+    showToast(gameStatus(chess));
+    return;
+  }
   const piece = chess.get(square);
 
   if (!selectedSquare) {
@@ -338,62 +457,126 @@ function handleSquareClick(square) {
     return;
   }
 
-  if (mode === "training") {
-    const expected = trainingMoves[trainingIndex];
-    if (!expected) return;
-    let played;
-    try {
-      played = trainingGame.move({
-        from: selectedSquare,
-        to: square,
-        promotion: expected.promotion || "q",
-      });
-    } catch {
-      played = null;
-    }
-    if (!played) {
-      selectedSquare = null;
-      renderBoard();
-      showToast("Mossa non legale.");
-      return;
-    }
-
-    const correct = played.from === expected.from
-      && played.to === expected.to
-      && (played.promotion || undefined) === (expected.promotion || undefined);
-
-    if (!correct) {
-      trainingGame.undo();
-      selectedSquare = null;
-      renderBoard();
-      showToast("Non è la mossa della linea. Riprova.");
-      return;
-    }
-
-    trainingIndex += 1;
+  const choices = chess.moves({ square: selectedSquare, verbose: true })
+    .filter((move) => move.to === square);
+  if (!choices.length) {
     selectedSquare = null;
-    renderAll();
-    if (trainingIndex === trainingMoves.length) {
-      showToast("Linea completata. Ottimo lavoro!");
-    } else {
-      showToast("Mossa corretta.");
-    }
-    return;
-  }
-
-  let played;
-  try {
-    played = game.move({ from: selectedSquare, to: square, promotion: "q" });
-  } catch {
-    played = null;
-  }
-  selectedSquare = null;
-  if (!played) {
     renderBoard();
     showToast("Mossa non legale.");
     return;
   }
-  setDirty(true);
+
+  const promotions = choices.filter((move) => Boolean(move.promotion));
+  if (promotions.length) {
+    openPromotionChooser(selectedSquare, square, promotions);
+    return;
+  }
+
+  commitSelectedMove(choices[0]);
+}
+
+function openLine(id) {
+  const line = repertoire.find((item) => item.id === id);
+  if (!line) return;
+  try {
+    const loaded = new Chess();
+    loaded.loadPgn(line.pgn);
+    rebuildTimeline(loaded);
+    activeLineId = line.id;
+    titleInput.value = line.title || "Linea senza nome";
+    setDirty(false);
+    mode = "studio";
+    trainingGame = null;
+    closePromotionChooser();
+    renderAll();
+  } catch (error) {
+    showToast("PGN non leggibile: " + error.message);
+  }
+}
+
+function deleteLine(id) {
+  const line = repertoire.find((item) => item.id === id);
+  if (!line) return;
+  const accepted = window.confirm("Eliminare “" + (line.title || "Linea senza nome") + "” dal repertorio?");
+  if (!accepted) return;
+  repertoire = repertoire.filter((item) => item.id !== id);
+  persistRepertoire();
+  if (activeLineId === id) {
+    activeLineId = null;
+    setDirty(true);
+  }
+  renderAll();
+  showToast("Linea eliminata.");
+}
+
+function saveLine() {
+  if (mode === "training") return;
+  if (!studioSans.length) {
+    showToast("Aggiungi almeno una mossa prima di salvare.");
+    return;
+  }
+
+  const pgn = timelinePgn();
+  const sans = [...studioSans];
+  const title = titleInput.value.trim() || "Linea senza nome";
+  const id = activeLineId || (globalThis.crypto?.randomUUID?.() ?? "line-" + Date.now());
+  const previous = repertoire.find((item) => item.id === id);
+  const entry = {
+    id,
+    title,
+    pgn,
+    sans,
+    createdAt: previous?.createdAt || new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+
+  repertoire = previous
+    ? repertoire.map((item) => (item.id === id ? entry : item))
+    : [entry, ...repertoire];
+  if (!persistRepertoire()) return;
+  activeLineId = id;
+  setDirty(false);
+  renderAll();
+  showToast("Linea salvata nel repertorio.");
+}
+
+function startTraining(line = null) {
+  const pgn = line ? line.pgn : timelinePgn();
+  let sourceGame = new Chess();
+  try {
+    sourceGame.loadPgn(pgn);
+  } catch (error) {
+    showToast("Impossibile avviare il ripasso: " + error.message);
+    return;
+  }
+
+  trainingMoves = sourceGame.history({ verbose: true });
+  if (!trainingMoves.length) {
+    showToast("Salva o crea una linea con almeno una mossa per allenarti.");
+    return;
+  }
+  trainingStartFen = sourceGame.header().FEN || DEFAULT_FEN;
+  trainingGame = new Chess(trainingStartFen);
+  trainingIndex = 0;
+  selectedSquare = null;
+  if (line) {
+    activeLineId = line.id;
+    titleInput.value = line.title || "Linea senza nome";
+    setDirty(false);
+  }
+  mode = "training";
+  closePromotionChooser();
+  renderAll();
+  showToast("Ripasso avviato: trova la prima mossa.");
+}
+
+function leaveTraining() {
+  mode = "studio";
+  trainingGame = null;
+  trainingMoves = [];
+  trainingIndex = 0;
+  selectedSquare = null;
+  closePromotionChooser();
   renderAll();
 }
 
@@ -406,21 +589,21 @@ function importPgn() {
   try {
     const imported = new Chess();
     imported.loadPgn(text);
-    game = imported;
+    rebuildTimeline(imported);
     mode = "studio";
     activeLineId = null;
     titleInput.value = "PGN importato";
     setDirty(true);
-    selectedSquare = null;
+    closePromotionChooser();
     renderAll();
     showToast("PGN importato correttamente.");
   } catch (error) {
-    showToast(`PGN non valido: ${error.message}`);
+    showToast("PGN non valido: " + error.message);
   }
 }
 
 function exportPgn() {
-  const pgn = game.pgn();
+  const pgn = mode === "training" ? "" : timelinePgn();
   if (!pgn) {
     showToast("Non ci sono mosse da esportare.");
     return;
@@ -429,7 +612,7 @@ function exportPgn() {
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = url;
-  anchor.download = `${(titleInput.value.trim() || "chess-line").replace(/[^a-z0-9-_]+/gi, "-")}.pgn`;
+  anchor.download = (titleInput.value.trim() || "chess-line").replace(/[^a-z0-9-_]+/gi, "-") + ".pgn";
   document.body.append(anchor);
   anchor.click();
   anchor.remove();
@@ -442,12 +625,28 @@ function newPosition() {
     leaveTraining();
     return;
   }
+  baseFen = DEFAULT_FEN;
   game = new Chess();
+  studioStates = [DEFAULT_FEN];
+  studioSans = [];
+  studioMoveObjects = [];
+  studioPly = 0;
   activeLineId = null;
   selectedSquare = null;
+  closePromotionChooser();
   titleInput.value = "Nuova linea";
   setDirty(true);
   renderAll();
+}
+
+async function copyFen() {
+  const fen = activeGame().fen();
+  try {
+    await navigator.clipboard.writeText(fen);
+    showToast("FEN copiata negli appunti.");
+  } catch {
+    showToast("Copia FEN non disponibile in questo contesto.");
+  }
 }
 
 boardElement.addEventListener("click", (event) => {
@@ -462,16 +661,50 @@ $("#nav-training").addEventListener("click", () => startTraining());
 $("#new-line").addEventListener("click", newPosition);
 $("#reset").addEventListener("click", newPosition);
 $("#undo").addEventListener("click", () => {
-  if (mode !== "studio") return;
-  if (game.undo()) {
-    selectedSquare = null;
-    setDirty(true);
-    renderAll();
-  }
+  if (mode === "studio" && studioPly > 0) positionForPly(studioPly - 1);
 });
+$("#redo").addEventListener("click", () => {
+  if (mode === "studio" && studioPly < studioSans.length) positionForPly(studioPly + 1);
+});
+$("#flip-board").addEventListener("click", () => {
+  boardFlipped = !boardFlipped;
+  renderBoard();
+});
+$("#copy-fen").addEventListener("click", copyFen);
 $("#save-line").addEventListener("click", saveLine);
 $("#import-pgn").addEventListener("click", importPgn);
 $("#export-pgn").addEventListener("click", exportPgn);
+$("#promotion-cancel").addEventListener("click", () => {
+  closePromotionChooser();
+  selectedSquare = null;
+  renderBoard();
+});
+promotionDialog.addEventListener("click", (event) => {
+  if (event.target === promotionDialog) {
+    closePromotionChooser();
+    selectedSquare = null;
+    renderBoard();
+  }
+});
 titleInput.addEventListener("input", () => setDirty(true));
+
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && pendingPromotion) {
+    closePromotionChooser();
+    selectedSquare = null;
+    renderBoard();
+    return;
+  }
+  if (mode !== "studio" || pendingPromotion) return;
+  const target = event.target;
+  if (target instanceof HTMLElement && (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT", "BUTTON"].includes(target.tagName))) return;
+  if (event.key === "ArrowLeft" && studioPly > 0) {
+    event.preventDefault();
+    positionForPly(studioPly - 1);
+  } else if (event.key === "ArrowRight" && studioPly < studioSans.length) {
+    event.preventDefault();
+    positionForPly(studioPly + 1);
+  }
+});
 
 renderAll();
