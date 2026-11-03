@@ -46,6 +46,7 @@ const persistenceMode = isTauri() ? "sqlite" : "browser";
 let databaseReady = persistenceMode === "browser";
 let repertoire = persistenceMode === "browser" ? readRepertoire() : [];
 let activeLineId = null;
+let repertoireSearch = "";
 let dirty = false;
 let trainingGame = null;
 let trainingMoves = [];
@@ -902,14 +903,17 @@ function renderBoard() {
 }
 
 function renderMoves() {
-  const moves = mode === "training" ? trainingMoves : studioMoveObjects;
+  const allMoves = mode === "training" ? trainingMoves : studioMoveObjects;
   const cursor = mode === "training" ? trainingIndex : studioPly;
+  const moves = mode === "training" ? allMoves.slice(0, cursor) : allMoves;
   moveListElement.replaceChildren();
 
   if (!moves.length) {
     const empty = document.createElement("span");
     empty.className = "empty-state";
-    empty.textContent = "Le mosse appariranno qui.";
+    empty.textContent = mode === "training"
+      ? "Le mosse giocate appariranno qui."
+      : "Gioca una mossa sulla scacchiera per iniziare.";
     moveListElement.append(empty);
     return;
   }
@@ -933,7 +937,11 @@ function renderMoves() {
       if (moveIndex === cursor - 1) san.classList.add("current-move");
       if (mode === "studio") {
         const ply = moveIndex + 1;
-        san.setAttribute("aria-label", "Vai alla posizione dopo " + san.textContent);
+        const edge = studioTree.getEdge(studioPath[moveIndex]);
+        const notes = [edge?.comment, ...(edge?.nags || [])].filter(Boolean);
+        if (notes.length) san.title = notes.join(" · ");
+        san.setAttribute("aria-label", "Vai alla posizione dopo " + san.textContent
+          + (notes.length ? ". Annotazioni: " + notes.join(", ") : ""));
         san.setAttribute("aria-pressed", String(ply === studioPly));
         san.addEventListener("click", () => positionForPly(ply));
       }
@@ -941,21 +949,83 @@ function renderMoves() {
     }
     moveListElement.append(row);
   }
+
+  const current = moveListElement.querySelector(".current-move");
+  current?.scrollIntoView({
+    block: "nearest",
+    behavior: document.documentElement.dataset.motion === "reduced" ? "auto" : "smooth",
+  });
+}
+
+function relativeDate(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const now = new Date();
+  const startToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const startDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const days = Math.round((startToday - startDate) / 86_400_000);
+  if (days <= 0) return "oggi";
+  if (days === 1) return "ieri";
+  if (days < 7) return days + " giorni fa";
+  return new Intl.DateTimeFormat("it-IT", {
+    day: "numeric",
+    month: "short",
+    ...(date.getFullYear() !== now.getFullYear() ? { year: "numeric" } : {}),
+  }).format(date);
 }
 
 function renderRepertoire() {
   const list = $("#repertoire-list");
   list.replaceChildren();
 
+  if (repertoire.length > 6) {
+    const search = document.createElement("div");
+    search.className = "repertoire-search";
+    const input = document.createElement("input");
+    input.type = "search";
+    input.className = "text-input";
+    input.placeholder = "Cerca nei repertori…";
+    input.setAttribute("aria-label", "Cerca nei repertori");
+    input.value = repertoireSearch;
+    input.addEventListener("input", () => {
+      repertoireSearch = input.value;
+      renderRepertoire();
+      const next = list.querySelector("input[type=search]");
+      next?.focus();
+      next?.setSelectionRange(repertoireSearch.length, repertoireSearch.length);
+    });
+    search.append(input);
+    list.append(search);
+  }
+
   if (!repertoire.length) {
     const empty = document.createElement("div");
     empty.className = "repertoire-empty";
-    empty.textContent = "Nessuna linea salvata. Crea una linea e premi “Salva linea”.";
+    const message = document.createElement("p");
+    message.textContent = "Qui compariranno i tuoi repertori.";
+    const create = document.createElement("button");
+    create.type = "button";
+    create.className = "button small primary";
+    create.textContent = "Crea il primo repertorio";
+    create.addEventListener("click", () => { void newPosition(); });
+    empty.append(message, create);
     list.append(empty);
     return;
   }
 
-  for (const line of repertoire) {
+  const query = repertoireSearch.trim().toLocaleLowerCase("it");
+  const matches = repertoire.filter((line) => String(line.title || "Repertorio senza nome")
+    .toLocaleLowerCase("it").includes(query));
+  if (!matches.length) {
+    const empty = document.createElement("div");
+    empty.className = "repertoire-empty";
+    empty.textContent = "Nessun repertorio corrisponde a “" + repertoireSearch.trim() + "”.";
+    list.append(empty);
+    return;
+  }
+
+  for (const line of matches) {
     const row = document.createElement("div");
     row.className = "repertoire-entry";
     if (line.id === activeLineId) row.classList.add("current");
@@ -963,26 +1033,52 @@ function renderRepertoire() {
     const open = document.createElement("button");
     open.type = "button";
     open.className = "repertoire-open";
+    const title = line.title || "Repertorio senza nome";
+    open.title = title;
     const name = document.createElement("span");
     name.className = "repertoire-name";
-    name.textContent = line.title || "Linea senza nome";
+    name.textContent = title;
     const meta = document.createElement("small");
     const count = Number.isInteger(line.edgeCount)
       ? line.edgeCount
       : (Array.isArray(line.sans) ? line.sans.length : 0);
-    meta.textContent = count + " " + (count === 1 ? "arco" : "archi") + (line.nodeCount ? " · " + line.nodeCount + " posizioni" : "");
+    const positions = Number.isInteger(line.nodeCount) ? line.nodeCount : 0;
+    const date = relativeDate(line.updatedAt || line.createdAt);
+    meta.textContent = count + " " + (count === 1 ? "mossa" : "mosse")
+      + (positions ? " · " + positions + " " + (positions === 1 ? "posizione" : "posizioni") : "")
+      + (date ? " · " + date : "");
     open.append(name, meta);
-    open.addEventListener("click", () => openLine(line.id));
+    open.setAttribute("aria-label", "Apri repertorio " + title + ". " + meta.textContent);
+    open.addEventListener("click", () => { void openLine(line.id); });
 
-    const remove = document.createElement("button");
-    remove.type = "button";
-    remove.className = "remove-line";
-    remove.textContent = "×";
-    remove.title = "Elimina linea";
-    remove.setAttribute("aria-label", "Elimina " + (line.title || "linea"));
-    remove.addEventListener("click", () => deleteLine(line.id));
-
-    row.append(open, remove);
+    const menu = document.createElement("details");
+    menu.className = "repertoire-menu";
+    const summary = document.createElement("summary");
+    summary.textContent = "⋯";
+    summary.setAttribute("aria-label", "Azioni per " + title);
+    const panel = document.createElement("div");
+    panel.className = "repertoire-menu-panel";
+    const action = (label, callback, danger = false) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = danger ? "menu-danger" : "";
+      button.textContent = label;
+      button.addEventListener("click", async () => {
+        menu.open = false;
+        await callback();
+      });
+      panel.append(button);
+    };
+    action("Apri", () => openLine(line.id));
+    action("Allena", async () => {
+      if (await openLine(line.id)) startTraining();
+    });
+    const separator = document.createElement("div");
+    separator.className = "menu-separator";
+    panel.append(separator);
+    action("Elimina", () => deleteLine(line.id), true);
+    menu.append(summary, panel);
+    row.append(open, menu);
     list.append(row);
   }
 }
