@@ -863,7 +863,7 @@
     background: var(--piece-white-fill);
     box-shadow: inset 0 0 0 2px var(--turn-indicator-border);
   }
-  .board-panel:has(.turn-label-black) .turn-piece { background: var(--piece-black-fill); border-color: var(--piece-black-stroke); }
+  .board-panel.turn-label-black .turn-piece { background: var(--piece-black-fill); border-color: var(--piece-black-stroke); }
   .board-view-label { color: var(--text-3); font-size: 12px; }
   .chessboard {
     width: 100%;
