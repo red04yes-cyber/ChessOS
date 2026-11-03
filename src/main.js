@@ -1227,7 +1227,7 @@ chessLab = initChessLab({
   openPuzzle: openGeneratedPuzzle,
   openArchiveGame: (id) => {
     openLine(id);
-    return activeLineId === id;
+    return activeLineId === id && !dirty;
   },
 });
 void initializePersistence();
