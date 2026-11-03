@@ -9,14 +9,18 @@ import {
 
 function withLocalStorage(run) {
   const previousStorage = globalThis.localStorage;
+  const previousDocument = globalThis.document;
   const values = new Map();
   globalThis.localStorage = {
     getItem: (key) => values.has(key) ? values.get(key) : null,
     setItem: (key, value) => values.set(key, String(value)),
   };
+  globalThis.document = { documentElement: { dataset: {} } };
   try { run(values); } finally {
     if (previousStorage === undefined) delete globalThis.localStorage;
     else globalThis.localStorage = previousStorage;
+    if (previousDocument === undefined) delete globalThis.document;
+    else globalThis.document = previousDocument;
   }
 }
 
