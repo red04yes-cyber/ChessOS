@@ -114,7 +114,7 @@ impl Drop for StockfishProcess {
 
 fn is_valid_fen(fen: &str) -> bool {
     let fields: Vec<&str> = fen.split_whitespace().collect();
-    if fields.len() != 6 || fen.contains(['\n', '\r', '\0']) {
+    if fields.len() != 6 || fen.chars().any(|character| matches!(character, '\n' | '\r' | '\0')) {
         return false;
     }
 
