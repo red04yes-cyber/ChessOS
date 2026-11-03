@@ -57,3 +57,19 @@ test("rejects empty PGN input and oversized collections with diagnostics", () =>
   assert.equal(parsePgnCollection("  ").errors[0].message, "Nessuna partita PGN riconosciuta.");
   assert.match(parsePgnCollection("x".repeat(10_000_001)).errors[0].message, /10 MB/);
 });
+
+test("splits consecutive games even when Event tag is omitted", () => {
+  const input = [
+    '[White "First"]',
+    "",
+    "1. e4 e5 *",
+    "",
+    '[White "Second"]',
+    "",
+    "1. d4 d5 *",
+  ].join("\n");
+  const parsed = parsePgnCollection(input);
+  assert.equal(parsed.total, 2);
+  assert.deepEqual(parsed.games.map((game) => game.title), ["First", "Second"]);
+  assert.deepEqual(parsed.errors, []);
+});

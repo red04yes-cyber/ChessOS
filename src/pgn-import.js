@@ -22,8 +22,9 @@ export function splitPgnGames(input) {
   const finish = () => { const game = current.join("\n").trim(); if (game) chunks.push(game); };
   for (const line of source.split("\n")) {
     const match = HEADER_LINE.exec(line);
-    const isEvent = match?.[1]?.toLowerCase() === "event";
-    if (isEvent && current.length && (seenHeader || movetextStarted)) {
+    // Any tag pair after movetext starts a new game. Event is conventional,
+    // but not mandatory in PGN collections.
+    if (match && current.length && movetextStarted) {
       finish(); current = []; seenHeader = false; movetextStarted = false;
     }
     current.push(line);
