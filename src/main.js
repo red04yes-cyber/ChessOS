@@ -167,6 +167,11 @@ function setDirty(value = true) {
   indicator.classList.toggle("unsaved", dirty);
 }
 
+function confirmDiscardChanges(action) {
+  if (!dirty) return true;
+  return window.confirm("Ci sono modifiche non salvate. Vuoi eliminarle e " + action + "?");
+}
+
 function gameStatus(chess) {
   if (chess.isCheckmate()) return "Scacco matto · vince il " + (chess.turn() === "w" ? "Nero" : "Bianco");
   if (chess.isStalemate()) return "Stallo · patta";
@@ -656,7 +661,7 @@ function handleSquareClick(square) {
 
 function openLine(id) {
   const line = repertoire.find((item) => item.id === id);
-  if (!line) return;
+  if (!line || !confirmDiscardChanges("aprire un'altra linea")) return;
   try {
     const loaded = line.tree ? RepertoireTree.fromJSON(line.tree) : RepertoireTree.fromPgn(line.pgn);
     rebuildTimeline(loaded);
@@ -814,6 +819,7 @@ function renderImportReport(imported, failures, total) {
 async function importPgn() {
   const source = $("#pgn-input").value.trim();
   if (!source) { showToast("Incolla prima un testo PGN."); return; }
+  if (!confirmDiscardChanges("importare questo PGN")) return;
   const parsed = parsePgnCollection(source);
   const failures = [...parsed.errors]; const savedEntries = [];
   for (const [offset, item] of parsed.games.entries()) {
@@ -828,7 +834,7 @@ async function importPgn() {
       repertoire = [saved, ...repertoire.filter((line) => line.id !== saved.id)]; savedEntries.push(saved);
     } catch (error) { failures.push({ index: item.index || offset + 1, message: "salvataggio non riuscito: " + error.message }); }
   }
-  if (savedEntries.length) { openLine(savedEntries[0].id); renderAll(); }
+  if (savedEntries.length) { setDirty(false); openLine(savedEntries[0].id); renderAll(); }
   renderImportReport(savedEntries.length, failures, parsed.total);
   showToast(failures.length
     ? "Importazione completata con avvisi: " + savedEntries.length + " partite salvate."
@@ -849,11 +855,12 @@ function exportPgn() {
   document.body.append(anchor);
   anchor.click();
   anchor.remove();
-  URL.revokeObjectURL(url);
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
   showToast("File PGN esportato.");
 }
 
 function newPosition() {
+  if (!confirmDiscardChanges("iniziare una nuova linea")) return;
   if (mode === "training") {
     leaveTraining();
     return;
@@ -934,7 +941,11 @@ document.addEventListener("keydown", (event) => {
   }
   if (mode !== "studio" || pendingPromotion) return;
   const target = event.target;
-  if (target instanceof HTMLElement && (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT", "BUTTON"].includes(target.tagName))) return;
+  if (target instanceof HTMLElement && (
+    target.isContentEditable
+    || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)
+    || (target.tagName === "BUTTON" && !target.matches(".square, .san-move"))
+  )) return;
   if (event.key === "ArrowLeft" && studioPly > 0) {
     event.preventDefault();
     positionForPly(studioPly - 1);
