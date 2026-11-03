@@ -1,89 +1,76 @@
 # Chess OS
 
-Windows-first chess repertoire and training desktop app. This repository now contains a **fresh MVP rebuild (0.1.0)** because the old 0.7.0 source archive could not be reconstructed from the incomplete recovery fragments.
+Windows-first chess repertoire, analysis and training desktop app. The repository contains a fresh MVP rebuild (0.1.0) because the old 0.7.0 source archive could not be reconstructed from the incomplete recovery fragments.
 
-## What works in this rebuild
+## Core features
 
-- Interactive 8×8 chessboard with legal move validation through `chess.js`
-- Castling, en passant and promotion chooser (queen, rook, bishop or knight)
-- Last-move and check highlights; selectable legal destinations
-- Move-by-move position navigation, back/forward controls and arrow-key navigation
-- Board rotation and current-position FEN copy
-- Check, checkmate, stalemate and draw status
-- Create, rename, save, open and delete repertoire lines
-- SQLite persistence in the Windows desktop app, with localStorage fallback for browser preview
-- Versioned SQLite migrations, normalized position/move tables and localStorage-to-SQLite import
-- PGN import and export, including recursive annotation variations (RAV)
-- Repertoire graph with move nodes/edges, branch navigation and in-place variation editing
-- Position transposition detection so equivalent positions reached by different move orders converge on one node
-- PGN variation export with round-trip regression tests
-- Undo/redo by navigating the complete move timeline and reset in Studio mode
-- Training mode that asks the user to replay every move in a saved or current line
-- Blindfold training with SAN input, hidden pieces and move notation, and automatic error capture
-- Automatic repertoire-miss flashcards from imported game PGNs and mistakes in training
-- FSRS scheduling (Again / Hard / Good / Easy) with per-card review history via `ts-fsrs`
-- Weakness heatmap that distinguishes weak, learning, stable and not-yet-measured positions
-- Opponent preparation from one or more PGNs: opening frequencies, first moves, results and sample size
-- Transposition explorer showing distinct move sequences that converge on the same graph position
-- Vite frontend and Tauri 2 desktop shell
-- Automated JavaScript tests for legal moves, castling, en passant, promotion, PGN and terminal positions; Windows NSIS installer workflow
+- Interactive chessboard with legal move validation through chess.js, castling, en passant and all four promotion choices.
+- PGN import/export with recursive annotation variations, a repertoire graph, branches and position transpositions.
+- SQLite persistence for repertoire graphs in the Tauri desktop app; browser preview uses localStorage.
+- Training, Blindfold SAN recall, automatic repertoire-error flashcards and FSRS scheduling.
+- Review buttons Again / Hard / Good / Easy, per-card history and weakness heatmap.
+- Opponent-preparation reports from public PGNs: openings, first moves, early move sequences, results and sample size.
+- Full application JSON backup/restore for repertoires, study cards, imported PGNs, opponent report and endgame progress.
+- Stockfish 19 Lite local WebAssembly engine for position analysis, best-move sparring, endgame study and tactical-candidate generation.
+- Opening Explorer / Gap Finder using imported PGN samples.
+- Repertoire generator that merges imported game trees, filters by observed frequency and annotates move frequencies.
+- Intelligent annotations on repertoire moves: comments, plans, warnings and NAG move-quality symbols.
 
-## Important scope note
+## Endgame Lab — 111 lessons in 9 chapters
 
-This is **not** the recovered 0.7.0 application and is not yet feature-complete against the original roadmap. The following are not implemented in this rebuild:
+The Endgame Lab includes a structured curriculum that progresses from foundational king-and-pawn endings to advanced practical and material-imbalance positions:
 
-- Stockfish engine evaluation and tactical blunder detection (automatic cards currently detect departures from the saved repertoire, not engine-proven mistakes)
-- Full SQLite backup/export and restore UI
-- Full dashboard, goals and exams
-- Cloud sync, account system and backups
+1. **King and pawn endings:** direct/distant/diagonal opposition, key squares, square rule, zugzwang, triangulation, reserve tempi, breakthroughs, connected and outside passers, rook-pawn exceptions and corresponding squares.
+2. **Rook endings:** active rook, rook-behind-the-passer, king cut-offs, Lucena and bridge-building, Philidor, Vancura, lateral/rear checks, rook versus passers, multi-pawn structures and defensive counterplay.
+3. **Bishop endings:** same/opposite-coloured bishops, good/bad bishops, bishop versus pawns, blockades, wrong-coloured rook-pawn, two bishops and fortress structures.
+4. **Knight endings:** knight versus passer, knight versus rook-pawn, knight versus bishop, knight outposts, connected passers and two-knight limits.
+5. **Queen endings:** perpetual check, queen versus rook/pawns, exposed kings, queen trades, passed pawns, queen-and-king mating technique and stalemate resources.
+6. **Minor-piece endings:** bishop versus knight, bishop pair, mixed minor pieces, quality imbalances and minor-piece fortresses.
+7. **Elementary mates:** queen, rook, two bishops and bishop+knight, including the correct mating corner and the non-forcing nature of two knights versus a bare king.
+8. **Practical technique and defence:** fortress recognition, blockades, domination, repetition, stalemate, 50-move rule, king activity, defender exchanges, conversion and clock management.
+9. **Advanced endings and studies:** quality imbalances, queen versus two rooks/minors, promotions and underpromotions, pawn structures, triangulation and complex zugzwang.
 
-The old archive fragments remain under `recovery/` for provenance only. They are not build inputs.
+Every lesson includes a learning objective, positional idea, practical method, typical mistake and a study FEN. The Endgame Lab lets the user load/edit any FEN, move pieces on an interactive board, request Stockfish analysis, ask Stockfish to play a move, and query the online Syzygy tablebase.
 
-The feature roadmap and implementation boundaries are tracked in [docs/ROADMAP.md](docs/ROADMAP.md).
+**Important coverage boundary:** the 111 lessons are a broad educational syllabus, not a manually enumerated solution for every possible endgame position. Syzygy provides exact theoretical results for standard positions with up to seven pieces (including kings) when the online service has coverage; larger positions are analysed by Stockfish rather than described as tablebase-proven. The tablebase is online, not bundled locally, and may rate-limit requests.
+
+## Stockfish and third-party licensing
+
+Chess OS uses the stockfish@19.0.1 npm package and its lightweight, single-threaded WebAssembly worker. The engine runs locally after its JS/WASM assets are copied into public/stockfish. The lightweight build prioritizes compatibility and download size; it is not equivalent to a multi-threaded desktop Stockfish binary.
+
+**Stockfish is GPL-3.0 licensed.** The repository does not currently select a project-wide licence. Before distributing installers or binaries, review the licence obligations for the exact Stockfish package/assets and choose a compatible distribution strategy. See docs/THIRD_PARTY_NOTICES.md.
+
+## Online account imports and data scope
+
+- **Lichess:** public user games can be downloaded in PGN.
+- **Chess.com:** public profile archive endpoints are read-only and are requested sequentially.
+- Account import does not ask for passwords or OAuth tokens and cannot access private games.
+- Opening Explorer percentages describe only the imported sample; they are not global opening-book statistics.
+- Public endpoints may return HTTP 429. Chess OS stops and asks the user to retry later rather than bypassing rate limits.
+- The Tactics Trainer proposes candidate tactical mistakes from a bounded Stockfish scan. Candidates need human review; they are not presented as certified blunders.
+- No cloud sync or login system is included.
 
 ## Requirements
 
 - Node.js 20 or newer
-- Rust stable with the `x86_64-pc-windows-msvc` target
-- Microsoft C++ Build Tools (MSVC) and the Windows 10/11 SDK
-- WebView2 Runtime (normally already present on supported Windows 10/11 systems)
-
-For local Windows development, install the **Desktop development with C++** workload in Visual Studio Build Tools, then install Rust using the MSVC toolchain. Tauri's Windows installer uses the WebView2 bootstrapper so a missing runtime can be installed during setup.
+- Rust stable with the x86_64-pc-windows-msvc target for desktop builds
+- Microsoft C++ Build Tools (MSVC), Windows 10/11 SDK and WebView2 Runtime
 
 ## Run locally
 
-```sh
-npm install
-npm test
-npm run dev
-```
+Run npm install, then npm test, then npm run dev. The predev and prebuild scripts prepare the local Stockfish WebAssembly assets automatically.
 
-Open the local Vite URL printed in the terminal. The Vite build uses relative asset URLs so the compiled frontend also loads from the packaged Tauri WebView. To run the Tauri desktop shell:
+To run the Tauri desktop shell, use npm run tauri:dev. To build the Windows NSIS installer, use npm run tauri:build.
 
-```sh
-npm run tauri:dev
-```
+## Persistence and backups
 
-To build the Windows NSIS installer on Windows:
-
-```powershell
-npm run tauri:build
-```
-
-The NSIS installer is configured for a per-user installation (no administrator prompt by default), creates a Start Menu entry, and downloads the small WebView2 bootstrapper if the runtime is missing. The frontend and installer are also checked by the GitHub Actions workflow on pushes and pull requests to `main`.
-
-The latest completed Windows CI run (#134) generated the NSIS installer, installed and launched it, upgraded 0.1.0 to a test 0.1.1 build, verified SQLite data retention across upgrade and uninstall, generated a SHA-256 sidecar, and uploaded the installer/checksum as a 90-day artifact. A separate manual acceptance test on a clean Windows 10/11 VM or PC is still required.
-
-## Data and SQLite
-
-The Tauri desktop app stores repertoire data in `chess-os.sqlite3` inside the application data directory managed by Tauri. The database has versioned migrations (`schema_migrations`), a repertoire table, normalized position and move-edge tables (so branches and transpositions are retained), app settings, and tables reserved for training cards and review history. Repertoire graphs use SQLite in desktop mode. FSRS cards, their review history and the latest opponent report are currently stored in WebView/browser `localStorage`; moving these records into the existing SQLite training tables is a follow-up persistence task.
-
-On first desktop startup, Chess OS imports legacy `chess-os.repertoire.v1` entries from WebView `localStorage` that are not already in SQLite. The legacy key is removed only after all entries have imported successfully. To back up a repertoire today, export it as PGN; a full SQLite backup/restore interface is still planned. See [docs/DATABASE.md](docs/DATABASE.md) for the schema and migration details.
-
-## Release preparation
-
-Release checklist, clean-Windows acceptance steps, branch-protection instructions and draft 0.1.0 notes: [docs/RELEASING.md](docs/RELEASING.md) and [docs/releases/v0.1.0.md](docs/releases/v0.1.0.md). The current CI runs an installer upgrade/data-preservation smoke test and produces a SHA-256 sidecar; manual testing on a separate Windows 10/11 machine is still required.
+- Repertoire graphs use SQLite in desktop mode and localStorage in the browser preview.
+- FSRS cards and review history use SQLite in desktop mode; browser preview uses localStorage.
+- Imported PGNs, the last opponent report and Endgame lesson mastery use localStorage in the current MVP.
+- Use **Esporta backup completo** to export a portable JSON archive. Restoring merges by record ID and does not delete unrelated local records.
+- This JSON backup is an application-level export; it is not a raw copy of the SQLite database file.
+- See docs/DATABASE.md and docs/ROADMAP.md.
 
 ## License
 
-No license has been selected yet. All rights remain with the project owner unless a license is added.
+No project-wide licence has been selected yet. All rights remain with the project owner unless a licence is added. Review docs/THIRD_PARTY_NOTICES.md before distributing builds that include Stockfish.
