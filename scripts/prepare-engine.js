@@ -4,6 +4,8 @@ import { resolve } from "node:path";
 const packageBin = resolve("node_modules/stockfish/bin");
 const publicDir = resolve("public/stockfish");
 const files = ["stockfish-19-lite-single.js", "stockfish-19-lite-single.wasm"];
+const licenceSource = resolve("licenses/Stockfish-GPL-3.0.txt");
+const licenceDestination = resolve(publicDir, "COPYING.txt");
 
 mkdirSync(publicDir, { recursive: true });
 for (const file of files) {
@@ -14,4 +16,8 @@ for (const file of files) {
   }
   copyFileSync(source, destination);
 }
-console.log("Prepared Stockfish 19 Lite single-threaded WebAssembly assets.");
+if (!existsSync(licenceSource)) {
+  throw new Error("Stockfish GPL-3.0 licence text missing: " + licenceSource);
+}
+copyFileSync(licenceSource, licenceDestination);
+console.log("Prepared Stockfish 19 Lite worker, WASM and GPL-3.0 licence notice.");
