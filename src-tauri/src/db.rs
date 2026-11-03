@@ -95,6 +95,10 @@ pub fn open_database(path: &Path) -> Result<Connection, Box<dyn std::error::Erro
     }
 
     if path.exists() && fs::metadata(path).map(|metadata| metadata.len() > 0).unwrap_or(true) {
+        // SQLite may remove orphaned WAL/SHM files while opening a corrupt database.
+        // Preserve copies before opening so quarantine remains complete on every platform.
+        let sidecar_snapshots = snapshot_sqlite_sidecars(path)
+            .map_err(std::io::Error::other)?;
         let existing = (|| -> Result<Connection, String> {
             let mut connection = Connection::open(path).map_err(|error| error.to_string())?;
             connection.busy_timeout(Duration::from_secs(5)).map_err(|error| error.to_string())?;
@@ -108,14 +112,18 @@ pub fn open_database(path: &Path) -> Result<Connection, Box<dyn std::error::Erro
 
         match existing {
             Ok(connection) => {
+                cleanup_sidecar_snapshots(&sidecar_snapshots);
                 let _ = create_automatic_backup(&connection, path);
                 return Ok(connection);
             }
             Err(reason) if !is_database_corruption_reason(&reason) => {
+                cleanup_sidecar_snapshots(&sidecar_snapshots);
                 return Err(std::io::Error::other(reason).into());
             }
             Err(_) => {
                 let quarantined = quarantine_corrupt_database(path)
+                    .map_err(std::io::Error::other)?;
+                restore_quarantined_sidecars(&quarantined, &sidecar_snapshots)
                     .map_err(std::io::Error::other)?;
                 return recover_from_automatic_backup(path, &quarantined)
                     .map_err(|error| std::io::Error::other(error).into());
@@ -809,6 +817,51 @@ fn automatic_backup_candidates(directory: &Path) -> Vec<PathBuf> {
     }).collect();
     backups.sort_by(|a, b| b.0.cmp(&a.0));
     backups.into_iter().map(|(_, path)| path).collect()
+}
+
+fn snapshot_sqlite_sidecars(path: &Path) -> Result<Vec<(String, PathBuf)>, String> {
+    let mut snapshots = Vec::new();
+    let snapshot_id = backup_suffix();
+    for suffix in ["-wal", "-shm"] {
+        let source = PathBuf::from(format!("{}{}", path.to_string_lossy(), suffix));
+        if !source.exists() {
+            continue;
+        }
+        let snapshot = PathBuf::from(format!(
+            "{}.preserve-{}{}",
+            path.to_string_lossy(),
+            snapshot_id,
+            suffix
+        ));
+        fs::copy(&source, &snapshot).map_err(|error| {
+            format!("Impossibile creare una copia protetta del sidecar {}: {error}", source.display())
+        })?;
+        snapshots.push((suffix.to_string(), snapshot));
+    }
+    Ok(snapshots)
+}
+
+fn cleanup_sidecar_snapshots(snapshots: &[(String, PathBuf)]) {
+    for (_, snapshot) in snapshots {
+        let _ = fs::remove_file(snapshot);
+    }
+}
+
+fn restore_quarantined_sidecars(
+    quarantined: &Path,
+    snapshots: &[(String, PathBuf)],
+) -> Result<(), String> {
+    for (suffix, snapshot) in snapshots {
+        let destination = PathBuf::from(format!("{}{}", quarantined.to_string_lossy(), suffix));
+        if destination.exists() {
+            let _ = fs::remove_file(snapshot);
+        } else if snapshot.exists() {
+            fs::rename(snapshot, &destination).map_err(|error| {
+                format!("Impossibile conservare il sidecar SQLite {}: {error}", destination.display())
+            })?;
+        }
+    }
+    Ok(())
 }
 
 fn quarantine_corrupt_database(path: &Path) -> Result<PathBuf, String> {
