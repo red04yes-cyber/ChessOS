@@ -249,7 +249,7 @@ async function initializePersistence() {
 }
 
 function activeGame() {
-  return mode === "training" && trainingGame ? trainingGame : game;
+  return (mode === "training" || mode === "exam") && trainingGame ? trainingGame : game;
 }
 
 function showToast(message) {
@@ -390,17 +390,21 @@ function renderBoard() {
   updateBoardCoordinates();
   $("#turn-label").textContent = (chess.turn() === "w" ? "Bianco" : "Nero") + " al tratto";
   $("#game-status").textContent = gameStatus(chess);
-  const currentCount = mode === "training" ? reviewCompleted : studioPly;
-  const totalCount = mode === "training" ? reviewSessionTotal : studioSans.length;
-  $("#move-count").textContent = mode === "training"
-    ? currentCount + " / " + totalCount + " carte"
-    : currentCount + " / " + totalCount + " semimosse";
+  const currentCount = mode === "training" ? reviewCompleted : mode === "exam" ? examQuestionIndex + (examAnswered ? 1 : 0) : studioPly;
+  const totalCount = mode === "training" ? reviewSessionTotal : mode === "exam" ? examTotalQuestions : studioSans.length;
+  $("#move-count").textContent = mode === "studio"
+    ? currentCount + " / " + totalCount + " semimosse"
+    : currentCount + " / " + totalCount + " domande";
   $("#line-move-count").textContent = mode === "training"
     ? (currentReviewCard ? currentReviewCard.repertoireTitle + " · " + currentReviewCard.side : "Sessione giornaliera")
-    : studioPly + " / " + studioSans.length + " semimosse · posizione " + (studioPly + 1);
-  $("#board-label").textContent = mode === "training" ? "MODALITÀ ALLENAMENTO" : "PARTITA / ANALISI";
-  $("#undo").disabled = mode === "training" || studioPly === 0;
-  $("#redo").disabled = mode === "training" || studioPly >= studioSans.length;
+    : mode === "exam"
+      ? (currentExamCard ? currentExamCard.repertoireTitle + " · " + (currentExamCard.side === "white" ? "Bianco" : "Nero") : "Esame repertorio")
+      : studioPly + " / " + studioSans.length + " semimosse · posizione " + (studioPly + 1);
+  $("#board-label").textContent = mode === "training"
+    ? "MODALITÀ ALLENAMENTO"
+    : mode === "exam" ? "ESAME DEL REPERTORIO" : "PARTITA / ANALISI";
+  $("#undo").disabled = mode !== "studio" || studioPly === 0;
+  $("#redo").disabled = mode !== "studio" || studioPly >= studioSans.length;
   $("#flip-board").textContent = boardFlipped ? "Vista Bianco" : "Vista Nero";
 }
 
@@ -492,27 +496,44 @@ function renderRepertoire() {
 
 function renderMode() {
   const training = mode === "training";
-  $("#nav-studio").classList.toggle("active", !training);
+  const exam = mode === "exam";
+  const dashboard = mode === "dashboard";
+  const study = !dashboard;
+  $("#nav-studio").classList.toggle("active", mode === "studio");
   $("#nav-training").classList.toggle("active", training);
-  $("#mode-eyebrow").textContent = training ? "REPERTORIO / RIPASSO FSRS" : "REPERTORIO / ANALISI";
-  $("#page-title").textContent = training ? "Ripasso giornaliero" : "Chess Studio";
-  $("#page-subtitle").textContent = training
-    ? "Allena il richiamo delle mosse con intervalli adattivi."
-    : "Costruisci linee principali, varianti e transposizioni.";
-  $("#save-line").disabled = training || !databaseReady;
-  $("#reset").textContent = training ? "Esci dal ripasso" : "Nuova posizione";
+  $("#nav-dashboard").classList.toggle("active", dashboard);
+  $("#mode-eyebrow").textContent = dashboard
+    ? "ATTIVITÀ / STATISTICHE"
+    : training ? "REPERTORIO / RIPASSO FSRS"
+      : exam ? "REPERTORIO / ESAME"
+        : "REPERTORIO / ANALISI";
+  $("#page-title").textContent = dashboard
+    ? "Dashboard e progressi"
+    : training ? "Ripasso giornaliero"
+      : exam ? "Esame del repertorio" : "Chess Studio";
+  $("#page-subtitle").textContent = dashboard
+    ? "Controlla i progressi, gli obiettivi e la preparazione dei tuoi repertori."
+    : training ? "Allena il richiamo delle mosse con intervalli adattivi."
+      : exam ? "Verifica quanto ricordi senza aiuti e registra il risultato."
+        : "Costruisci linee principali, varianti e transposizioni.";
+  $("#heading-actions").hidden = dashboard || exam;
+  $("#study-grid").hidden = !study;
+  $("#dashboard-panel").hidden = !dashboard;
+  $("#save-line").disabled = mode !== "studio" || !databaseReady;
+  $("#reset").textContent = training ? "Esci dal ripasso" : exam ? "Interrompi esame" : "Nuova posizione";
   for (const selector of ["#line-card", "#moves-card", "#variations-card", "#import-card"]) {
-    $(selector).hidden = training;
+    $(selector).hidden = mode !== "studio";
   }
   $("#review-panel").hidden = !training;
-  $("#flip-board").disabled = false;
+  $("#exam-panel").hidden = !exam;
+  $("#flip-board").disabled = dashboard;
 }
 
 function renderVariations() {
   const list = $("#variation-list");
   if (!list) return;
   list.replaceChildren();
-  if (mode === "training") {
+  if (mode !== "studio") {
     const note = document.createElement("span");
     note.className = "empty-state";
     note.textContent = "Le varianti sono disponibili in Studio.";
@@ -579,6 +600,8 @@ function renderAll() {
   renderRepertoire();
   renderMode();
   renderReviewPanel();
+  renderDashboard();
+  renderExamPanel();
 }
 
 function closePromotionChooser() {
