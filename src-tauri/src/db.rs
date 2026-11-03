@@ -209,6 +209,42 @@ pub fn migrate(connection: &mut Connection) -> rusqlite::Result<()> {
         )?;
         transaction.commit()?;
     }
+    let latest_version: i64 = connection.query_row(
+        "SELECT COALESCE(MAX(version), 0) FROM schema_migrations",
+        [],
+        |row| row.get(0),
+    )?;
+    if latest_version < 3 {
+        let transaction = connection.transaction()?;
+        transaction.execute_batch(
+            "CREATE TABLE study_card_records (
+                card_id TEXT PRIMARY KEY NOT NULL,
+                payload_json TEXT NOT NULL,
+                due_at TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            CREATE TABLE study_review_records (
+                review_id TEXT PRIMARY KEY NOT NULL,
+                card_id TEXT NOT NULL,
+                rating TEXT NOT NULL,
+                reviewed_at TEXT NOT NULL,
+                due_at TEXT,
+                scheduled_days REAL,
+                stability REAL,
+                difficulty REAL,
+                state TEXT,
+                FOREIGN KEY (card_id) REFERENCES study_card_records(card_id) ON DELETE CASCADE
+            );
+            CREATE INDEX idx_study_card_records_due ON study_card_records(due_at);
+            CREATE INDEX idx_study_review_records_card_date ON study_review_records(card_id, reviewed_at DESC);"
+        )?;
+        transaction.execute(
+            "INSERT INTO schema_migrations (version, applied_at) VALUES (3, ?1)",
+            params![now_timestamp()],
+        )?;
+        transaction.commit()?;
+    }
     Ok(())
 }
 
@@ -418,6 +454,92 @@ pub fn delete_repertoire(database: State<'_, Database>, id: String) -> Result<bo
     Ok(deleted > 0)
 }
 
+#[tauri::command]
+pub fn list_study_cards(database: State<'_, Database>) -> Result<Vec<serde_json::Value>, String> {
+    let connection = database.0.lock().map_err(|_| "Database non disponibile.".to_string())?;
+    let mut statement = connection.prepare(
+        "SELECT payload_json FROM study_card_records ORDER BY due_at ASC, created_at ASC"
+    ).map_err(|error| error.to_string())?;
+    let rows = statement.query_map([], |row| row.get::<_, String>(0))
+        .map_err(|error| error.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| error.to_string())?;
+    rows.into_iter().map(|payload| {
+        serde_json::from_str(&payload).map_err(|error| error.to_string())
+    }).collect()
+}
+
+#[tauri::command]
+pub fn replace_study_cards(
+    database: State<'_, Database>,
+    cards: Vec<serde_json::Value>,
+) -> Result<usize, String> {
+    if cards.len() > 100_000 {
+        return Err("Troppe flashcard da salvare.".into());
+    }
+    let mut normalized = Vec::with_capacity(cards.len());
+    for card in cards {
+        let id = card.get("id").and_then(|value| value.as_str()).unwrap_or("");
+        if id.trim().is_empty() || id.len() > 160 {
+            return Err("ID flashcard non valido.".into());
+        }
+        let scheduler = card.get("schedulerCard").ok_or_else(|| "Stato FSRS mancante nella flashcard.".to_string())?;
+        let due_at = scheduler.get("due").and_then(|value| value.as_str())
+            .ok_or_else(|| "Scadenza FSRS non valida.".to_string())?;
+        if due_at.len() > 64 {
+            return Err("Scadenza FSRS troppo lunga.".into());
+        }
+        let created_at = card.get("createdAt").and_then(|value| value.as_str())
+            .unwrap_or_else(|| due_at);
+        let updated_at = card.get("lastReviewedAt").and_then(|value| value.as_str())
+            .unwrap_or(created_at);
+        let review_history = card.get("reviewHistory").and_then(|value| value.as_array())
+            .cloned().unwrap_or_default();
+        if review_history.len() > 100_000 {
+            return Err("Cronologia flashcard troppo grande.".into());
+        }
+        normalized.push((id.to_string(), card, due_at.to_string(), created_at.to_string(), updated_at.to_string(), review_history));
+    }
+
+    let mut connection = database.0.lock().map_err(|_| "Database non disponibile.".to_string())?;
+    let transaction = connection.transaction().map_err(|error| error.to_string())?;
+    transaction.execute("DELETE FROM study_card_records", [])
+        .map_err(|error| error.to_string())?;
+    {
+        let mut card_statement = transaction.prepare(
+            "INSERT INTO study_card_records (card_id, payload_json, due_at, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5)"
+        ).map_err(|error| error.to_string())?;
+        let mut review_statement = transaction.prepare(
+            "INSERT INTO study_review_records
+             (review_id, card_id, rating, reviewed_at, due_at, scheduled_days, stability, difficulty, state)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)"
+        ).map_err(|error| error.to_string())?;
+
+        for (card_id, card, due_at, created_at, updated_at, reviews) in &normalized {
+            let payload = serde_json::to_string(card).map_err(|error| error.to_string())?;
+            card_statement.execute(params![card_id, payload, due_at, created_at, updated_at])
+                .map_err(|error| error.to_string())?;
+            for (index, review) in reviews.iter().enumerate() {
+                let review_id = format!("{}:{}", card_id, index);
+                let rating = review.get("rating").and_then(|value| value.as_str()).unwrap_or("good");
+                let reviewed_at = review.get("reviewedAt").and_then(|value| value.as_str()).unwrap_or(created_at);
+                let review_due = review.get("dueAt").and_then(|value| value.as_str());
+                let scheduled_days = review.get("scheduledDays").and_then(|value| value.as_f64());
+                let stability = review.get("stability").and_then(|value| value.as_f64());
+                let difficulty = review.get("difficulty").and_then(|value| value.as_f64());
+                let state = review.get("state").and_then(|value| value.as_str());
+                review_statement.execute(params![
+                    review_id, card_id, rating, reviewed_at, review_due,
+                    scheduled_days, stability, difficulty, state
+                ]).map_err(|error| error.to_string())?;
+            }
+        }
+    }
+    transaction.commit().map_err(|error| error.to_string())?;
+    Ok(normalized.len())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -466,6 +588,45 @@ mod tests {
     }
 
     #[test]
+    fn study_cards_and_review_history_are_persisted_transactionally() {
+        use serde_json::json;
+        let mut connection = memory_db();
+        let database = Database(Mutex::new(connection));
+        let card = json!({
+            "id": "card-1",
+            "fen": "8/8/8/8/2k5/8/2P5/2K5 w - - 0 1",
+            "createdAt": "1000",
+            "schedulerCard": { "due": "2026-11-04T00:00:00.000Z", "stability": 2.5, "difficulty": 5.0, "reps": 1, "lapses": 0, "state": 2 },
+            "reviewCount": 1,
+            "reviewHistory": [{
+                "rating": "good", "reviewedAt": "2026-11-03T00:00:00.000Z",
+                "scheduledDays": 1.0, "dueAt": "2026-11-04T00:00:00.000Z",
+                "stability": 2.5, "difficulty": 5.0, "state": 2
+            }]
+        });
+        {
+            let mut guard = database.0.lock().unwrap();
+            let transaction = guard.transaction().unwrap();
+            transaction.execute(
+                "INSERT INTO study_card_records (card_id, payload_json, due_at, created_at, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                params!["card-1", card.to_string(), "2026-11-04T00:00:00.000Z", "1000", "1000"]
+            ).unwrap();
+            transaction.execute(
+                "INSERT INTO study_review_records
+                 (review_id, card_id, rating, reviewed_at, due_at, scheduled_days, stability, difficulty, state)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                params!["card-1:0", "card-1", "good", "2026-11-03T00:00:00.000Z",
+                    "2026-11-04T00:00:00.000Z", 1.0, 2.5, 5.0, "2"]
+            ).unwrap();
+            transaction.commit().unwrap();
+            let count: i64 = guard.query_row("SELECT COUNT(*) FROM study_review_records WHERE card_id = 'card-1'", [], |row| row.get(0)).unwrap();
+            assert_eq!(count, 1);
+        }
+        let _ = database;
+    }
+
+    #[test]
     fn migrations_are_versioned_and_idempotent() {
         let mut connection = Connection::open_in_memory().unwrap();
         migrate(&mut connection).unwrap();
@@ -473,7 +634,7 @@ mod tests {
         let version: i64 = connection.query_row(
             "SELECT MAX(version) FROM schema_migrations", [], |row| row.get(0)
         ).unwrap();
-        assert_eq!(version, 2);
+        assert_eq!(version, 3);
     }
 
     #[test]
