@@ -172,6 +172,47 @@ export function initChessLab(options) {
     }
   }
 
+  function renderLineChart(targetSelector, values, mode = "evaluation") {
+    const target = $(targetSelector);
+    target.replaceChildren();
+    const clean = values.filter(Number.isFinite);
+    if (!clean.length) {
+      target.textContent = "Grafico disponibile dopo l'analisi.";
+      return;
+    }
+    const width = 420, height = 100, pad = 12;
+    const min = mode === "accuracy" ? 0 : -600;
+    const max = mode === "accuracy" ? 100 : 600;
+    const points = clean.map((value, index) => {
+      const x = pad + (clean.length === 1 ? 0 : index / (clean.length - 1) * (width - pad * 2));
+      const bounded = Math.max(min, Math.min(max, value));
+      const y = height - pad - ((bounded - min) / (max - min)) * (height - pad * 2);
+      return x.toFixed(1) + "," + y.toFixed(1);
+    }).join(" ");
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("viewBox", "0 0 " + width + " " + height);
+    svg.setAttribute("role", "img");
+    svg.setAttribute("aria-label", mode === "accuracy" ? "Andamento della precisione per partita" : "Andamento della valutazione dal punto di vista del Bianco");
+    const baseline = document.createElementNS(svg.namespaceURI, "line");
+    const baselineY = mode === "accuracy" ? height - pad : height / 2;
+    baseline.setAttribute("x1", String(pad)); baseline.setAttribute("x2", String(width - pad));
+    baseline.setAttribute("y1", String(baselineY)); baseline.setAttribute("y2", String(baselineY));
+    baseline.setAttribute("stroke", "#526174"); baseline.setAttribute("stroke-dasharray", "3 4");
+    const line = document.createElementNS(svg.namespaceURI, "polyline");
+    line.setAttribute("points", points); line.setAttribute("fill", "none");
+    line.setAttribute("stroke", "#e4c17d"); line.setAttribute("stroke-width", "2.5");
+    line.setAttribute("stroke-linecap", "round"); line.setAttribute("stroke-linejoin", "round");
+    const first = document.createElementNS(svg.namespaceURI, "text");
+    first.setAttribute("x", String(pad)); first.setAttribute("y", "9");
+    first.textContent = mode === "accuracy" ? Math.round(clean[0]) + "%" : (clean[0] / 100).toFixed(1);
+    const last = document.createElementNS(svg.namespaceURI, "text");
+    last.setAttribute("x", String(width - pad)); last.setAttribute("y", "9");
+    last.setAttribute("text-anchor", "end");
+    last.textContent = mode === "accuracy" ? Math.round(clean[clean.length - 1]) + "%" : (clean[clean.length - 1] / 100).toFixed(1);
+    svg.append(baseline, line, first, last);
+    target.append(svg);
+  }
+
   function renderReviewRows(rows, total, truncated) {
     const target = $("#lab-review-results");
     target.replaceChildren();
@@ -196,24 +237,90 @@ export function initChessLab(options) {
       const detail = document.createElement("p");
       detail.textContent = row.explanation;
       const best = document.createElement("small");
-      best.textContent = "Perdita stimata " + (row.loss / 100).toFixed(2) + " · migliore linea: " + (row.best || "—");
+      best.textContent = "Perdita " + (row.loss / 100).toFixed(2) + " · migliore linea: " + (row.best || "—");
       element.append(head, detail, best);
       target.append(element);
     }
     if (!rows.length) {
       const empty = document.createElement("span");
       empty.className = "empty-state";
-      empty.textContent = "Nessun errore significativo trovato alla profondità selezionata.";
+      empty.textContent = "Nessuna mossa valutabile trovata.";
       target.append(empty);
     }
     const note = document.createElement("p");
     note.className = "lab-note";
-    note.textContent = total + " semimosse confrontate" + (truncated ? " · analisi limitata alle prime 80 semimosse." : "");
+    note.textContent = total + " semimosse confrontate" + (truncated ? " · analisi limitata alle prime mosse previste." : "");
     target.append(note);
   }
 
+  function renderPuzzles(puzzles) {
+    const target = $("#lab-puzzles");
+    target.replaceChildren();
+    if (!puzzles.length) return;
+    const heading = document.createElement("p");
+    heading.className = "lab-note";
+    heading.textContent = "PUZZLE CREATI DAGLI ERRORI";
+    target.append(heading);
+    for (const puzzle of puzzles) {
+      const item = document.createElement("article");
+      item.className = "lab-puzzle";
+      const title = document.createElement("strong");
+      title.textContent = puzzle.moveLabel + " · " + puzzle.quality;
+      const detail = document.createElement("p");
+      detail.textContent = "Trova la continuazione migliore: " + (puzzle.explanation || "Evita la perdita di materiale o valutazione.");
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "button small primary";
+      button.textContent = "Risolvi puzzle";
+      button.addEventListener("click", () => {
+        if (!openPuzzle(puzzle.fen, puzzle.solutionUci)) {
+          setStatus("#lab-review-status", "Non è stato possibile aprire questo puzzle.", true);
+        }
+      });
+      item.append(title, detail, button);
+      target.append(item);
+    }
+  }
+
+  function renderReviewReport(report, total, truncated) {
+    latestReviewReport = report;
+    const target = $("#lab-review-summary");
+    target.replaceChildren();
+    const addMetric = (label, value) => {
+      const item = document.createElement("span");
+      item.className = "lab-metric";
+      item.textContent = label + ": " + value;
+      target.append(item);
+    };
+    addMetric("Precisione stimata", report.playerAccuracy === null ? "—" : report.playerAccuracy.toFixed(1) + "%");
+    addMetric("Bianco", report.whiteAccuracy === null ? "—" : report.whiteAccuracy.toFixed(1) + "%");
+    addMetric("Nero", report.blackAccuracy === null ? "—" : report.blackAccuracy.toFixed(1) + "%");
+    addMetric("Brillanti", report.counts.Brillante || 0);
+    addMetric("Errori/sviste", (report.counts.Errore || 0) + (report.counts.Svista || 0));
+    renderLineChart("#lab-review-chart", report.evals, "evaluation");
+    renderReviewRows(report.rows, total, truncated);
+    renderPuzzles(report.puzzles);
+  }
+
+  async function evaluateTimeline(positions, moves, depth, shouldStop, onProgress, maxAllowed) {
+    const maxPlies = Math.min(moves.length, maxAllowed);
+    const evaluations = [];
+    for (let index = 0; index <= maxPlies; index += 1) {
+      if (shouldStop()) return { cancelled: true, maxPlies };
+      onProgress(index + 1, maxPlies + 1);
+      evaluations.push(await searchPosition(positions[index], depth));
+    }
+    const report = buildMoveReview(
+      positions.slice(0, maxPlies + 1),
+      moves.slice(0, maxPlies),
+      evaluations,
+      { headers: arguments[0] && arguments[4]?.headers, playerNames: getPlayerNames() },
+    );
+    return { cancelled: false, maxPlies, report };
+  }
+
   async function reviewGame() {
-    if (reviewRunning) return;
+    if (reviewRunning || archiveRunning) return;
     if (getMode() !== "studio") {
       setStatus("#lab-review-status", "Esci dall'allenamento prima di analizzare una partita.", true);
       return;
@@ -224,7 +331,6 @@ export function initChessLab(options) {
       setStatus("#lab-review-status", "Apri o importa una partita con almeno una mossa.", true);
       return;
     }
-    const maxPlies = Math.min(moves.length, 80);
     const depth = Number($("#lab-depth").value) || 10;
     reviewRunning = true;
     reviewCancelled = false;
@@ -232,8 +338,9 @@ export function initChessLab(options) {
     $("#lab-review-stop").disabled = false;
     $("#lab-review-results").replaceChildren();
     $("#lab-review-progress").style.width = "0%";
-    const evaluations = [];
     try {
+      const maxPlies = Math.min(moves.length, 80);
+      const evaluations = [];
       for (let index = 0; index <= maxPlies; index += 1) {
         if (reviewCancelled) break;
         setStatus("#lab-review-status", "Analisi Stockfish: posizione " + (index + 1) + " / " + (maxPlies + 1) + "…");
@@ -244,35 +351,12 @@ export function initChessLab(options) {
         setStatus("#lab-review-status", "Analisi interrotta.");
         return;
       }
-      const rows = [];
-      for (let index = 0; index < maxPlies; index += 1) {
-        const beforeSide = positions[index].split(/\s+/)[1];
-        const afterSide = positions[index + 1].split(/\s+/)[1];
-        const before = scoreToWhiteCentipawns(evaluations[index].info, beforeSide);
-        const after = scoreToWhiteCentipawns(evaluations[index + 1].info, afterSide);
-        if (before === null || after === null) continue;
-        const loss = Math.max(0, beforeSide === "w" ? before - after : after - before);
-        if (loss < 60) continue;
-        const move = moves[index];
-        const uci = move.from + move.to + (move.promotion || "");
-        const bestLine = evaluations[index].info?.pv?.length
-          ? uciPvToSan(positions[index], evaluations[index].info.pv)
-          : "";
-        const mover = beforeSide === "w" ? "Bianco" : "Nero";
-        const label = mover === "Bianco"
-          ? Math.ceil((index + 1) / 2) + ". " + move.san
-          : Math.ceil((index + 1) / 2) + "... " + move.san;
-        rows.push({
-          ply: index + 1,
-          label,
-          loss,
-          classification: classifyMoveLoss(loss),
-          best: bestLine.split(" ").slice(0, 5).join(" "),
-          explanation: explainMove(positions[index], uci, evaluations[index].info, loss),
-        });
-      }
-      renderReviewRows(rows, maxPlies, moves.length > maxPlies);
-      setStatus("#lab-review-status", "Analisi completata: " + rows.length + " imprecisioni, errori o sviste individuati.");
+      const report = buildMoveReview(positions.slice(0, maxPlies + 1), moves.slice(0, maxPlies), evaluations, {
+        headers: options.getHeaders?.() || {},
+        playerNames: getPlayerNames(),
+      });
+      renderReviewReport(report, maxPlies, moves.length > maxPlies);
+      setStatus("#lab-review-status", "Analisi completata: " + report.rows.length + " mosse classificate; " + report.puzzles.length + " puzzle generabili.");
     } catch (error) {
       setStatus("#lab-review-status", "Analisi non riuscita: " + error.message, true);
     } finally {
