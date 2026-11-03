@@ -102,7 +102,7 @@ with sqlite3.connect(path, timeout=10) as db:
             raise SystemExit("Il dato SQLite sentinella non è sopravvissuto all'aggiornamento/disinstallazione.")
 print("SQLite sentinel " + mode + " OK")
 '@
-    Set-Content -Path $pythonScript -Value $code -Encoding UTF8
+    [System.IO.File]::WriteAllText($pythonScript, $code, [System.Text.UTF8Encoding]::new($false))
     & python $pythonScript $DatabasePath $Mode
     if ($LASTEXITCODE -ne 0) {
         throw "Verifica SQLite sentinella fallita (python exit code $LASTEXITCODE)."
@@ -183,6 +183,7 @@ try {
     Invoke-SqliteSentinel $databaseAfterUpgrade "verify"
 
     Write-Host "== Uninstall upgrade candidate =="
+    $installedExecutable = Get-ChessOsExecutable
     $uninstaller = Get-ChildItem -Path $installDir -Filter "*.exe" -File -Recurse |
         Where-Object { $_.Name -match "uninstall|unins" } |
         Select-Object -First 1
@@ -193,7 +194,7 @@ try {
     if ($uninstall.ExitCode -ne 0) {
         throw "Disinstallazione NSIS fallita con exit code $($uninstall.ExitCode)."
     }
-    if (Test-Path -LiteralPath (Join-Path $installDir "Chess OS.exe")) {
+    if (Test-Path -LiteralPath $installedExecutable) {
         throw "L'eseguibile è ancora presente dopo la disinstallazione."
     }
     if (-not (Test-Path -LiteralPath $databasePath)) {
