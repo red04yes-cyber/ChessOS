@@ -115,7 +115,32 @@
           <span id="topbar-save-status" class="topbar-state" data-state="new">Non ancora salvato</span>
         </div>
         <div class="topbar-right">
-          <button class="button ghost small" id="appearance-toggle" type="button" aria-haspopup="dialog" aria-expanded="false" title="Aspetto">Aspetto</button>
+          <details class="appearance-menu">
+            <summary class="button ghost small" id="appearance-toggle" aria-haspopup="true" title="Aspetto">Aspetto</summary>
+            <div class="appearance-panel" id="appearance-panel" aria-label="Impostazioni di aspetto">
+              <label for="ui-theme">Tema dell'interfaccia
+                <select class="text-input" id="ui-theme">
+                  <option value="dark">Scuro</option><option value="light">Chiaro</option><option value="system">Sistema</option>
+                </select>
+              </label>
+              <label for="board-theme">Tema della scacchiera
+                <select class="text-input" id="board-theme">
+                  <option value="salvia">Salvia</option><option value="noce">Noce</option><option value="ardesia">Ardesia</option>
+                </select>
+              </label>
+              <label for="board-coordinates">Coordinate
+                <select class="text-input" id="board-coordinates">
+                  <option value="inside">Dentro</option><option value="hidden">Nascoste</option>
+                </select>
+              </label>
+              <label for="motion-setting">Animazioni
+                <select class="text-input" id="motion-setting">
+                  <option value="system">Segui il sistema</option><option value="active">Attive</option><option value="reduced">Ridotte</option>
+                </select>
+              </label>
+            </div>
+          </details>
+          <button class="button ghost small" id="shortcuts-toggle" type="button" title="Scorciatoie da tastiera (?)">Scorciatoie</button>
           <span class="version" title="Versione applicazione">0.1.0</span>
         </div>
       </header>
@@ -186,6 +211,10 @@
               <div class="board-footer">
                 <span id="game-status" role="status" aria-live="polite">Partita pronta</span>
                 <span id="move-count">0 semimosse</span>
+              </div>
+              <div class="fen-panel" id="fen-panel" hidden>
+                <code id="fen-value"></code>
+                <button class="button ghost small" id="copy-fen-inline" type="button">Copia FEN</button>
               </div>
             </section>
 
@@ -258,7 +287,28 @@
           <button id="promotion-cancel" class="button ghost" type="button">Annulla</button>
         </div>
       </div>
-      <div id="toast" class="toast" role="status" aria-live="polite"></div>
+      <div id="confirm-dialog" class="app-dialog" hidden role="dialog" aria-modal="true" aria-labelledby="confirm-title" aria-describedby="confirm-message">
+        <div class="dialog-card">
+          <h2 id="confirm-title">Conferma</h2>
+          <p id="confirm-message"></p>
+          <div class="confirm-actions" id="confirm-actions"></div>
+        </div>
+      </div>
+      <div id="shortcuts-dialog" class="app-dialog" hidden role="dialog" aria-modal="true" aria-labelledby="shortcuts-title">
+        <div class="dialog-card shortcuts-card">
+          <div class="dialog-heading"><h2 id="shortcuts-title">Scorciatoie da tastiera</h2><button class="button ghost small" id="shortcuts-close" type="button" aria-label="Chiudi">✕</button></div>
+          <dl class="shortcuts-list">
+            <div><dt>Mossa precedente / successiva</dt><dd>← / →</dd></div>
+            <div><dt>Prima / ultima posizione</dt><dd>Home / End</dd></div>
+            <div><dt>Ruota la scacchiera</dt><dd>F</dd></div>
+            <div><dt>Salva repertorio</dt><dd>Ctrl + S</dd></div>
+            <div><dt>Nuovo repertorio</dt><dd>Ctrl + N</dd></div>
+            <div><dt>Mostra / nascondi FEN</dt><dd>Ctrl + Shift + F</dd></div>
+            <div><dt>Mostra scorciatoie</dt><dd>?</dd></div>
+          </dl>
+        </div>
+      </div>
+      <div id="toast" class="toast-stack" role="status" aria-live="polite" aria-atomic="false"></div>
       <div id="live-region" class="visually-hidden" aria-live="polite" aria-atomic="true"></div>
       <script type="module" src="/src/main.js"></script>
     </div>
