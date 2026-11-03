@@ -795,10 +795,19 @@ async function deleteLine(id) {
   if (!line) return;
   const accepted = window.confirm("Eliminare “" + (line.title || "Linea senza nome") + "” dal repertorio?");
   if (!accepted) return;
+  if (mode === "exam" && examAttemptId) {
+    await finishRepertoireExam(true);
+  }
   if (!databaseReady) {
     showToast("Database non pronto: eliminazione non eseguita.");
     return;
   }
+  const removedCardIds = new Set(studyCards
+    .filter((card) => (card.repertoireId ?? card.repertoire_id) === id)
+    .map((card) => card.id));
+  const removedExamIds = new Set(examAttempts
+    .filter((attempt) => (attempt.repertoireId ?? attempt.repertoire_id) === id)
+    .map((attempt) => attempt.id));
   try {
     if (persistenceMode === "sqlite") {
       await invoke("delete_repertoire", { id });
@@ -807,6 +816,11 @@ async function deleteLine(id) {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
     }
     repertoire = repertoire.filter((item) => item.id !== id);
+    studyCards = studyCards.filter((card) => !removedCardIds.has(card.id));
+    reviewLogs = reviewLogs.filter((log) => !removedCardIds.has(log.cardId ?? log.card_id));
+    examAnswers = examAnswers.filter((answer) => !removedExamIds.has(answer.attemptId ?? answer.attempt_id));
+    examAttempts = examAttempts.filter((attempt) => !removedExamIds.has(attempt.id));
+    if (persistenceMode !== "sqlite") persistLocalReviewState();
     if (activeLineId === id) {
       activeLineId = null;
       setDirty(true);
