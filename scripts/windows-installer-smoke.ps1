@@ -15,6 +15,7 @@ if ($versionParts.Count -ne 3 -or $versionParts[2] -notmatch "^\d+$") {
 }
 $upgradeVersion = "$($versionParts[0]).$($versionParts[1]).$([int]$versionParts[2] + 1)"
 $installerRestored = $false
+$baselineInstallerName = $null
 $appProcess = $null
 
 function Invoke-NsisInstall([string]$InstallerPath) {
@@ -208,7 +209,7 @@ finally {
         Stop-Process -Id $appProcess.Id -Force -ErrorAction SilentlyContinue
     }
     Set-Content -Path $tauriConfigPath -Value $originalConfigText -Encoding UTF8
-    if (Test-Path -LiteralPath $baselineInstallerBackup) {
+    if ((Test-Path -LiteralPath $baselineInstallerBackup) -and $baselineInstallerName) {
         if (-not (Test-Path -LiteralPath $nsisDir)) {
             New-Item -Path $nsisDir -ItemType Directory -Force | Out-Null
         }
