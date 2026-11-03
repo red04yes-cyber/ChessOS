@@ -245,6 +245,16 @@
               <p id="tactics-status" class="tool-description"></p>
             </section>
 
+            <section class="detail-card feature-card" id="backup-tool">
+              <div class="card-heading"><span class="card-icon">⇄</span><span>BACKUP COMPLETO · ESPORTA / RIPRISTINA</span></div>
+              <p class="tool-description">Crea un archivio JSON portabile con repertori, grafo delle varianti, flashcard e cronologia FSRS, report avversario, partite PGN importate e progressi Endgame. Il ripristino unisce i record per ID senza cancellare quelli non presenti nel file.</p>
+              <div class="tool-actions"><button class="button small primary" id="backup-export">Esporta backup completo</button></div>
+              <label class="field-label" for="backup-file">File di backup ChessOS (.json, massimo 50 MB)</label>
+              <input id="backup-file" class="text-input" type="file" accept=".json,application/json"/>
+              <div class="tool-actions"><button class="button small ghost" id="backup-import">Importa backup</button></div>
+              <p id="backup-status" class="tool-output" aria-live="polite">Il backup è un'esportazione applicativa leggibile, non una copia binaria del file SQLite.</p>
+            </section>
+
             <section class="detail-card feature-card" id="annotation-tool">
               <div class="card-heading"><span class="card-icon">✎</span><span>ANNOTAZIONI INTELLIGENTI</span></div>
               <p class="tool-description">Seleziona una mossa dalla notazione dello Studio per aggiungere idee, piani, avvertimenti, trappole e spiegazioni strategiche.</p>
