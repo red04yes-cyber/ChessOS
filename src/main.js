@@ -41,6 +41,7 @@ let dragState = null;
 let suppressBoardClick = false;
 let boardFlipped = false;
 let pendingPromotion = null;
+let promotionOriginSquare = null;
 const persistenceMode = isTauri() ? "sqlite" : "browser";
 let databaseReady = persistenceMode === "browser";
 let repertoire = persistenceMode === "browser" ? readRepertoire() : [];
@@ -1079,11 +1080,15 @@ function closePromotionChooser() {
   pendingPromotion = null;
   promotionDialog.hidden = true;
   promotionOptions.replaceChildren();
+  const origin = promotionOriginSquare;
+  promotionOriginSquare = null;
+  if (origin) window.setTimeout(() => boardElement.querySelector('[data-square="' + origin + '"]')?.focus(), 0);
 }
 
 function openPromotionChooser(from, to, legalMoves) {
   const chess = activeGame();
   pendingPromotion = { from, to, legalMoves };
+  promotionOriginSquare = from;
   promotionOptions.replaceChildren();
   const color = chess.turn();
 
@@ -1094,6 +1099,8 @@ function openPromotionChooser(from, to, legalMoves) {
     button.type = "button";
     button.className = "promotion-choice";
     button.setAttribute("aria-label", "Promuovi a " + promotionNames[type]);
+    button.setAttribute("aria-keyshortcuts", ({ q: "D 1", r: "T 2", b: "A 3", n: "C 4" })[type]);
+    button.dataset.promotion = type;
     const piece = createPieceElement(color, type);
     const label = document.createElement("small");
     label.textContent = promotionNames[type];
@@ -1577,11 +1584,54 @@ $("#flip-board").addEventListener("click", () => {
   renderBoard();
 });
 $("#copy-fen").addEventListener("click", copyFen);
-$("#save-line").addEventListener("click", saveLine);
-$("#import-pgn").addEventListener("click", importPgn);
+$("#copy-fen-inline").addEventListener("click", copyFen);
+$("#save-line").addEventListener("click", () => { void saveLine(); });
+$("#import-pgn").addEventListener("click", () => {
+  const tools = document.querySelector(".tools-card");
+  if (tools) tools.open = true;
+  $("#pgn-input").focus();
+});
 $("#export-pgn").addEventListener("click", exportPgn);
-$("#import-pgn-inline").addEventListener("click", importPgn);
+$("#import-pgn-inline").addEventListener("click", () => { void importPgn(); });
 $("#export-pgn-inline").addEventListener("click", exportPgn);
+
+const appearanceMenu = document.querySelector(".appearance-menu");
+syncAppearanceControls();
+appearanceMenu.addEventListener("toggle", () => {
+  $("#appearance-toggle").setAttribute("aria-expanded", String(appearanceMenu.open));
+});
+$("#ui-theme").addEventListener("change", (event) => {
+  uiPreferences.theme = event.target.value;
+  applyUiPreferences();
+  saveUiPreferences();
+});
+$("#board-theme").addEventListener("change", (event) => {
+  uiPreferences.boardTheme = event.target.value;
+  applyUiPreferences();
+  saveUiPreferences();
+  renderBoard();
+});
+$("#board-coordinates").addEventListener("change", (event) => {
+  uiPreferences.coordinates = event.target.value;
+  applyUiPreferences();
+  saveUiPreferences();
+});
+$("#motion-setting").addEventListener("change", (event) => {
+  uiPreferences.motion = event.target.value;
+  applyUiPreferences();
+  saveUiPreferences();
+});
+window.matchMedia?.("(prefers-color-scheme: dark)").addEventListener("change", () => {
+  if (uiPreferences.theme === "system") applyUiPreferences();
+});
+window.matchMedia?.("(prefers-reduced-motion: reduce)").addEventListener("change", () => {
+  if (uiPreferences.motion === "system") applyUiPreferences();
+});
+$("#shortcuts-toggle").addEventListener("click", openShortcutsDialog);
+$("#shortcuts-close").addEventListener("click", closeShortcutsDialog);
+$("#shortcuts-dialog").addEventListener("click", (event) => {
+  if (event.target === $("#shortcuts-dialog")) closeShortcutsDialog();
+});
 $("#promotion-cancel").addEventListener("click", () => {
   closePromotionChooser();
   selectedSquare = null;
@@ -1597,25 +1647,113 @@ promotionDialog.addEventListener("click", (event) => {
 titleInput.addEventListener("input", () => { setDirty(true); updateTopbarStatus(); });
 
 document.addEventListener("keydown", (event) => {
-  if (event.key === "Escape" && pendingPromotion) {
-    closePromotionChooser();
-    selectedSquare = null;
+  const target = event.target;
+  const typing = target instanceof HTMLElement && (
+    target.isContentEditable
+    || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)
+  );
+
+  if (pendingPromotion) {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closePromotionChooser();
+      selectedSquare = null;
+      renderBoard();
+      return;
+    }
+    if (event.key === "Tab") {
+      const options = [...promotionOptions.querySelectorAll("button:not(:disabled)")];
+      const first = options[0];
+      const last = options[options.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last?.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first?.focus();
+      }
+      return;
+    }
+    const choice = ({ "1": "q", d: "q", "2": "r", t: "r", "3": "b", a: "b", "4": "n", c: "n" })[event.key.toLowerCase()];
+    if (choice) {
+      const button = promotionOptions.querySelector('[data-promotion="' + choice + '"]');
+      if (button) {
+        event.preventDefault();
+        button.click();
+      }
+    }
+    return;
+  }
+
+  if (!$("#shortcuts-dialog").hidden) {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeShortcutsDialog();
+      return;
+    }
+    if (event.key === "Tab") {
+      const buttons = [...$("#shortcuts-dialog").querySelectorAll("button:not(:disabled)")];
+      if (buttons.length && event.shiftKey && document.activeElement === buttons[0]) {
+        event.preventDefault();
+        buttons[buttons.length - 1].focus();
+      } else if (buttons.length && !event.shiftKey && document.activeElement === buttons[buttons.length - 1]) {
+        event.preventDefault();
+        buttons[0].focus();
+      }
+      return;
+    }
+  }
+
+  if (event.key === "Escape") {
+    closeOpenMenus();
+    if (selectedSquare) {
+      selectedSquare = null;
+      renderBoard();
+    }
+    return;
+  }
+
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
+    event.preventDefault();
+    if (mode === "studio") void saveLine();
+    return;
+  }
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "n") {
+    event.preventDefault();
+    if (mode === "studio") void newPosition();
+    return;
+  }
+  if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key.toLowerCase() === "f") {
+    event.preventDefault();
+    if (mode === "studio") toggleFenPanel();
+    return;
+  }
+  if (typing) return;
+  if (event.key === "?" || (event.shiftKey && event.key === "/")) {
+    event.preventDefault();
+    openShortcutsDialog();
+    return;
+  }
+  if (event.key.toLowerCase() === "f") {
+    event.preventDefault();
+    boardFlipped = !boardFlipped;
     renderBoard();
     return;
   }
-  if (mode !== "studio" || pendingPromotion) return;
-  const target = event.target;
-  if (target instanceof HTMLElement && (
-    target.isContentEditable
-    || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)
-    || (target.tagName === "BUTTON" && !target.matches(".square, .san-move"))
-  )) return;
+  if (mode !== "studio") return;
+  if (target instanceof HTMLElement && target.tagName === "BUTTON" && !target.matches(".square, .san-move")) return;
   if (event.key === "ArrowLeft" && studioPly > 0) {
     event.preventDefault();
     positionForPly(studioPly - 1);
   } else if (event.key === "ArrowRight" && studioPly < studioSans.length) {
     event.preventDefault();
     positionForPly(studioPly + 1);
+  } else if (event.key === "Home") {
+    event.preventDefault();
+    positionForPly(0);
+  } else if (event.key === "End") {
+    event.preventDefault();
+    positionForPly(studioSans.length);
   }
 });
 
