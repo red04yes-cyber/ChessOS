@@ -63,6 +63,7 @@ let trainingMistakePlies = new Set();
 let trainingHintLevel = 0;
 let trainingRevealPending = false;
 let trainingErrorAnimating = false;
+let trainingErrorTimer = null;
 let trainingElapsedSeconds = 0;
 let trainingTimer = null;
 let baseFen = DEFAULT_FEN;
@@ -1112,6 +1113,7 @@ function renderMode() {
   titleInput.setAttribute("aria-label", training ? "Repertorio in allenamento" : "Nome del repertorio");
   $("#page-subtitle").textContent = training
     ? "Rigioca la linea dall'inizio. Ogni mossa sbagliata viene annullata."
+      + (dirty ? " Stai allenando la versione corrente, non ancora salvata." : "")
     : "Costruisci il tuo repertorio una mossa alla volta, con varianti e trasposizioni.";
   $("#save-line").disabled = training || !databaseReady;
   $("#reset").textContent = training ? "Esci dall'allenamento" : "Nuovo";
@@ -1207,6 +1209,9 @@ function startTrainingTimer() {
 }
 
 function resetTrainingCounters() {
+  if (trainingErrorTimer !== null) window.clearTimeout(trainingErrorTimer);
+  trainingErrorTimer = null;
+  trainingErrorAnimating = false;
   trainingErrors = 0;
   trainingHints = 0;
   trainingFirstTryErrors = 0;
@@ -1452,7 +1457,13 @@ function commitSelectedMove(selectedMove) {
         trainingErrorAnimating = true;
         renderBoard();
         animateBoardMove(animation);
-        window.setTimeout(() => {
+        if (trainingErrorTimer !== null) window.clearTimeout(trainingErrorTimer);
+        trainingErrorTimer = window.setTimeout(() => {
+          trainingErrorTimer = null;
+          if (mode !== "training" || !trainingGame) {
+            trainingErrorAnimating = false;
+            return;
+          }
           trainingGame.undo();
           renderBoard();
           const square = boardElement.querySelector('[data-square="' + target + '"]');
@@ -1746,6 +1757,8 @@ function startTraining() {
 
 function leaveTraining() {
   stopTrainingTimer();
+  if (trainingErrorTimer !== null) window.clearTimeout(trainingErrorTimer);
+  trainingErrorTimer = null;
   mode = "studio";
   trainingGame = null;
   trainingMoves = [];
