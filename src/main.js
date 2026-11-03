@@ -345,7 +345,7 @@ function currentLastMove() {
   return studioMoveObjects[studioPly - 1] || null;
 }
 
-coords functionfunction captureBoardAnimation(move) {
+function captureBoardAnimation(move) {
   const source = boardElement.querySelector('[data-square="' + move.from + '"]');
   const destination = boardElement.querySelector('[data-square="' + move.to + '"]');
   if (!source || !destination) return null;
