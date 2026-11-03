@@ -246,6 +246,10 @@ fn validate_input(input: &SaveRepertoireInput) -> Result<(), String> {
     if !ids.contains(input.tree.root_id.as_str()) {
         return Err("Nodo radice non trovato.".into());
     }
+    let root = input.tree.nodes.iter().find(|node| node.id == input.tree.root_id);
+    if root.map(|node| node.fen.as_str()) != Some(input.tree.root_fen.as_str()) {
+        return Err("La FEN del nodo radice non coincide con la FEN iniziale.".into());
+    }
     let mut edge_ids = std::collections::HashSet::new();
     for edge in &input.tree.edges {
         if edge.id.is_empty()
@@ -481,7 +485,7 @@ mod tests {
         assert_eq!(rows[0].title, "Open Game");
         assert_eq!(rows[0].tree.edges.len(), 1);
         assert_eq!(rows[0].tree.edges[0].uci, "e2e4");
-        assert_eq!(rows[0].sans, vec!["e4"]);
+        assert_eq!(rows[0].sans, vec!["e4".to_string()]);
     }
 
     #[test]
