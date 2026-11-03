@@ -69,7 +69,7 @@ function tokenizeMovetext(source) {
 function parseHeaders(pgn) {
   const headers = {};
   const body = pgn.replace(/^\s*\[([A-Za-z0-9_]+)\s+"([^"]*)"\]\s*$/gm, (_line, key, value) => {
-    headers[key] = value.replace(/\\\\(["\\\\])/g, "$1");
+    headers[key] = value;
     return "";
   });
   return { headers, body };
