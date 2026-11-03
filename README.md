@@ -28,7 +28,6 @@ This is **not** the recovered 0.7.0 application and is not yet feature-complete 
 
 - FSRS scheduling and review history
 - SQLite database backup/export and restore UI
-- Stockfish analysis / evaluation
 - Dashboard, analytics, goals and exams
 - Cloud sync, account system and backups
 
@@ -51,9 +50,11 @@ npm test
 npm run dev
 ```
 
-Open the local Vite URL printed in the terminal. The Vite build uses relative asset URLs so the compiled frontend also loads from the packaged Tauri WebView. To run the Tauri desktop shell:
+Open the local Vite URL printed in the terminal. The Vite build uses relative asset URLs so the compiled frontend also loads from the packaged Tauri WebView. To run the Tauri desktop shell on Windows (including Stockfish analysis), first install the pinned engine and run its UCI smoke test:
 
-```sh
+```powershell
+npm run stockfish:install
+npm run stockfish:smoke
 npm run tauri:dev
 ```
 
