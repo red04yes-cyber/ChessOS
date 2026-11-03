@@ -1786,6 +1786,7 @@ function newPosition() {
     renderAll();
   },
   onImportedGames: (pgn) => extendedTraining?.loadImportedPgn(pgn),
+  onImportedGames: (pgn) => extendedTraining?.loadImportedPgn(pgn),
 });
 extendedTraining = initializeExtendedTraining({
   getCurrentTree: () => studioTree,
@@ -1814,6 +1815,223 @@ async function copyFen() {
   }
 }
 
+async function exportFullBackup() {
+  await Promise.all([chessSuite?.ready, extendedTraining?.ready].filter(Boolean));
+  const button = $("#backup-export");
+  button.disabled = true;
+  const original = button.textContent;
+  button.textContent = "Preparazione backup…";
+  try {
+    const trainingState = extendedTraining?.exportState?.() || {};
+    const suiteState = chessSuite?.exportState?.() || {};
+    const backup = {
+      format: "chessos-backup",
+      version: 2,
+      exportedAt: new Date().toISOString(),
+      appVersion: "0.1.0",
+      repertoires: repertoire,
+      dailyReview: {
+        cards: studyCards,
+        logs: reviewLogs,
+        sessions: reviewSessions,
+        goals: studyGoals,
+        examAttempts,
+        examAnswers,
+      },
+      extendedTraining: trainingState,
+      chessSuite: suiteState,
+    };
+    const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = "chessos-backup-" + new Date().toISOString().slice(0, 10) + ".json";
+    document.body.append(anchor);
+    anchor.click();
+    anchor.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1500);
+    $("#backup-status").textContent =
+      "Backup esportato · " + repertoire.length + " repertori · " +
+      studyCards.length + " carte FSRS · " + reviewLogs.length + " log · " +
+      (trainingState.cards?.length || 0) + " flashcard dagli errori.";
+  } catch (error) {
+    $("#backup-status").textContent = "Esportazione non riuscita: " + error.message;
+  } finally {
+    button.disabled = false;
+    button.textContent = original;
+  }
+}
+
+function mergeById(existing, incoming) {
+  const map = new Map((existing || []).filter((item) => item?.id).map((item) => [item.id, item]));
+  for (const item of incoming || []) {
+    if (item?.id) map.set(item.id, item);
+  }
+  return [...map.values()];
+}
+
+async function importFullBackup() {
+  await Promise.all([chessSuite?.ready, extendedTraining?.ready].filter(Boolean));
+  const button = $("#backup-import");
+  const fileInput = $("#backup-file");
+  const file = fileInput.files?.[0];
+  if (!file) { $("#backup-status").textContent = "Seleziona un backup JSON."; return; }
+  if (file.size > 50 * 1024 * 1024) { $("#backup-status").textContent = "Il backup supera il limite di 50 MB."; return; }
+  button.disabled = true;
+  const original = button.textContent;
+  button.textContent = "Controllo backup…";
+  try {
+    const backup = JSON.parse(await file.text());
+    if (backup.format !== "chessos-backup" || ![1, 2].includes(backup.version)) {
+      throw new Error("Formato o versione del backup non riconosciuti.");
+    }
+    if (!Array.isArray(backup.repertoires) || backup.repertoires.length > 10000) {
+      throw new Error("Elenco dei repertori non valido o troppo grande.");
+    }
+
+    const validatedRepertoires = backup.repertoires.map((entry, index) => {
+      if (!entry || typeof entry.id !== "string" || !entry.id.trim()) {
+        throw new Error("ID repertorio non valido al record " + (index + 1) + ".");
+      }
+      const tree = entry.tree ? RepertoireTree.fromJSON(entry.tree) : RepertoireTree.fromPgn(entry.pgn || "");
+      const pgn = typeof entry.pgn === "string" && entry.pgn
+        ? entry.pgn
+        : tree.toPgn({ Event: entry.title || "Imported repertoire" });
+      return {
+        ...entry,
+        id: entry.id,
+        title: String(entry.title || "Repertorio importato").slice(0, 200),
+        pgn,
+        sans: Array.isArray(entry.sans) ? entry.sans : tree.mainlinePath().map((edgeId) => tree.getEdge(edgeId).san),
+        tree: tree.toJSON(),
+        createdAt: entry.createdAt || new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+    });
+
+    const daily = backup.dailyReview || {};
+    const restoredCards = Array.isArray(daily.cards) ? daily.cards : [];
+    const restoredLogs = Array.isArray(daily.logs) ? daily.logs : [];
+    const restoredSessions = Array.isArray(daily.sessions) ? daily.sessions : [];
+    const restoredGoals = Array.isArray(daily.goals) ? daily.goals : [];
+    const restoredExamAttempts = Array.isArray(daily.examAttempts) ? daily.examAttempts : [];
+    const restoredExamAnswers = Array.isArray(daily.examAnswers) ? daily.examAnswers : [];
+    if (restoredCards.length > 100000 || restoredLogs.length > 500000 || restoredSessions.length > 100000
+      || restoredGoals.length > 1000 || restoredExamAttempts.length > 100000 || restoredExamAnswers.length > 500000) {
+      throw new Error("Lo storico FSRS supera il limite di record supportato.");
+    }
+
+    for (const entry of validatedRepertoires) {
+      if (persistenceMode === "sqlite") {
+        const tree = RepertoireTree.fromJSON(entry.tree);
+        const saved = await invoke("save_repertoire", {
+          input: repertoirePayload(entry, tree),
+        });
+        repertoire = [saved, ...repertoire.filter((item) => item.id !== entry.id)];
+      } else {
+        repertoire = [entry, ...repertoire.filter((item) => item.id !== entry.id)];
+      }
+    }
+    if (persistenceMode === "browser" && !persistRepertoire()) {
+      throw new Error("Non riesco a salvare i repertori nella memoria locale.");
+    }
+
+    studyCards = mergeById(studyCards, restoredCards);
+    reviewLogs = mergeById(reviewLogs, restoredLogs);
+    reviewSessions = mergeById(reviewSessions, restoredSessions);
+    studyGoals = mergeById(studyGoals, restoredGoals);
+    examAttempts = mergeById(examAttempts, restoredExamAttempts);
+    examAnswers = mergeById(examAnswers, restoredExamAnswers);
+
+    if (persistenceMode === "sqlite") {
+      const cardsForDb = studyCards.map((card) => ({
+        id: card.id,
+        repertoireId: card.repertoireId || card.repertoire_id,
+        edgeId: card.edgeId || card.edge_id,
+        side: card.side,
+        dueAt: card.dueAt || card.due_at || card.fsrs?.due,
+        stability: Number(card.stability ?? card.fsrs?.stability ?? 0),
+        difficulty: Number(card.difficulty ?? card.fsrs?.difficulty ?? 0),
+        reps: Number(card.reps ?? card.fsrs?.reps ?? 0),
+        lapses: Number(card.lapses ?? card.fsrs?.lapses ?? 0),
+        state: String(card.state ?? card.fsrs?.state ?? "new"),
+        fsrsJson: typeof card.fsrsJson === "string" ? card.fsrsJson : JSON.stringify(card.fsrs || {}),
+        createdAt: card.createdAt || new Date().toISOString(),
+        updatedAt: card.updatedAt || new Date().toISOString(),
+      })).filter((card) => card.repertoireId && card.edgeId && card.dueAt);
+      await invoke("restore_review_data", {
+        input: {
+          cards: cardsForDb,
+          logs: reviewLogs.map((log) => ({
+            id: log.id,
+            cardId: log.cardId || log.card_id,
+            sessionId: log.sessionId || log.session_id || null,
+            rating: Number(log.rating),
+            reviewedAt: log.reviewedAt || log.reviewed_at,
+            elapsedMs: log.elapsedMs ?? log.elapsed_ms ?? null,
+            scheduledDays: Number(log.scheduledDays ?? log.scheduled_days ?? 0),
+            stateJson: log.stateJson || log.state_json || "{}",
+          })),
+          sessions: reviewSessions.map((session) => ({
+            id: session.id,
+            startedAt: session.startedAt || session.started_at,
+            finishedAt: session.finishedAt || session.finished_at || null,
+            side: session.side || "both",
+            cardsReviewed: Number(session.cardsReviewed ?? session.cards_reviewed ?? 0),
+            correctCount: Number(session.correctCount ?? session.correct_count ?? 0),
+            againCount: Number(session.againCount ?? session.again_count ?? 0),
+          })),
+        },
+      });
+      await loadStudyData();
+    } else if (!persistLocalReviewState()) {
+      throw new Error("Storico FSRS non salvato nella memoria locale.");
+    }
+
+    const currentExtended = extendedTraining?.exportState?.() || {};
+    const incomingExtended = backup.extendedTraining || {};
+    await extendedTraining?.importState?.({
+      ...currentExtended,
+      ...incomingExtended,
+      cards: mergeById(currentExtended.cards, incomingExtended.cards),
+    });
+
+    const currentSuite = chessSuite?.exportState?.() || {};
+    const incomingSuite = backup.chessSuite || {};
+    await chessSuite?.importState?.({
+      ...currentSuite,
+      ...incomingSuite,
+      endgameProgress: {
+        ...(currentSuite.endgameProgress || {}),
+        ...(incomingSuite.endgameProgress || {}),
+      },
+    });
+
+    renderAll();
+    $("#backup-status").textContent =
+      "Ripristino completato · " + validatedRepertoires.length + " repertori importati/aggiornati · " +
+      studyCards.length + " schede FSRS · " + (extendedTraining?.exportState?.().cards?.length || 0) +
+      " flashcard aggiuntive. I record sono stati uniti per ID; i dati locali non presenti nel backup non sono stati cancellati.";
+    showToast("Backup ChessOS ripristinato.");
+  } catch (error) {
+    $("#backup-status").textContent = "Ripristino interrotto: " + error.message;
+  } finally {
+    button.disabled = false;
+    button.textContent = original;
+    fileInput.value = "";
+  }
+}
+
+async function createEndgameFlashcard() {
+  const lesson = chessSuite?.getCurrentEndgameLesson?.();
+  if (!lesson) { showToast("Seleziona prima una lezione Endgame."); return; }
+  extendedTraining?.addConceptCard({
+    front: "Richiama la tecnica: " + lesson.title + ". " + lesson.focus,
+    back: "Obiettivo: " + lesson.objective + "\n\nMetodo: " + lesson.method + "\n\nErrore tipico: " + lesson.errors,
+    fen: lesson.fen,
+  });
+}
+
 boardElement.addEventListener("click", (event) => {
   const squareButton = event.target.closest("button[data-square]");
   if (squareButton) handleSquareClick(squareButton.dataset.square);
@@ -1835,6 +2053,9 @@ $("#dashboard-goals-form").addEventListener("submit", (event) => { void saveDash
 $("#dashboard-exam-form").addEventListener("submit", (event) => { void startRepertoireExam(event); });
 $("#exam-next").addEventListener("click", nextExamQuestion);
 $("#review-side").addEventListener("change", renderReviewPanel);
+$("#backup-export")?.addEventListener("click", () => { void exportFullBackup(); });
+$("#backup-import")?.addEventListener("click", () => { void importFullBackup(); });
+$("#endgame-create-card")?.addEventListener("click", () => { void createEndgameFlashcard(); });
 $("#review-start").addEventListener("click", () => { void beginDailyReviewSession(); });
 $("#review-show-answer").addEventListener("click", showReviewAnswer);
 $("#review-quick-again").addEventListener("click", () => { void rateCurrentCard("again"); });
