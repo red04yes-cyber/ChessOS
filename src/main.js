@@ -288,7 +288,7 @@ function renderBoard() {
 
   updateBoardCoordinates();
   $("#turn-label").textContent = (chess.turn() === "w" ? "Bianco" : "Nero") + " al tratto";
-  $("#game-status").textContent = gameStatus(chess);
+  $("#game-status").textContent = blindfoldActive ? "Blindfold attivo · nessuna informazione di posizione" : gameStatus(chess);
   const currentCount = mode === "training" ? trainingIndex : studioPly;
   const totalCount = mode === "training" ? trainingMoves.length : studioSans.length;
   $("#move-count").textContent = currentCount + " / " + totalCount + " semimosse";
@@ -588,7 +588,8 @@ function renderHeatmap() {
   if (!summary || !list) return;
   const rows = buildWeaknessHeatmap(studioTree, studyCards);
   const count = (status) => rows.filter((item) => item.status === status).length;
-  summary.textContent = rows.length + " posizioni · " + count("weak") + " deboli · " + count("learning") + " in apprendimento · " + count("stable") + " stabili · " + count("unmeasured") + " non valutate.";
+  const opening = studioTree.headers?.Opening || studioTree.headers?.Event;
+  summary.textContent = (opening ? opening + " · " : "") + rows.length + " posizioni · " + count("weak") + " deboli · " + count("learning") + " in apprendimento · " + count("stable") + " stabili · " + count("unmeasured") + " non valutate.";
   list.replaceChildren();
   for (const item of rows.slice(0, 14)) {
     const row = makeElement("div", "heatmap-row");
@@ -596,10 +597,10 @@ function renderHeatmap() {
     const label = makeElement("div", "heatmap-position");
     const chess = new Chess(item.fen);
     const fenPlacement = item.fen.split(/\s+/)[0];
-    label.append(makeElement("strong", "", fenPlacement));
-    label.append(makeElement("small", "", item.cardCount
-      ? item.reviews + " ripassi · " + item.lapses + " dimenticanze"
-      : chess.turn() === "w" ? "Bianco al tratto · nessun dato" : "Nero al tratto · nessun dato"));
+    label.append(makeElement("strong", "", item.line || "Posizione iniziale"));
+    label.append(makeElement("small", "", fenPlacement + (item.cardCount
+      ? " · " + item.reviews + " ripassi · " + item.lapses + " dimenticanze"
+      : chess.turn() === "w" ? " · Bianco al tratto · nessun dato" : " · Nero al tratto · nessun dato")));
     row.append(marker, label, makeElement("span", "heatmap-state", ({
       weak: "Debole",
       learning: "In apprendimento",
@@ -631,6 +632,10 @@ function renderOpponentReport() {
   target.append(makeElement("strong", "report-heading", "Prima mossa del colore analizzato"));
   for (const item of report.firstMoves) {
     target.append(makeElement("div", "report-row", item.count + "× (" + item.percentage + "%)  " + item.label));
+  }
+  target.append(makeElement("strong", "report-heading", "Prime tre mosse del colore analizzato"));
+  for (const item of report.moveSequences || []) {
+    target.append(makeElement("div", "report-row", item.count + "× (" + item.percentage + "%)  " + (item.label || "Partita breve")));
   }
   if (report.ignoredGames?.length) target.append(makeElement("p", "tool-warning", report.ignoredGames.length + " PGN non validi ignorati."));
 }
