@@ -644,6 +644,28 @@ mod tests {
     }
 
     #[test]
+    fn parses_chess_com_archive_urls_without_trusting_the_host_or_path_suffix() {
+        assert_eq!(
+            parse_chess_com_archive_url("https://api.chess.com/pub/player/player1/games/2026/11"),
+            Some(("2026".to_string(), "11".to_string()))
+        );
+        assert_eq!(
+            parse_chess_com_archive_url("https://api.chess.com/pub/player/player1/games/2026/02/"),
+            Some(("2026".to_string(), "02".to_string()))
+        );
+        assert_eq!(parse_chess_com_archive_url("https://api.chess.com/pub/player/player1/games/2026/13"), None);
+        assert_eq!(parse_chess_com_archive_url("https://api.chess.com/pub/player/player1/games/26/01"), None);
+        assert_eq!(parse_chess_com_archive_url("not-an-archive-url"), None);
+    }
+
+    #[test]
+    fn reports_chess_com_rate_limit_errors_with_a_retry_hint() {
+        let error = check_http_status(StatusCode::TOO_MANY_REQUESTS, "chess.com").unwrap_err();
+        assert!(error.contains("HTTP 429"));
+        assert!(error.contains("60 secondi"));
+    }
+
+    #[test]
     fn validates_usernames_before_building_provider_urls() {
         assert!(validate_username("valid_user-1").is_ok());
         assert!(validate_username("../other").is_err());
