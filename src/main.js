@@ -116,6 +116,46 @@ function saveUiPreferences() {
 
 applyUiPreferences();
 
+function syncAppearanceControls() {
+  $("#ui-theme").value = uiPreferences.theme;
+  $("#board-theme").value = uiPreferences.boardTheme;
+  $("#board-coordinates").value = uiPreferences.coordinates;
+  $("#motion-setting").value = uiPreferences.motion;
+}
+
+function updateFenPanel() {
+  const panel = $("#fen-panel");
+  if (panel && !panel.hidden) $("#fen-value").textContent = activeGame().fen();
+}
+
+function toggleFenPanel() {
+  const panel = $("#fen-panel");
+  panel.hidden = !panel.hidden;
+  updateFenPanel();
+  if (!panel.hidden) $("#copy-fen-inline").focus();
+}
+
+function openShortcutsDialog() {
+  const dialog = $("#shortcuts-dialog");
+  dialog.hidden = false;
+  $("#shortcuts-close").focus();
+}
+
+function closeShortcutsDialog() {
+  $("#shortcuts-dialog").hidden = true;
+  $("#shortcuts-toggle").focus();
+}
+
+function closeOpenMenus() {
+  document.querySelectorAll("details[open]").forEach((details) => {
+    if (details.classList.contains("appearance-menu") || details.classList.contains("action-menu")) {
+      details.open = false;
+    }
+  });
+}
+
+
+
 
 const engineEventsReady = desktopApp
   ? Promise.all([
@@ -843,6 +883,7 @@ function renderBoard() {
   const currentCount = mode === "training" ? trainingIndex : studioPly;
   const totalCount = mode === "training" ? trainingMoves.length : studioSans.length;
   $("#move-count").textContent = currentCount + " / " + totalCount + " semimosse";
+  updateFenPanel();
   $("#line-move-count").textContent = mode === "training"
     ? trainingIndex + " / " + trainingMoves.length + " mosse eseguite"
     : studioPly + " / " + studioSans.length + " semimosse · posizione " + (studioPly + 1);
