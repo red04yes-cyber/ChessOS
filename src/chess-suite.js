@@ -836,7 +836,11 @@ export function initializeChessSuite({ getCurrentTree, loadGeneratedTree, getCur
       const target = $("#opponent-prep-report");
       target.replaceChildren();
       const summary = document.createElement("p");
-      summary.textContent = report.gamesRead + " partite considerate · " + report.ignored + " ignorate · Bianco " + report.colors.white + " · Nero " + report.colors.black + ".";
+      const period = report.period
+        ? " · periodo " + report.period.from + " → " + report.period.to + " (" + report.period.datedGames + " datate)"
+        : " · date PGN non disponibili";
+      summary.textContent = report.gamesRead + " partite considerate · " + report.ignored + " ignorate · Bianco " + report.colors.white + " · Nero " + report.colors.black
+        + " · risultati: " + report.results.win + " vittorie, " + report.results.draw + " patte, " + report.results.loss + " sconfitte" + period + ".";
       target.append(summary);
       for (const opening of report.openings.slice(0, 8)) {
         const row = document.createElement("div");
