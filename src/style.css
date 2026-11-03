@@ -1159,6 +1159,41 @@
   .review-stats small { color: var(--text-2); font-size: 12px; }
   .review-note, .review-grades p { margin: 9px 0 14px; color: var(--text-2); font-size: 13px; line-height: 1.5; }
   .review-start, .review-action { width: 100%; }
+  .review-session-progress {
+    display: grid;
+    gap: 8px;
+    margin-bottom: 14px;
+    padding: 11px 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background: var(--surface-2);
+  }
+  .review-session-progress-head, .review-session-counters {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    color: var(--text-2);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+  }
+  .review-session-progress-head { color: var(--text-1); font-weight: 650; }
+  .review-progress-track {
+    height: 7px;
+    overflow: hidden;
+    border-radius: 99px;
+    background: var(--surface-3);
+  }
+  .review-progress-track > span {
+    display: block;
+    width: 0;
+    height: 100%;
+    border-radius: inherit;
+    background: var(--accent);
+    transition: width 200ms var(--ease-out);
+  }
+  .review-session-counters strong { color: var(--text-1); font-weight: 700; }
+  .review-session-counters span:last-child strong { color: var(--warning); }
   .review-card-meta { color: var(--accent); font-size: 13px; font-weight: 700; }
   .review-feedback { min-height: 36px; margin: 12px 0; color: var(--text-1); font-size: 14px; line-height: 1.5; }
   .review-action { margin-top: 4px; }
