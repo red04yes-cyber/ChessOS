@@ -43,7 +43,7 @@ I test Playwright verificano etichette, tab stop singolo, navigazione con frecce
 
 ## CSP e capability Tauri
 
-La CSP consente asset locali, WebAssembly e IPC Tauri. `connect-src` non autorizza host Internet: le API Chess.com, Lichess e tablebase non devono essere abilitate con wildcard nella WebView; vanno chiamate dal backend Rust.
+La CSP consente asset locali, WebAssembly e IPC Tauri. `connect-src` mantiene una allowlist esplicita delle sole tre origini HTTPS effettivamente chiamate dal frontend (`https://lichess.org`, `https://api.chess.com`, `https://tablebase.lichess.ovh`), oltre a `'self'` e IPC Tauri. Non sono ammessi wildcard né host remoti generici; ogni nuova origine richiede una modifica esplicita e un test.
 
 La capability della finestra `main` concede soltanto `core:event:allow-listen` e `core:event:allow-unlisten`, necessari per gli eventi di avanzamento dell'importazione. I test in `tests/tauri-security.test.js` falliscono se vengono aggiunti wildcard, origini remote o permessi Tauri non previsti.
 
