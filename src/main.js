@@ -512,6 +512,7 @@ function renderBoard() {
 
   const turnSide = chess.turn() === "w" ? "Bianco" : "Nero";
   $("#turn-label").textContent = turnSide + " al tratto";
+  $(".board-panel").classList.toggle("turn-label-black", chess.turn() === "b");
   $("#board-view-label").textContent = "Vista: " + (boardFlipped ? "Nero" : "Bianco");
   $("#flip-board").setAttribute("aria-pressed", String(boardFlipped));
   $("#flip-board").title = "Ruota la scacchiera (F)";
@@ -547,7 +548,7 @@ function renderMoves() {
   if (!moves.length) {
     const empty = document.createElement("span");
     empty.className = "empty-state";
-    empty.textContent = "Le mosse appariranno qui.";
+    empty.textContent = "Gioca una mossa sulla scacchiera per iniziare.";
     moveListElement.append(empty);
     return;
   }
@@ -579,6 +580,11 @@ function renderMoves() {
     }
     moveListElement.append(row);
   }
+  const currentMove = moveListElement.querySelector(".current-move");
+  currentMove?.scrollIntoView({
+    block: "nearest",
+    behavior: uiPreferences.motion === "reduced" ? "auto" : "smooth",
+  });
 }
 
 function renderRepertoire() {
@@ -588,7 +594,7 @@ function renderRepertoire() {
   if (!repertoire.length) {
     const empty = document.createElement("div");
     empty.className = "repertoire-empty";
-    empty.textContent = "Nessuna linea salvata. Crea una linea e premi “Salva linea”.";
+    empty.textContent = "Qui compariranno i tuoi repertori. Gioca le prime mosse e salva il lavoro.";
     list.append(empty);
     return;
   }
@@ -603,7 +609,7 @@ function renderRepertoire() {
     open.className = "repertoire-open";
     const name = document.createElement("span");
     name.className = "repertoire-name";
-    name.textContent = line.title || "Linea senza nome";
+    name.textContent = line.title || "Repertorio senza nome";
     const meta = document.createElement("small");
     const count = Number.isInteger(line.edgeCount)
       ? line.edgeCount
@@ -634,6 +640,9 @@ function renderMode() {
   $("#nav-studio").classList.toggle("active", mode === "studio");
   $("#nav-training").classList.toggle("active", training);
   $("#nav-dashboard").classList.toggle("active", dashboard);
+  $("#nav-studio").setAttribute("aria-current", mode === "studio" ? "page" : "false");
+  $("#nav-training").setAttribute("aria-current", training ? "page" : "false");
+  $("#nav-dashboard").setAttribute("aria-current", dashboard ? "page" : "false");
   $("#mode-eyebrow").textContent = dashboard
     ? "ATTIVITÀ / STATISTICHE"
     : training ? "REPERTORIO / RIPASSO FSRS"
@@ -644,10 +653,10 @@ function renderMode() {
     : training ? "Allenamento"
       : exam ? "Esame del repertorio" : "Studio";
   $("#page-subtitle").textContent = dashboard
-    ? "Controlla i progressi, gli obiettivi e la preparazione dei tuoi repertori."
+    ? "Progressi, obiettivi e preparazione dei tuoi repertori."
     : training ? "Allena il richiamo delle mosse con intervalli adattivi."
       : exam ? "Verifica quanto ricordi senza aiuti e registra il risultato."
-        : "Costruisci linee principali, varianti e transposizioni.";
+        : "Costruisci il repertorio una mossa alla volta, con varianti e trasposizioni.";
   $("#heading-actions").hidden = dashboard || exam;
   $("#study-grid").hidden = !study;
   $("#dashboard-panel").hidden = !dashboard;
@@ -2127,9 +2136,11 @@ function clearBoardDrag() {
   boardDrag = null;
   drag.sourceButton?.classList.remove("drag-source");
   if (drag.hoverButton) drag.hoverButton.classList.remove("drag-over");
-  for (const move of drag.moves) {
-    const target = boardElement.querySelector('[data-square="' + move.to + '"]');
-    target?.classList.remove("legal-target", "capture-target");
+  if (drag.started) {
+    for (const move of drag.moves) {
+      const target = boardElement.querySelector('[data-square="' + move.to + '"]');
+      target?.classList.remove("legal-target", "capture-target", "drag-over");
+    }
   }
   drag.ghost?.remove();
   if (drag.capturedPointer && boardElement.hasPointerCapture?.(drag.pointerId)) {
@@ -2172,6 +2183,9 @@ function moveBoardDrag(event) {
   if (!drag.started) {
     drag.started = true;
     selectedSquare = null;
+    boardElement.querySelectorAll(".legal-target, .capture-target").forEach((node) => {
+      node.classList.remove("legal-target", "capture-target");
+    });
     drag.sourceButton.classList.add("drag-source");
     for (const move of drag.moves) {
       const destination = boardElement.querySelector('[data-square="' + move.to + '"]');
@@ -2313,7 +2327,10 @@ promotionDialog.addEventListener("click", (event) => {
     renderBoard();
   }
 });
-titleInput.addEventListener("input", () => setDirty(true));
+titleInput.addEventListener("input", () => {
+  setDirty(true);
+  $("#topbar-active-title").textContent = titleInput.value.trim() || "Nuovo repertorio";
+});
 
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && !$("#online-import-dialog").hidden) {
