@@ -455,9 +455,82 @@ function setDirty(value = true) {
   updateTopbarStatus();
 }
 
-function confirmDiscardChanges(action) {
+function confirmDialog({ title, message, actions, cancelValue = "cancel" }) {
+  return new Promise((resolve) => {
+    const dialog = $("#confirm-dialog");
+    const actionsElement = $("#confirm-actions");
+    const previousFocus = document.activeElement;
+    const finish = (value) => {
+      dialog.hidden = true;
+      dialog.removeEventListener("keydown", onKeyDown);
+      dialog.removeEventListener("click", onBackdrop);
+      if (previousFocus instanceof HTMLElement && previousFocus.isConnected) previousFocus.focus();
+      resolve(value);
+    };
+    const onBackdrop = (event) => {
+      if (event.target === dialog) finish(cancelValue);
+    };
+    const onKeyDown = (event) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        finish(cancelValue);
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const focusable = [...dialog.querySelectorAll("button:not(:disabled)")];
+      if (!focusable.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    $("#confirm-title").textContent = title;
+    $("#confirm-message").textContent = message;
+    actionsElement.replaceChildren();
+    for (const action of actions) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "button " + (action.variant || "ghost");
+      button.textContent = action.label;
+      button.addEventListener("click", async () => {
+        if (action.value === "save") {
+          button.disabled = true;
+          const saved = await saveLine();
+          button.disabled = false;
+          if (!saved) return;
+        }
+        finish(action.value);
+      });
+      actionsElement.append(button);
+      if (action.safe) button.dataset.safeAction = "true";
+    }
+    dialog.hidden = false;
+    dialog.addEventListener("keydown", onKeyDown);
+    dialog.addEventListener("click", onBackdrop);
+    const initial = actionsElement.querySelector('[data-safe-action="true"]')
+      || actionsElement.querySelector("button");
+    initial?.focus();
+  });
+}
+
+async function confirmDiscardChanges(action) {
   if (!dirty) return true;
-  return window.confirm("Ci sono modifiche non salvate. Vuoi eliminarle e " + action + "?");
+  const choice = await confirmDialog({
+    title: "Hai modifiche non salvate",
+    message: "Il repertorio contiene modifiche non salvate. Per " + action + " puoi salvarle, scartarle oppure continuare a modificarlo.",
+    actions: [
+      { label: "Salva e continua", value: "save", variant: "primary" },
+      { label: "Scarta modifiche", value: "discard", variant: "danger" },
+      { label: "Continua a modificare", value: "cancel", variant: "ghost", safe: true },
+    ],
+  });
+  return choice === "discard" || choice === "save";
 }
 
 function gameStatus(chess) {
