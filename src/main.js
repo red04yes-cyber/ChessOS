@@ -1,6 +1,8 @@
 import { Chess } from "chess.js";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { RepertoireTree } from "./repertoire-tree.js";
+import { initializeChessSuite } from "./chess-suite.js";
+import { initializeExtendedTraining } from "./extended-training.js";
 import {
   buildReviewCards,
   countDueCards,
@@ -63,6 +65,8 @@ let studioPly = 0;
 let studioTree = new RepertoireTree(DEFAULT_FEN);
 let studioPath = [];
 let toastTimer = null;
+let chessSuite = null;
+let extendedTraining = null;
 
 const $ = (selector) => document.querySelector(selector);
 const boardElement = $("#chessboard");
@@ -550,6 +554,8 @@ function renderAll() {
   renderRepertoire();
   renderMode();
   renderReviewPanel();
+  chessSuite?.refresh();
+  extendedTraining?.refresh();
 }
 
 function closePromotionChooser() {
@@ -1329,5 +1335,37 @@ document.addEventListener("keydown", (event) => {
   }
 });
 
+chessSuite = initializeChessSuite({
+  getCurrentTree: () => studioTree,
+  loadGeneratedTree: (tree, title) => {
+    rebuildTimeline(tree);
+    mode = "studio";
+    activeLineId = null;
+    titleInput.value = title;
+    setDirty(true);
+    renderAll();
+    showToast("Repertorio generato. Controlla e salva la linea nello Studio.");
+  },
+  getCurrentFen: () => activeGame().fen(),
+  getCurrentEdge: () => studioPly > 0 ? studioTree.getEdge(studioPath[studioPly - 1]) : null,
+  onAnnotationSaved: () => {
+    setDirty(true);
+    renderAll();
+  },
+  onImportedGames: (pgn) => extendedTraining?.loadImportedPgn(pgn),
+});
+extendedTraining = initializeExtendedTraining({
+  getCurrentTree: () => studioTree,
+  getCurrentMoves: () => studioMoveObjects,
+  getBaseFen: () => baseFen,
+  getCurrentTitle: () => titleInput.value,
+  loadPath: (edgeIds) => {
+    syncStudioPath(edgeIds);
+    selectedSquare = null;
+    mode = "studio";
+    renderAll();
+  },
+  toast: showToast,
+});
 renderAll();
 void initializePersistence();
