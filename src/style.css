@@ -230,3 +230,12 @@ h1 { margin: 9px 0 5px; font-size: clamp(24px, 2.2vw, 31px); line-height: 1.1; l
 @media (max-width: 850px) {
   .variation-list { max-height: 180px; }
 }
+
+
+/* Native drag-and-drop board interaction */
+.square[draggable="true"] { cursor: grab; }
+.square.dragging { opacity: .48; cursor: grabbing; }
+.square.drop-target { outline: 3px solid var(--accent); outline-offset: -4px; z-index: 2; }
+@media (hover: none) {
+  .square[draggable="true"] { cursor: pointer; }
+}
