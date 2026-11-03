@@ -2240,3 +2240,52 @@
     }
   }
 }
+
+@layer utilities {
+  .board-wrap > .rank-labels,
+  .board-wrap > .file-labels {
+    display: none;
+  }
+
+  .square .piece {
+    touch-action: none;
+    cursor: grab;
+  }
+
+  .square .piece.dragging-source {
+    opacity: 0.35;
+  }
+
+  .square.drag-over {
+    outline: 3px solid var(--accent);
+    outline-offset: -4px;
+  }
+
+  .board-drag-ghost {
+    position: fixed;
+    z-index: 999;
+    width: 64px;
+    height: 64px;
+    display: grid;
+    place-items: center;
+    pointer-events: none;
+    transform: translate(-50%, -50%) scale(1.08);
+    filter: drop-shadow(0 5px 8px rgba(0, 0, 0, 0.35));
+  }
+
+  .board-drag-ghost .piece {
+    width: 100%;
+    height: 100%;
+  }
+
+  .board-capture-ghost {
+    pointer-events: none;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .board-drag-ghost {
+      transform: translate(-50%, -50%);
+      filter: none;
+    }
+  }
+}
