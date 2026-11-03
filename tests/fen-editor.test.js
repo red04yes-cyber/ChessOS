@@ -30,7 +30,7 @@ test("validates side-specific en-passant targets and the pawn that just advanced
   const base = fenToEditorState(new Chess().fen());
   const afterE5 = {
     ...base,
-    pieces: { ...base.pieces, e7: undefined, e5: "bP" },
+    pieces: { ...base.pieces, e7: undefined, e5: "bP", d5: "wP" },
     turn: "w",
     enPassant: "e6",
     halfmove: 0,
