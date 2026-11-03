@@ -315,6 +315,87 @@ export class RepertoireTree {
     return tree;
   }
 
+
+  toJSON() {
+    return {
+      rootId: this.rootId,
+      rootFen: this.rootFen,
+      headers: { ...this.headers },
+      nodes: [...this.nodes.values()].map(({ id, key, fen }) => ({ id, key, fen })),
+      edges: [...this.edges.values()].map((edge) => ({
+        ...edge,
+        nags: [...edge.nags],
+        order: this.getNode(edge.from)?.outgoing.indexOf(edge.id) ?? 0,
+      })),
+    };
+  }
+
+  static fromJSON(data) {
+    if (!data || typeof data !== "object" || !Array.isArray(data.nodes) || !Array.isArray(data.edges)) {
+      throw new Error("Database repertorio non valida.");
+    }
+    const rootFen = String(data.rootFen || "");
+    new Chess(rootFen);
+    const tree = new RepertoireTree(rootFen, data.headers || {});
+    tree.nodes.clear();
+    tree.nodesByPosition.clear();
+    tree.edges.clear();
+
+    for (const source of data.nodes) {
+      if (!source || typeof source.id !== "string" || typeof source.fen !== "string") {
+        throw new Error("Nodo del repertorio non valido.");
+      }
+      new Chess(source.fen);
+      const expectedKey = positionKey(source.fen);
+      if (source.key !== expectedKey || tree.nodes.has(source.id)) {
+        throw new Error("Chiave o ID di posizione non valido.");
+      }
+      const node = { id: source.id, key: expectedKey, fen: source.fen, incoming: [], outgoing: [] };
+      tree.nodes.set(node.id, node);
+      const matches = tree.nodesByPosition.get(expectedKey) || [];
+      tree.nodesByPosition.set(expectedKey, [...matches, node.id]);
+    }
+
+    tree.rootId = String(data.rootId || "");
+    const root = tree.getNode(tree.rootId);
+    if (!root || root.fen !== rootFen) throw new Error("Nodo radice non valido.");
+
+    const orderedEdges = [...data.edges].sort((a, b) => (a.order || 0) - (b.order || 0));
+    for (const source of orderedEdges) {
+      if (!source || typeof source.id !== "string" || tree.edges.has(source.id)) {
+        throw new Error("Arco del repertorio non valido.");
+      }
+      const from = tree.getNode(source.from);
+      const to = tree.getNode(source.to);
+      if (!from || !to || !/^[a-h][1-8][a-h][1-8][qrbn]?$/.test(source.uci || "")) {
+        throw new Error("Collegamento tra posizioni non valido.");
+      }
+      const replay = new Chess(from.fen);
+      let move;
+      try {
+        move = replay.move(moveFromUci(source.uci));
+      } catch {
+        move = null;
+      }
+      if (!move || positionKey(replay.fen()) !== to.key || (source.san && move.san !== source.san)) {
+        throw new Error("Mossa salvata non coerente con le posizioni.");
+      }
+      const edge = {
+        id: source.id,
+        from: source.from,
+        to: source.to,
+        uci: source.uci,
+        san: move.san,
+        nags: Array.isArray(source.nags) ? source.nags.filter((nag) => typeof nag === "string") : [],
+        comment: typeof source.comment === "string" ? source.comment : "",
+      };
+      tree.edges.set(edge.id, edge);
+      from.outgoing.push(edge.id);
+      to.incoming.push(edge.id);
+    }
+    return tree;
+  }
+
   toPgn(extraHeaders = {}) {
     const headers = { ...this.headers, ...extraHeaders };
     const hasNonStandardStart = this.rootFen !== new Chess().fen();
