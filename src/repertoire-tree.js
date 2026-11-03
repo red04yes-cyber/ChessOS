@@ -68,7 +68,7 @@ function tokenizeMovetext(source) {
 
 function parseHeaders(pgn) {
   const headers = {};
-  const body = pgn.replace(/^\s*\[([A-Za-z0-9_]+)\s+"((?:\\\\.|[^"])*)"\]\s*$/gm, (_line, key, value) => {
+  const body = pgn.replace(/^\s*\[([A-Za-z0-9_]+)\s+"([^"]*)"\]\s*$/gm, (_line, key, value) => {
     headers[key] = value.replace(/\\\\(["\\\\])/g, "$1");
     return "";
   });
@@ -331,7 +331,7 @@ export class RepertoireTree {
       .map(([key, value]) => "[" + key + ' "' + escapeHeader(value) + '"]')
       .join("\n");
     const movetext = renderFrom(this.rootId, this.rootFen);
-    return headerText + "\n\n" + (movetext || "*") + (headers.Result && headers.Result !== "*" ? " " + headers.Result : "");
+    return headerText + "\n\n" + (movetext || "*") + (movetext ? " " + headers.Result : "");
   }
 }
 
