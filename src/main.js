@@ -1,6 +1,7 @@
 import { Chess } from "chess.js";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { RepertoireTree } from "./repertoire-tree.js";
+import { initializeChessSuite } from "./chess-suite.js";
 import { analyzeOpponentPgn, buildWeaknessHeatmap, createErrorFlashcard, createMistakeFlashcards, getDueStudyCards, getTranspositionGroups, gradeStudyCard, readStudyCards, saveStudyCards, OPPONENT_REPORT_KEY } from "./study-tools.js";
 import "./style.css";
 
@@ -35,6 +36,7 @@ let studioPly = 0;
 let studioTree = new RepertoireTree(DEFAULT_FEN);
 let studioPath = [];
 let toastTimer = null;
+let chessSuite = null;
 let blindfoldMode = false;
 let studyCards = readStudyCards();
 let reviewActive = false;
@@ -764,6 +766,7 @@ function renderAll() {
   renderRepertoire();
   renderMode();
   renderAllTools();
+  chessSuite?.refresh();
 }
 
 function closePromotionChooser() {
@@ -1192,5 +1195,23 @@ document.addEventListener("keydown", (event) => {
   }
 });
 
+chessSuite = initializeChessSuite({
+  getCurrentTree: () => studioTree,
+  loadGeneratedTree: (tree, title) => {
+    rebuildTimeline(tree);
+    mode = "studio";
+    activeLineId = null;
+    titleInput.value = title;
+    setDirty(true);
+    renderAll();
+    showToast("Repertorio generato. Controlla e salva la linea nello Studio.");
+  },
+  getCurrentFen: () => activeGame().fen(),
+  getCurrentEdge: () => studioMoveObjects[studioPly - 1] ? studioTree.getEdge(studioPath[studioPly - 1]) : null,
+  onAnnotationSaved: () => {
+    setDirty(true);
+    renderAll();
+  },
+});
 renderAll();
 void initializePersistence();
