@@ -92,9 +92,11 @@
                 <div class="card-heading"><span class="card-icon">⇧</span><span>IMPORTA PGN</span></div>
                 <textarea id="pgn-input" class="pgn-input" rows="3" placeholder="Incolla qui una partita o una linea in formato PGN…"></textarea>
                 <div class="import-actions">
+                  <button class="button small ghost" id="select-pgn-file">Apri file PGN</button>
                   <button class="button small ghost" id="import-pgn">Carica PGN</button>
                   <button class="button small ghost" id="export-pgn">Esporta PGN ↓</button>
                 </div>
+                <input id="pgn-file" type="file" accept=".pgn,.txt,text/plain" hidden />
               </section>
             </aside>
           </div>
