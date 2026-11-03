@@ -83,6 +83,37 @@ test("preserves a non-standard starting FEN", () => {
   assert.equal(restored.edges.size, 1);
 });
 
+test("rejects unbalanced and illegal PGN variations", () => {
+  assert.throws(() => RepertoireTree.fromPgn("1. e4 (1. d4 d5"), /parentesi/i);
+  assert.throws(() => RepertoireTree.fromPgn("1. e4 (1. Qh5) e5"), /mossa PGN non valida/i);
+});
+
+
+test("serializes and restores the full repertoire graph for persistent storage", () => {
+  const original = RepertoireTree.fromPgn(sampleWithVariations);
+  const serialized = original.toJSON();
+  const restored = RepertoireTree.fromJSON(serialized);
+
+  assert.equal(restored.rootFen, original.rootFen);
+  assert.equal(restored.nodes.size, original.nodes.size);
+  assert.equal(restored.edges.size, original.edges.size);
+  assert.deepEqual(
+    restored.getOutgoing(restored.rootId).map((edge) => edge.san),
+    original.getOutgoing(original.rootId).map((edge) => edge.san),
+  );
+  const edgeSnapshot = (tree) => [...tree.edges.values()]
+    .map((edge) => [edge.id, edge.from, edge.to, edge.uci, edge.san, edge.nags, edge.comment])
+    .sort((a, b) => a[0].localeCompare(b[0]));
+  assert.deepEqual(edgeSnapshot(restored), edgeSnapshot(original));
+
+  for (const node of original.nodes.values()) {
+    assert.deepEqual(
+      restored.getOutgoing(node.id).map((edge) => edge.id),
+      original.getOutgoing(node.id).map((edge) => edge.id),
+    );
+  }
+});
+
 test("preserves branch ordering when serializing and restoring a repertoire", () => {
   const original = RepertoireTree.fromPgn(sampleWithVariations);
   const restored = RepertoireTree.fromJSON(original.toJSON());
@@ -91,13 +122,17 @@ test("preserves branch ordering when serializing and restoring a repertoire", ()
     [...restored.edges.values()].map((edge) => [edge.id, edge.from, edge.to, edge.uci, edge.san, edge.nags, edge.comment]),
     [...original.edges.values()].map((edge) => [edge.id, edge.from, edge.to, edge.uci, edge.san, edge.nags, edge.comment]),
   );
-  assert.deepEqual(
-    restored.getOutgoing(restored.rootId).map((edge) => edge.san),
-    original.getOutgoing(original.rootId).map((edge) => edge.san),
-  );
+  for (const node of original.nodes.values()) {
+    assert.deepEqual(
+      restored.getOutgoing(node.id).map((edge) => edge.id),
+      original.getOutgoing(node.id).map((edge) => edge.id),
+    );
+  }
 });
 
-test("rejects unbalanced and illegal PGN variations", () => {
-  assert.throws(() => RepertoireTree.fromPgn("1. e4 (1. d4 d5"), /parentesi/i);
-  assert.throws(() => RepertoireTree.fromPgn("1. e4 (1. Qh5) e5"), /mossa PGN non valida/i);
+test("rejects a tampered stored move graph", () => {
+  const tree = RepertoireTree.fromPgn("1. e4 e5 *");
+  const serialized = tree.toJSON();
+  serialized.edges[0].uci = "e2e5";
+  assert.throws(() => RepertoireTree.fromJSON(serialized), /Mossa salvata non coerente/i);
 });
