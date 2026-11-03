@@ -73,6 +73,10 @@ The Tauri desktop app stores repertoire data in `chess-os.sqlite3` inside the ap
 
 On first desktop startup, Chess OS imports legacy `chess-os.repertoire.v1` entries from WebView `localStorage` that are not already in SQLite. The legacy key is removed only after all entries have imported successfully. To back up a repertoire today, export it as PGN; a full SQLite backup/restore interface is still planned. See [docs/DATABASE.md](docs/DATABASE.md) for the schema and migration details.
 
+## Release preparation
+
+Release checklist, clean-Windows acceptance steps, branch-protection instructions and draft 0.1.0 notes: [docs/RELEASING.md](docs/RELEASING.md) and [docs/releases/v0.1.0.md](docs/releases/v0.1.0.md). The current CI runs an installer upgrade/data-preservation smoke test and produces a SHA-256 sidecar; manual testing on a separate Windows 10/11 machine is still required.
+
 ## License
 
 No license has been selected yet. All rights remain with the project owner unless a license is added.
