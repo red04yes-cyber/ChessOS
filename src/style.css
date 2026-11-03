@@ -230,3 +230,24 @@ h1 { margin: 9px 0 5px; font-size: clamp(24px, 2.2vw, 31px); line-height: 1.1; l
 @media (max-width: 850px) {
   .variation-list { max-height: 180px; }
 }
+
+
+/* Advanced repertoire management */
+.repertoire-filters { display: grid; gap: 6px; margin: 0 0 9px; }
+.repertoire-filters .text-input { min-width: 0; padding: 8px 9px; font-size: 10px; }
+.repertoire-entry { border-left: 3px solid var(--line-color, var(--accent)); }
+.repertoire-entry.current { border-left-color: var(--line-color, var(--accent)); }
+.repertoire-actions { display: flex; align-items: stretch; }
+.duplicate-line, .remove-line { min-width: 27px; border: 0; background: transparent; color: #8492a4; cursor: pointer; font-size: 13px; }
+.duplicate-line:hover { color: var(--accent-strong); background: #303a49; }
+.repertoire-tags { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 5px; }
+.repertoire-tag { display: inline-block; padding: 2px 5px; border-radius: 3px; background: #344254; color: #cbd5e1; font-size: 8px; }
+.metadata-label { margin-top: 11px; }
+.color-input { width: 100%; height: 34px; padding: 3px; border: 1px solid #3a4656; border-radius: 5px; background: #121923; cursor: pointer; }
+.import-report { margin-top: 10px; padding: 9px 10px; border: 1px solid #3a4656; border-radius: 6px; background: #182330; color: #d4deea; font-size: 10px; line-height: 1.5; }
+.import-report[hidden] { display: none; }
+.import-report strong { color: var(--accent-strong); }
+.import-report ul { margin: 7px 0 0; padding-left: 17px; color: #e5a39a; }
+.import-report li + li { margin-top: 3px; }
+.import-report small { display: block; margin-top: 4px; color: #8ba99b; }
+@media (max-width: 850px) { .repertoire-filters { grid-template-columns: 1fr 1fr; } }

@@ -10,7 +10,9 @@ Windows-first chess repertoire and training desktop app. This repository now con
 - Move-by-move position navigation, back/forward controls and arrow-key navigation
 - Board rotation and current-position FEN copy
 - Check, checkmate, stalemate and draw status
-- Create, rename, save, open and delete repertoire lines
+- Create, rename, save, open, duplicate and delete repertoire lines
+- Search and filter repertoires by name and tags; assign custom labels and colors
+- Multi-game PGN import with per-game validation, partial recovery and detailed error reporting
 - SQLite persistence in the Windows desktop app, with localStorage fallback for browser preview
 - Versioned SQLite migrations, normalized position/move tables and localStorage-to-SQLite import
 - PGN import and export, including recursive annotation variations (RAV)

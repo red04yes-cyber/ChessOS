@@ -54,6 +54,10 @@ pub struct SaveRepertoireInput {
     #[serde(default)]
     pub sans: Vec<String>,
     pub tree: RepertoireTreeData,
+    #[serde(default)]
+    pub tags: Vec<String>,
+    #[serde(default)]
+    pub color: String,
     pub created_at: Option<String>,
     pub updated_at: Option<String>,
 }
@@ -69,6 +73,8 @@ pub struct RepertoireRecord {
     pub node_count: usize,
     pub created_at: String,
     pub updated_at: String,
+    pub tags: Vec<String>,
+    pub color: String,
     pub tree: RepertoireTreeData,
 }
 
@@ -209,6 +215,20 @@ pub fn migrate(connection: &mut Connection) -> rusqlite::Result<()> {
         )?;
         transaction.commit()?;
     }
+    let latest_version: i64 = connection.query_row(
+        "SELECT COALESCE(MAX(version), 0) FROM schema_migrations", [], |row| row.get(0),
+    )?;
+    if latest_version < 3 {
+        let transaction = connection.transaction()?;
+        transaction.execute_batch(
+            "ALTER TABLE repertoires ADD COLUMN tags_json TEXT NOT NULL DEFAULT '[]';
+             ALTER TABLE repertoires ADD COLUMN color TEXT NOT NULL DEFAULT '#d7a64b';"
+        )?;
+        transaction.execute(
+            "INSERT INTO schema_migrations (version, applied_at) VALUES (3, ?1)", params![now_timestamp()],
+        )?;
+        transaction.commit()?;
+    }
     Ok(())
 }
 
@@ -226,6 +246,12 @@ fn validate_input(input: &SaveRepertoireInput) -> Result<(), String> {
     }
     if input.title.trim().is_empty() || input.title.len() > 200 {
         return Err("Titolo repertorio non valido.".into());
+    }
+    if input.tags.len() > 32 || input.tags.iter().any(|tag| tag.trim().is_empty() || tag.trim().len() > 32) {
+        return Err("Elenco dei tag non valido.".into());
+    }
+    if input.color.len() != 7 || !input.color.starts_with('#') || !input.color[1..].bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return Err("Colore repertorio non valido.".into());
     }
     if input.pgn.len() > 5_000_000 {
         return Err("PGN troppo grande.".into());
@@ -271,19 +297,22 @@ fn save_with_connection(connection: &mut Connection, input: SaveRepertoireInput)
     let updated_at = input.updated_at.unwrap_or_else(now_timestamp);
     let sans_json = serde_json::to_string(&input.sans).map_err(|error| error.to_string())?;
     let headers_json = serde_json::to_string(&input.tree.headers).map_err(|error| error.to_string())?;
+    let tags_json = serde_json::to_string(&input.tags).map_err(|error| error.to_string())?;
     let transaction = connection.transaction().map_err(|error| error.to_string())?;
 
     transaction.execute(
         "INSERT INTO repertoires
-            (id, title, root_fen, pgn, sans_json, headers_json, created_at, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+            (id, title, root_fen, pgn, sans_json, headers_json, created_at, updated_at, tags_json, color)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
          ON CONFLICT(id) DO UPDATE SET
             title = excluded.title,
             root_fen = excluded.root_fen,
             pgn = excluded.pgn,
             sans_json = excluded.sans_json,
             headers_json = excluded.headers_json,
-            updated_at = excluded.updated_at",
+            updated_at = excluded.updated_at,
+            tags_json = excluded.tags_json,
+            color = excluded.color",
         params![
             input.id,
             input.title.trim(),
@@ -292,7 +321,9 @@ fn save_with_connection(connection: &mut Connection, input: SaveRepertoireInput)
             sans_json,
             headers_json,
             created_at,
-            updated_at
+            updated_at,
+            tags_json,
+            input.color
         ],
     ).map_err(|error| error.to_string())?;
 
@@ -331,17 +362,17 @@ fn save_with_connection(connection: &mut Connection, input: SaveRepertoireInput)
 }
 
 fn load_one(connection: &Connection, id: &str) -> Result<Option<RepertoireRecord>, String> {
-    let base: Option<(String, String, String, String, String, String, String)> = connection.query_row(
-        "SELECT title, root_fen, pgn, sans_json, headers_json, created_at, updated_at
+    let base: Option<(String, String, String, String, String, String, String, String, String)> = connection.query_row(
+        "SELECT title, root_fen, pgn, sans_json, headers_json, created_at, updated_at, tags_json, color
          FROM repertoires WHERE id = ?1",
         params![id],
         |row| Ok((
             row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?,
-            row.get(4)?, row.get(5)?, row.get(6)?
+            row.get(4)?, row.get(5)?, row.get(6)?, row.get(7)?, row.get(8)?
         )),
     ).optional().map_err(|error| error.to_string())?;
 
-    let Some((title, root_fen, pgn, sans_json, headers_json, created_at, updated_at)) = base else {
+    let Some((title, root_fen, pgn, sans_json, headers_json, created_at, updated_at, tags_json, color)) = base else {
         return Ok(None);
     };
 
@@ -371,6 +402,7 @@ fn load_one(connection: &Connection, id: &str) -> Result<Option<RepertoireRecord
 
     let sans = serde_json::from_str(&sans_json).unwrap_or_default();
     let headers = serde_json::from_str(&headers_json).unwrap_or_default();
+    let tags = serde_json::from_str(&tags_json).unwrap_or_default();
     let root_id = nodes.iter().find(|node| node.fen == root_fen).map(|node| node.id.clone())
         .ok_or_else(|| "Nodo radice assente dal database.".to_string())?;
     let tree = RepertoireTreeData { root_id, root_fen, headers, nodes, edges };
@@ -379,7 +411,7 @@ fn load_one(connection: &Connection, id: &str) -> Result<Option<RepertoireRecord
 
     Ok(Some(RepertoireRecord {
         id: id.to_string(), title, pgn, sans, edge_count, node_count,
-        created_at, updated_at, tree,
+        created_at, updated_at, tags, color, tree,
     }))
 }
 
@@ -460,6 +492,8 @@ mod tests {
                     uci: "e2e4".into(), san: "e4".into(), order: 0, nags: vec![], comment: "".into(),
                 }],
             },
+            tags: vec!["Apertura".into(), "Bianco".into()],
+            color: "#4f9dd9".into(),
             created_at: Some("100".into()),
             updated_at: Some("101".into()),
         }
@@ -473,7 +507,7 @@ mod tests {
         let version: i64 = connection.query_row(
             "SELECT MAX(version) FROM schema_migrations", [], |row| row.get(0)
         ).unwrap();
-        assert_eq!(version, 2);
+        assert_eq!(version, 3);
     }
 
     #[test]
@@ -486,6 +520,8 @@ mod tests {
         assert_eq!(rows[0].tree.edges.len(), 1);
         assert_eq!(rows[0].tree.edges[0].uci, "e2e4");
         assert_eq!(rows[0].sans, vec!["e4".to_string()]);
+        assert_eq!(rows[0].tags, vec!["Apertura".to_string(), "Bianco".to_string()]);
+        assert_eq!(rows[0].color, "#4f9dd9");
     }
 
     #[test]
