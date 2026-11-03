@@ -722,6 +722,7 @@ function submitBlindfoldAnswer() {
     }));
     $("#blindfold-answer").value = "";
     $("#blindfold-status").textContent = "Mossa non corretta. Riprova: " + (added ? "ho creato una flashcard sull'errore." : "la carta per questo errore esiste già.");
+    renderAllTools();
     showToast("Risposta errata: prova ancora.");
     return;
   }
@@ -820,6 +821,7 @@ function commitSelectedMove(selectedMove) {
         actualSan: played.san,
         source: "repertoire-training",
       }));
+      renderAllTools();
       selectedSquare = null;
       renderBoard();
       showToast("Non è la mossa della linea. Riprova.");
