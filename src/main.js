@@ -563,7 +563,7 @@ function renderFlashcards() {
   for (const [grade, label] of grades) {
     const button = makeElement("button", "button small ghost grade-" + grade, label);
     button.type = "button";
-    button.addEventListener("click", () => {
+    button.addEventListener("click", async () => {
       try {
         studyCards = studyCards.map((card) => card.id === current.id ? gradeStudyCard(card, grade) : card);
         await persistStudyCards();
