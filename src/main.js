@@ -678,7 +678,7 @@ function captureMoveAnimation(move) {
 }
 
 function animateBoardMove(snapshot) {
-  if (!snapshot || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  if (!snapshot || document.documentElement.dataset.motion === "reduced" || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
   for (const item of snapshot.moving) {
     const newPiece = boardElement.querySelector('[data-square="' + (item.to || item.square) + '"] .piece');
     if (!newPiece) continue;
@@ -784,7 +784,7 @@ function moveBoardDrag(event) {
 function endBoardDrag(event) {
   if (!dragState || event.pointerId !== dragState.pointerId) return;
   const state = dragState;
-  const targetSquare = boardSquareAtPoint(event.clientX, event.clientY)?.dataset.square || state.target;
+  const targetSquare = boardSquareAtPoint(event.clientX, event.clientY)?.dataset.square || null;
   if (!state.active) {
     dragState = null;
     return;
@@ -1238,6 +1238,35 @@ function setTrainingStatus(message, type = "normal") {
   status.classList.toggle("success", type === "success");
 }
 
+function renderTrainingHistory() {
+  const target = $("#training-move-history");
+  target.replaceChildren();
+  const moves = trainingMoves.slice(0, trainingIndex);
+  if (!moves.length) {
+    const empty = document.createElement("span");
+    empty.className = "empty-state";
+    empty.textContent = "Le mosse giocate appariranno qui.";
+    target.append(empty);
+    return;
+  }
+  for (let index = 0; index < moves.length; index += 2) {
+    const row = document.createElement("div");
+    row.className = "move-row";
+    const number = document.createElement("span");
+    number.className = "move-number";
+    number.textContent = Math.floor(index / 2) + 1 + ".";
+    row.append(number);
+    for (let offset = 0; offset < 2 && index + offset < moves.length; offset += 1) {
+      const move = moves[index + offset];
+      const san = document.createElement("span");
+      san.className = "san";
+      san.textContent = move.san;
+      row.append(san);
+    }
+    target.append(row);
+  }
+}
+
 function renderTrainingSession() {
   const card = $("#training-session-card");
   if (!card) return;
@@ -1261,6 +1290,7 @@ function renderTrainingSession() {
   $("#training-moves-correct").textContent = String(Math.max(0, trainingIndex - trainingRevealCount));
   $("#training-hints").textContent = String(trainingHints);
   $("#training-elapsed").textContent = formatElapsed(trainingElapsedSeconds);
+  renderTrainingHistory();
   $("#training-session-heading").textContent = completed ? "Linea completata" : "Sessione";
   $("#training-hint").hidden = completed;
   $("#training-reveal").hidden = completed;
