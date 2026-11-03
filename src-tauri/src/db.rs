@@ -1159,11 +1159,17 @@ pub fn list_exam_attempts(database: State<'_, Database>) -> Result<Vec<ExamAttem
 
 
 #[tauri::command]
-pub fn get_app_setting(database: State<'_, Database>, key: String) -> Result<Option<String>, String> {
-    if key.trim().is_empty() || key.len() > 200 {
-        return Err("Chiave impostazione non valida.".into());
+fn validate_app_setting(key: &str, value: Option<&str>) -> Result<(), String> {
+    if key.trim().is_empty() || key.len() > 200
+        || value.is_some_and(|item| item.len() > 20_000_000)
+    {
+        return Err("Impostazione non valida o troppo grande.".into());
     }
-    let connection = database.0.lock().map_err(|_| "Database non disponibile.".to_string())?;
+    Ok(())
+}
+
+fn get_app_setting_with_connection(connection: &Connection, key: &str) -> Result<Option<String>, String> {
+    validate_app_setting(key, None)?;
     connection.query_row(
         "SELECT value FROM app_settings WHERE key = ?1",
         params![key],
@@ -1171,12 +1177,8 @@ pub fn get_app_setting(database: State<'_, Database>, key: String) -> Result<Opt
     ).optional().map_err(|error| error.to_string())
 }
 
-#[tauri::command]
-pub fn set_app_setting(database: State<'_, Database>, key: String, value: String) -> Result<bool, String> {
-    if key.trim().is_empty() || key.len() > 200 || value.len() > 20_000_000 {
-        return Err("Impostazione non valida o troppo grande.".into());
-    }
-    let connection = database.0.lock().map_err(|_| "Database non disponibile.".to_string())?;
+fn set_app_setting_with_connection(connection: &Connection, key: &str, value: &str) -> Result<bool, String> {
+    validate_app_setting(key, Some(value))?;
     connection.execute(
         "INSERT INTO app_settings (key, value, updated_at)
          VALUES (?1, ?2, ?3)
@@ -1185,6 +1187,19 @@ pub fn set_app_setting(database: State<'_, Database>, key: String, value: String
     ).map_err(|error| error.to_string())?;
     Ok(true)
 }
+
+#[tauri::command]
+pub fn get_app_setting(database: State<'_, Database>, key: String) -> Result<Option<String>, String> {
+    let connection = database.0.lock().map_err(|_| "Database non disponibile.".to_string())?;
+    get_app_setting_with_connection(&connection, &key)
+}
+
+#[tauri::command]
+pub fn set_app_setting(database: State<'_, Database>, key: String, value: String) -> Result<bool, String> {
+    let connection = database.0.lock().map_err(|_| "Database non disponibile.".to_string())?;
+    set_app_setting_with_connection(&connection, &key, &value)
+}
+
 
 #[cfg(test)]
 mod tests {
@@ -1525,5 +1540,23 @@ mod tests {
         let moves: i64 = connection.query_row("SELECT COUNT(*) FROM repertoire_moves", [], |r| r.get(0)).unwrap();
         assert_eq!(positions, 0);
         assert_eq!(moves, 0);
+    }
+    #[test]
+    fn app_settings_are_persisted_and_validated() {
+        let connection = memory_db();
+        assert_eq!(get_app_setting_with_connection(&connection, "study-cards").unwrap(), None);
+        assert!(set_app_setting_with_connection(&connection, "study-cards", "{\"cards\":[]}").unwrap());
+        assert_eq!(
+            get_app_setting_with_connection(&connection, "study-cards").unwrap(),
+            Some("{\"cards\":[]}".to_string())
+        );
+        assert!(set_app_setting_with_connection(&connection, "study-cards", "{\"cards\":[1]}").unwrap());
+        assert_eq!(
+            get_app_setting_with_connection(&connection, "study-cards").unwrap(),
+            Some("{\"cards\":[1]}".to_string())
+        );
+        assert!(get_app_setting_with_connection(&connection, "").is_err());
+        assert!(set_app_setting_with_connection(&connection, " ", "value").is_err());
+        assert!(set_app_setting_with_connection(&connection, "large", &"x".repeat(20_000_001)).is_err());
     }
 }
