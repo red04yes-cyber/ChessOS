@@ -230,3 +230,67 @@ h1 { margin: 9px 0 5px; font-size: clamp(24px, 2.2vw, 31px); line-height: 1.1; l
 @media (max-width: 850px) {
   .variation-list { max-height: 180px; }
 }
+
+
+/* Study tools: FSRS flashcards, blindfold, weakness heatmap and opponent report */
+.tools-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 20px;
+}
+.feature-card { min-width: 0; }
+.tool-description { color: #8c9bad; font-size: 10px; line-height: 1.6; margin: -4px 0 12px; }
+.tool-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 9px; }
+.tool-output { color: #bdc8d5; font-size: 10px; line-height: 1.6; margin-top: 11px; overflow-wrap: anywhere; }
+.flashcard-review { display: grid; gap: 9px; margin-top: 10px; }
+.flashcard-face, .flashcard-answer {
+  border: 1px solid #3a485a;
+  border-radius: 7px;
+  padding: 13px;
+  color: #e5ebf2;
+  background: #121a25;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.flashcard-answer { border-color: #48614f; background: #1b2a27; color: #d8eadf; font-weight: 700; }
+.grade-again { border-color: #92524d; }
+.grade-hard { border-color: #9a7541; }
+.grade-good { border-color: #557e66; }
+.grade-easy { border-color: #4a8190; }
+.blindfold-input-wrap { margin-top: 13px; padding-top: 12px; border-top: 1px solid #303c4b; }
+.blindfold-input-wrap[hidden] { display: none; }
+.blindfold-input-wrap .tool-actions { align-items: stretch; }
+.blindfold-input-wrap input { flex: 1; min-width: 90px; }
+.heatmap-list, .transposition-list { display: grid; gap: 6px; margin-top: 10px; max-height: 300px; overflow: auto; }
+.heatmap-row {
+  display: grid;
+  grid-template-columns: 9px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 9px;
+  border: 1px solid #303d4d;
+  border-radius: 6px;
+  background: #192330;
+}
+.heatmap-marker { width: 8px; height: 8px; border-radius: 50%; background: #677587; }
+.heatmap-marker.weak { background: #d46d62; box-shadow: 0 0 8px #d46d6250; }
+.heatmap-marker.learning { background: #d4a44d; }
+.heatmap-marker.stable { background: #70af86; }
+.heatmap-position { min-width: 0; display: grid; gap: 3px; }
+.heatmap-position strong { color: #cbd5e1; font: 10px/1.35 ui-monospace, SFMono-Regular, Consolas, monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.heatmap-position small, .heatmap-state { color: #8695a8; font-size: 9px; }
+.heatmap-state { text-align: right; }
+.report-summary { color: #e1e8ef; font-weight: 700; }
+.report-results { color: #9eacbd; }
+.report-heading { display: block; color: #c6d0dd; font-size: 10px; margin: 10px 0 5px; }
+.report-row { color: #9eacbd; font-size: 10px; line-height: 1.5; padding: 4px 0; border-bottom: 1px solid #2b3745; overflow-wrap: anywhere; }
+.tool-warning { color: #e0b46d; font-size: 10px; }
+.transposition-entry { padding: 10px; border: 1px solid #39495b; border-radius: 7px; background: #192330; }
+.transposition-entry strong { display: block; color: #e0c184; font-size: 10px; }
+.transposition-entry small { display: block; margin-top: 5px; color: #8292a5; font: 9px ui-monospace, SFMono-Regular, Consolas, monospace; overflow-wrap: anywhere; }
+.transposition-path { color: #c2ccd8; font-size: 10px; line-height: 1.5; margin: 8px 0 0; overflow-wrap: anywhere; }
+.transposition-path + .transposition-path { padding-top: 7px; border-top: 1px solid #303d4d; }
+@media (max-width: 850px) {
+  .tools-grid { grid-template-columns: 1fr; }
+}
