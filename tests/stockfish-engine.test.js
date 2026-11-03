@@ -16,6 +16,8 @@ test("parses centipawn evaluation, best SAN and a legal principal variation", ()
   assert.equal(parsed.bestSan, "e4");
   assert.deepEqual(parsed.pvUci, ["e2e4", "e7e5", "g1f3"]);
   assert.deepEqual(parsed.pvSan, ["e4", "e5", "Nf3"]);
+  assert.equal(parsed.alternatives.length, 2);
+  assert.equal(parsed.scoreGapCp, 24);
 });
 
 test("prefers the main MultiPV line and parses forced-mate scores", () => {
