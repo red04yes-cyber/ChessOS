@@ -80,7 +80,7 @@ test("weakness heatmap marks low-accuracy repertoire positions and flags missing
   assert.equal(report.totalMoves, 2);
   const weak = report.positions.find((position) => position.key === e4.from);
   assert.equal(weak.accuracy, 33);
-  assert.equal(weak.label, "Da consolidare");
+  assert.equal(weak.label, "Debolezza alta");
   const unknown = report.positions.find((position) => position.key === e5.from);
   assert.equal(unknown.weaknessScore, null);
   assert.equal(unknown.label, "Non ancora misurabile");
