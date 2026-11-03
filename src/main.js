@@ -88,7 +88,9 @@ function gameStatus(chess) {
 
 function positionForPly(ply) {
   if (!Number.isInteger(ply) || ply < 0 || ply >= studioStates.length) return;
-  if (!game.load(studioStates[ply])) {
+  try {
+    game.load(studioStates[ply]);
+  } catch {
     showToast("Non riesco a ripristinare questa posizione.");
     return;
   }
