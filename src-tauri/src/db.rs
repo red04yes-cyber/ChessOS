@@ -528,10 +528,13 @@ pub fn replace_study_cards(
                 let scheduled_days = review.get("scheduledDays").and_then(|value| value.as_f64());
                 let stability = review.get("stability").and_then(|value| value.as_f64());
                 let difficulty = review.get("difficulty").and_then(|value| value.as_f64());
-                let state = review.get("state").and_then(|value| value.as_str());
+                let state = review.get("state").map(|value| match value {
+                    serde_json::Value::String(text) => text.clone(),
+                    other => other.to_string(),
+                });
                 review_statement.execute(params![
                     review_id, card_id, rating, reviewed_at, review_due,
-                    scheduled_days, stability, difficulty, state
+                    scheduled_days, stability, difficulty, state.as_deref()
                 ]).map_err(|error| error.to_string())?;
             }
         }
