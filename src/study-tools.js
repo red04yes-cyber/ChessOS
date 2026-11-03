@@ -48,7 +48,7 @@ export function createErrorFlashcard({ fen, expectedSan, actualSan, source = "ga
     source,
     fen,
     positionKey: key,
-    front: "Da questa posizione, quale continuazione prevede il repertorio?",
+    front: actualSan ? "Nella partita hai giocato " + actualSan + ". Quale continuazione prevede il repertorio?" : "Da questa posizione, quale continuazione prevede il repertorio?",
     back: correct.join(" · "),
     expectedSan: correct,
     actualSan: actualSan || "",
@@ -164,7 +164,22 @@ export function getDueStudyCards(cards, now = new Date()) {
     .sort((a, b) => new Date(a.schedulerCard.due) - new Date(b.schedulerCard.due));
 }
 
+function buildShortestPathMap(tree) {
+  const paths = new Map([[tree.rootId, []]]);
+  const queue = [tree.rootId];
+  while (queue.length) {
+    const nodeId = queue.shift();
+    for (const edge of tree.getOutgoing(nodeId)) {
+      if (paths.has(edge.to)) continue;
+      paths.set(edge.to, [...paths.get(nodeId), edge.id]);
+      queue.push(edge.to);
+    }
+  }
+  return paths;
+}
+
 export function buildWeaknessHeatmap(tree, cards, now = new Date()) {
+  const paths = buildShortestPathMap(tree);
   const cardsByKey = new Map();
   for (const card of cards) {
     const list = cardsByKey.get(card.positionKey) || [];
@@ -185,6 +200,7 @@ export function buildWeaknessHeatmap(tree, cards, now = new Date()) {
       nodeId: node.id,
       fen: node.fen,
       key: node.key,
+      line: (paths.get(node.id) || []).map((edgeId) => tree.getEdge(edgeId)?.san).filter(Boolean).join(" "),
       incoming: node.incoming.length,
       outgoing: node.outgoing.length,
       cardCount: related.length,
@@ -201,6 +217,7 @@ export function analyzeOpponentPgn(pgn, side = "black") {
   if (!games.length) throw new Error("Incolla le partite PGN dell'avversario.");
   const openings = new Map();
   const firstMoves = new Map();
+  const moveSequences = new Map();
   const results = { wins: 0, draws: 0, losses: 0, unknown: 0 };
   const ignoredGames = [];
   let totalPlies = 0;
@@ -228,6 +245,8 @@ export function analyzeOpponentPgn(pgn, side = "black") {
     const opponentMoves = moves.filter((move) => move.color === sideCode);
     if (opponentMoves[0]) {
       firstMoves.set(opponentMoves[0].san, (firstMoves.get(opponentMoves[0].san) || 0) + 1);
+      const sequence = opponentMoves.slice(0, 3).map((move) => move.san).join(" ");
+      moveSequences.set(sequence, (moveSequences.get(sequence) || 0) + 1);
     }
 
     const result = headerValue(source, "Result");
@@ -253,31 +272,19 @@ export function analyzeOpponentPgn(pgn, side = "black") {
     results,
     openings: top(openings),
     firstMoves: top(firstMoves),
+    moveSequences: top(moveSequences),
   };
 }
 
-function shortestPathToNode(tree, targetId) {
-  const queue = [{ nodeId: tree.rootId, path: [] }];
-  const visited = new Set([tree.rootId]);
-  while (queue.length) {
-    const current = queue.shift();
-    if (current.nodeId === targetId) return current.path;
-    for (const edge of tree.getOutgoing(current.nodeId)) {
-      if (visited.has(edge.to)) continue;
-      visited.add(edge.to);
-      queue.push({ nodeId: edge.to, path: [...current.path, edge.id] });
-    }
-  }
-  return null;
-}
 
 export function getTranspositionGroups(tree) {
+  const shortestPaths = buildShortestPathMap(tree);
   const groups = [];
   for (const node of tree.nodes.values()) {
     if (node.incoming.length < 2) continue;
     const paths = [];
     for (const edge of tree.getIncoming(node.id)) {
-      const prefix = shortestPathToNode(tree, edge.from);
+      const prefix = shortestPaths.get(edge.from);
       if (!prefix) continue;
       const ids = [...prefix, edge.id];
       const sans = ids.map((id) => tree.getEdge(id)?.san).filter(Boolean);
