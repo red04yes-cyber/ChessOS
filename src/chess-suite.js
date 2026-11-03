@@ -251,6 +251,9 @@ export function initializeChessSuite({ getCurrentTree, loadGeneratedTree, getCur
   const engine = stockfish;
   let endgameGame = new Chess();
   let endgameBoard;
+  let endgameHumanColor = "w";
+  let endgameSparringActive = false;
+  let endgameSparringBusy = false;
   let sparringGame = new Chess();
   let sparringBoard;
   let sparringColor = "w";
@@ -340,17 +343,22 @@ export function initializeChessSuite({ getCurrentTree, loadGeneratedTree, getCur
     } catch (error) { message("#endgame-evaluation", "Analisi non disponibile: " + error.message); }
     finally { setButtonBusy(button, false); }
   }
-  async function engineEndgameMove() {
+  async function engineEndgameMove({ automatic = false } = {}) {
+    if (endgameSparringBusy || endgameGame.isGameOver()) return;
+    endgameSparringBusy = true;
     const button = $("#endgame-engine-move");
     setButtonBusy(button, true, "Il motore sta giocando…");
     try {
-      const result = await engine.bestMove(endgameGame.fen(), 12);
+      const result = await engine.bestMove(endgameGame.fen(), 12, Number($("#endgame-elo")?.value) || 1700);
       if (!result.bestmove || result.bestmove === "(none)") throw new Error("La posizione non ha mosse legali.");
       endgameGame.move(parseUci(result.bestmove));
       endgameBoard.render();
-      message("#endgame-status", "Mossa Stockfish: " + result.bestSan + ". " + (endgameGame.isGameOver() ? "Partita terminata." : "Continua lo studio."));
+      message("#endgame-status", "Stockfish: " + result.bestSan + ". " + (endgameGame.isGameOver() ? "Partita terminata." : "Tocca al " + (endgameGame.turn() === "w" ? "Bianco" : "Nero") + "."));
     } catch (error) { message("#endgame-status", error.message); }
-    finally { setButtonBusy(button, false); }
+    finally {
+      endgameSparringBusy = false;
+      setButtonBusy(button, false);
+    }
   }
   function markEndgameMastered() {
     const progress = endgameCards[endgameLesson.id] || { attempts: 0, completed: false, mastered: false };
@@ -602,6 +610,26 @@ export function initializeChessSuite({ getCurrentTree, loadGeneratedTree, getCur
 
   function endgameMoveChanged(chess) {
     message("#endgame-status", `Mossa: ${chess.history().at(-1)} · ${chess.isGameOver() ? "Partita terminata." : (chess.turn() === "w" ? "Bianco" : "Nero") + " al tratto."}`);
+    if (endgameSparringActive && !chess.isGameOver() && chess.turn() !== endgameHumanColor) {
+      void engineEndgameMove({ automatic: true });
+    }
+  }
+
+  function startEndgameSparring() {
+    try {
+      endgameHumanColor = $("#endgame-side").value === "black" ? "b" : "w";
+      endgameGame = new Chess($("#endgame-fen").value.trim());
+      endgameSparringActive = true;
+      endgameBoard.render();
+      message("#endgame-status", "Allenamento finale avviato · tu giochi " + (endgameHumanColor === "w" ? "Bianco" : "Nero") + ".");
+      if (endgameGame.turn() !== endgameHumanColor) void engineEndgameMove({ automatic: true });
+    } catch (error) { message("#endgame-status", "FEN non valida: " + error.message); }
+  }
+
+  function stopEndgameSparring() {
+    endgameSparringActive = false;
+    message("#endgame-status", "Allenamento contro Stockfish terminato. Puoi continuare a esplorare la posizione liberamente.");
+    endgameBoard.render();
   }
 
   function initialize() {
@@ -618,14 +646,16 @@ export function initializeChessSuite({ getCurrentTree, loadGeneratedTree, getCur
     }
     $("#endgame-topic")?.addEventListener("change", () => { renderEndgameLesson(); loadEndgamePosition(); });
     $("#endgame-load")?.addEventListener("click", loadEndgamePosition);
-    endgameBoard = createBoardController($("#endgame-board"), () => endgameGame, endgameMoveChanged);
+    endgameBoard = createBoardController($("#endgame-board"), () => endgameGame, endgameMoveChanged, () => !endgameSparringBusy && (!endgameSparringActive || endgameGame.turn() === endgameHumanColor));
     sparringBoard = createBoardController($("#sparring-board"), () => sparringGame, onSparringMove, () => !sparringBusy && sparringGame.turn() === sparringColor);
     tacticsBoard = createBoardController($("#tactics-board"), () => tacticsGame || new Chess(), onTacticMove);
     await loadEndgameProgress();
     importedPgn = await getAppSetting(GAME_IMPORT_KEY) || "";
     populateEndgameTopics();
     $("#endgame-analyze")?.addEventListener("click", analyzeEndgame);
-    $("#endgame-engine-move")?.addEventListener("click", engineEndgameMove);
+    $("#endgame-engine-move")?.addEventListener("click", () => { void engineEndgameMove(); });
+    $("#endgame-start-practice")?.addEventListener("click", startEndgameSparring);
+    $("#endgame-stop-practice")?.addEventListener("click", stopEndgameSparring);
     $("#endgame-tablebase")?.addEventListener("click", probeEndgameTablebase);
     $("#endgame-mastered")?.addEventListener("click", markEndgameMastered);
     $("#sparring-start")?.addEventListener("click", startSparring);
