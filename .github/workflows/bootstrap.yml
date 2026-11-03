@@ -13,15 +13,25 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Reconstruct the source tree
+      - name: Reconstruct and publish the source tree
         shell: pwsh
         run: |
-          $archive = "chessos-source-0.7.0.tar.gz.b64"
-          if (Test-Path $archive) {
-            $encoded = Get-Content $archive -Raw
+          $parts = @(
+            "chessos-source-0.7.0.tar.gz.b64.part1",
+            "chessos-source-0.7.0.tar.gz.b64.part2",
+            "chessos-source-0.7.0.tar.gz.b64.part3",
+            "chessos-source-0.7.0.tar.gz.b64.part4",
+            "chessos-source-0.7.0.tar.gz.b64.part5",
+            "chessos-source-0.7.0.tar.gz.b64.part6",
+            "chessos-source-0.7.0.tar.gz.b64.part7"
+          )
+          if (Test-Path $parts[0]) {
+            $encoded = ($parts | ForEach-Object { Get-Content $_ -Raw }) -join ""
             [IO.File]::WriteAllBytes("chessos-source-0.7.0.tar.gz", [Convert]::FromBase64String($encoded))
             tar -xzf chessos-source-0.7.0.tar.gz -C .
-            Remove-Item $archive, "chessos-source-0.7.0.tar.gz"
+            Remove-Item $parts
+            Remove-Item "chessos-source-0.7.0.tar.gz"
+            Remove-Item ".github/workflows/bootstrap.yml" -ErrorAction SilentlyContinue
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             git add -A
@@ -36,6 +46,19 @@ jobs:
           targets: x86_64-pc-windows-msvc
       - name: Install dependencies and generate Stockfish assets
         run: npm install --no-audit --no-fund
+      - name: Commit dependency lockfile
+        shell: pwsh
+        run: |
+          if (Test-Path "package-lock.json") {
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add package-lock.json
+            git diff --cached --quiet
+            if ($LASTEXITCODE -eq 1) {
+              git commit -m "chore: lock JavaScript dependencies"
+              git push origin HEAD:main
+            }
+          }
       - name: Verify dependencies and Stockfish assets
         run: |
           npm ls chess.js ts-fsrs stockfish react react-dom
