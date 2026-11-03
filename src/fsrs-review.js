@@ -4,6 +4,7 @@ import { RepertoireTree } from "./repertoire-tree.js";
 
 export const FSRS_PACKAGE_VERSION = "5.4.2";
 export const FSRS_MODEL_VERSION = "FSRS-6";
+export const FSRS_CARD_SCHEMA_VERSION = 1;
 export const NEW_CARDS_PER_DAY = 20;
 
 export const FSRS_SETTINGS = Object.freeze({
@@ -36,6 +37,9 @@ export function createFsrsCard(now = new Date()) {
 export function serializeFsrsCard(card) {
   return {
     ...card,
+    fsrsCardSchemaVersion: FSRS_CARD_SCHEMA_VERSION,
+    fsrsModelVersion: FSRS_MODEL_VERSION,
+    fsrsPackageVersion: FSRS_PACKAGE_VERSION,
     due: new Date(card.due).toISOString(),
     last_review: card.last_review ? new Date(card.last_review).toISOString() : null,
   };
@@ -43,14 +47,29 @@ export function serializeFsrsCard(card) {
 
 export function hydrateFsrsCard(card) {
   if (!card || typeof card !== "object") throw new TypeError("Stato FSRS mancante.");
-  const due = new Date(card.due);
+  if (card.fsrsCardSchemaVersion && card.fsrsCardSchemaVersion !== FSRS_CARD_SCHEMA_VERSION) {
+    throw new RangeError("Versione dello schema carta FSRS non supportata.");
+  }
+  if (card.fsrsModelVersion && card.fsrsModelVersion !== FSRS_MODEL_VERSION) {
+    throw new RangeError("Versione del modello FSRS non supportata.");
+  }
+  if (card.fsrsPackageVersion && card.fsrsPackageVersion !== FSRS_PACKAGE_VERSION) {
+    throw new RangeError("Versione del pacchetto FSRS non supportata.");
+  }
+  const {
+    fsrsCardSchemaVersion: _schemaVersion,
+    fsrsModelVersion: _modelVersion,
+    fsrsPackageVersion: _packageVersion,
+    ...state
+  } = card;
+  const due = new Date(state.due);
   if (Number.isNaN(due.getTime())) throw new TypeError("Scadenza FSRS non valida.");
-  const lastReview = card.last_review ? new Date(card.last_review) : undefined;
+  const lastReview = state.last_review ? new Date(state.last_review) : undefined;
   if (lastReview && Number.isNaN(lastReview.getTime())) {
     throw new TypeError("Data dell'ultimo ripasso non valida.");
   }
   return {
-    ...card,
+    ...state,
     due,
     last_review: lastReview,
   };
