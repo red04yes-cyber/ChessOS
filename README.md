@@ -70,7 +70,7 @@ npm run tauri:build
 
 The NSIS installer is configured for a per-user installation (no administrator prompt by default), creates a Start Menu entry, and downloads the small WebView2 bootstrapper if the runtime is missing. The frontend and installer are also checked by the GitHub Actions workflow on pushes and pull requests to `main`.
 
-The installer, when a successful CI run produces it, is uploaded as the `chess-os-windows-installer` workflow artifact. A successful build has not yet been independently verified.
+The installer is built and validated by the Windows CI workflow; successful runs upload it as the `chess-os-windows-installer` workflow artifact together with its SHA-256 checksum.
 
 ## Stockfish analysis
 
