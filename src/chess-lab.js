@@ -81,6 +81,7 @@ export function initChessLab(options) {
   let openingController = null;
   const openingCache = new Map();
   let tokenInMemory = "";
+  let searchBusy = false;
 
   function setStatus(selector, message, isError = false) {
     const element = $(selector);
@@ -116,28 +117,34 @@ export function initChessLab(options) {
   }
 
   async function searchPosition(fen, depth) {
-    await ensureEngine();
-    const requestId = ++requestSequence;
-    let resolveSearch;
-    let rejectSearch;
-    const promise = new Promise((resolve, reject) => { resolveSearch = resolve; rejectSearch = reject; });
-    const search = { info: null, resolve: resolveSearch, reject: rejectSearch, timer: null };
-    search.timer = window.setTimeout(() => {
-      if (pending.delete(requestId)) {
-        void invoke("stockfish_stop_analysis").catch(() => {});
-        rejectSearch(new Error("Timeout nella risposta di Stockfish."));
-      }
-    }, 60_000);
-    pending.set(requestId, search);
+    if (searchBusy) throw new Error("Stockfish è già impegnato in un'altra analisi.");
+    searchBusy = true;
     try {
-      await invoke("stockfish_analyze", { fen, depth, multiPv: 1, requestId });
-    } catch (error) {
-      if (pending.delete(requestId)) {
-        window.clearTimeout(search.timer);
-        rejectSearch(error);
+      await ensureEngine();
+      const requestId = ++requestSequence;
+      let resolveSearch;
+      let rejectSearch;
+      const promise = new Promise((resolve, reject) => { resolveSearch = resolve; rejectSearch = reject; });
+      const search = { info: null, resolve: resolveSearch, reject: rejectSearch, timer: null };
+      search.timer = window.setTimeout(() => {
+        if (pending.delete(requestId)) {
+          void invoke("stockfish_stop_analysis").catch(() => {});
+          rejectSearch(new Error("Timeout nella risposta di Stockfish."));
+        }
+      }, 60_000);
+      pending.set(requestId, search);
+      try {
+        await invoke("stockfish_analyze", { fen, depth, multiPv: 1, requestId });
+      } catch (error) {
+        if (pending.delete(requestId)) {
+          window.clearTimeout(search.timer);
+          rejectSearch(error);
+        }
       }
+      return await promise;
+    } finally {
+      searchBusy = false;
     }
-    return promise;
   }
 
   function renderReviewRows(rows, total, truncated) {
