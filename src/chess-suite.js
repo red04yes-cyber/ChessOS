@@ -536,6 +536,8 @@ export function initializeChessSuite({ getCurrentTree, loadGeneratedTree, getCur
       const phase = index < 20 ? "Apertura" : index < 60 ? "Mediogioco" : "Finale";
       analyzed.push({
         ply: index + 1,
+        beforeFen: move.before,
+        afterFen: move.after,
         moveNumber: Math.floor(index / 2) + 1,
         color: move.color === "w" ? "white" : "black",
         san: move.san,

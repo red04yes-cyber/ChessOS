@@ -570,21 +570,23 @@ h1 { margin: 9px 0 5px; font-size: clamp(24px, 2.2vw, 31px); line-height: 1.1; l
 .opponent-report-toolbar .text-input { width:min(240px, 100%); }
 .opponent-report { display:grid; gap:12px; margin-top:12px; }
 .opponent-report-header h3 { margin-bottom:3px; }
-.opponent-report-metrics { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:8px; }
+.opponent-report-metrics { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:8px; }
 .opponent-report-metric { display:grid; gap:3px; padding:10px 12px; border:1px solid #303d4d; border-radius:7px; background:#192330; }
 .opponent-report-metric span,.opponent-report-metric small { color:#91a0b2; font-size:10px; }
 .opponent-report-metric strong { color:#e7c16e; font-size:20px; }
-.opponent-report-columns { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
+.opponent-report-columns { display:grid; grid-template-columns:repeat(auto-fit,minmax(270px,1fr)); gap:12px; }
 .opponent-report-section { min-width:0; padding:10px 12px; border:1px solid #303d4d; border-radius:7px; background:#19212c; }
 .opponent-report-row { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:8px; align-items:center; padding:7px 0; border-top:1px solid #2a3542; font-size:10px; }
 .opponent-report-row strong { color:#dce3ec; font-weight:600; }
 .opponent-report-row > span { color:#98a7b8; text-align:right; }
 .opponent-month-row { grid-template-columns:90px minmax(60px,1fr) auto; }
 .opponent-month-bar { display:block; height:6px; width:var(--month-share); min-width:3px; border-radius:8px; background:#e7b64c; }
+.opponent-rating-row { grid-template-columns:72px minmax(50px,1fr) minmax(120px,auto); }
+.opponent-rating-bar { display:block; height:7px; width:var(--rating-share); min-width:5px; border-radius:8px; background:linear-gradient(90deg,#738a75,#e7b64c); }
 .opponent-coach-note { margin:0; padding:10px 12px; border-left:3px solid #e7b64c; background:#1a2530; color:#c1ccd8; font-size:11px; line-height:1.5; }
 .opponent-insight-title { margin:12px 0 4px; color:var(--text); font-size:10px; }
 .opponent-insight { margin:4px 0; color:var(--muted); font-size:10px; line-height:1.5; }
-@media (max-width:760px) { .opponent-report-metrics { grid-template-columns:repeat(2,minmax(0,1fr)); } .opponent-report-columns { grid-template-columns:1fr; } }
+@media (max-width:760px) { .opponent-report-metrics { grid-template-columns:repeat(2,minmax(0,1fr)); } .opponent-report-columns { grid-template-columns:1fr; } .opponent-rating-row { grid-template-columns:65px minmax(40px,1fr); } .opponent-rating-row span:last-child { grid-column:2; text-align:left; } }
 .game-analysis-toolbar { display: grid; grid-template-columns: minmax(220px, 1fr) auto auto auto; align-items: end; gap: 8px; margin-top: 10px; }
 .game-analysis-toolbar .field-label { margin: 0; }
 .game-analysis-toolbar .text-input { width: 100%; }
@@ -609,6 +611,19 @@ h1 { margin: 9px 0 5px; font-size: clamp(24px, 2.2vw, 31px); line-height: 1.1; l
 .game-move-row:nth-child(odd) { background: var(--surface-1); }
 .game-move-row.flagged { color: #e9ba72; }
 .game-move-row strong { color: var(--text); }
+.game-replay { display:grid; grid-template-columns:minmax(150px,210px) minmax(0,1fr); align-items:center; gap:8px 12px; margin:8px 0; }
+.game-replay-board { display:grid; grid-template-columns:repeat(8,minmax(0,1fr)); aspect-ratio:1; overflow:hidden; border:2px solid var(--border); border-radius:5px; }
+.game-replay-square { display:grid; place-items:center; min-width:0; font-family:"Segoe UI Symbol","Noto Sans Symbols 2",serif; font-size:clamp(15px,2vw,28px); line-height:1; }
+.game-replay-square.light { background:#ded8c7; }
+.game-replay-square.dark { background:#82968a; }
+.game-replay-square.white-piece { color:#fff; text-shadow:0 1px 2px #333; }
+.game-replay-square.black-piece { color:#202721; }
+.game-replay-controls { display:flex; align-items:center; flex-wrap:wrap; gap:6px; }
+.game-replay-position { flex:1; color:var(--text); font-size:10px; text-align:center; }
+.game-replay-notation { grid-column:2; margin:0; color:var(--muted); font-size:10px; }
+.game-move-row { cursor:pointer; }
+.game-move-row.selected { outline:1px solid var(--accent-strong); background:color-mix(in srgb,var(--accent) 12%,var(--surface-1)); }
+.game-move-row:focus-visible { outline:2px solid var(--accent-strong); outline-offset:-2px; }
 #game-analysis-status { min-height: 1.5em; }
 #chess-lab-tools[hidden] { display: none !important; }
 @media (max-width: 850px) {
@@ -617,6 +632,7 @@ h1 { margin: 9px 0 5px; font-size: clamp(24px, 2.2vw, 31px); line-height: 1.1; l
   .game-analysis-toolbar .field-label { grid-column: 1 / -1; }
   .game-move-row { grid-template-columns: 75px 1fr; }
   .game-move-row span:last-child { grid-column: 2; }
+  .game-replay { grid-template-columns:minmax(130px,180px) minmax(0,1fr); }
 }
 @media print {
   body.print-game-analysis { background: #fff !important; color: #111 !important; }
@@ -1299,6 +1315,38 @@ body { min-width:0; background:var(--bg); }
 #game-analysis-tool .game-analysis-toolbar { grid-template-columns:minmax(220px,1fr) auto auto auto; align-items:end; }
 .analysis-game-picker { min-width:0; }
 .analysis-game-picker .field-label { margin:0 0 5px; }
+.game-database-tool { grid-column:1 / -1; overflow:hidden; padding:0; }
+.game-database-tool > summary { display:flex; align-items:center; gap:10px; min-height:48px; margin:0; padding:9px 14px; list-style:none; cursor:pointer; }
+.game-database-tool > summary::-webkit-details-marker { display:none; }
+.game-database-tool > summary small { margin-left:auto; color:var(--muted); font-size:10px; font-weight:500; letter-spacing:0; }
+.game-database-tool > summary b { color:var(--accent-strong); font-size:16px; transition:transform .15s ease; }
+.game-database-tool[open] > summary { border-bottom:1px solid var(--border); }
+.game-database-tool[open] > summary b { transform:rotate(45deg); }
+.game-database-content { padding:12px; }
+.game-database-toolbar { display:grid; grid-template-columns:minmax(180px,1.5fr) minmax(130px,.75fr) minmax(140px,.8fr) auto auto; align-items:end; gap:8px; }
+.game-database-field { display:grid; gap:5px; min-width:0; }
+.game-database-field .field-label { margin:0; }
+.game-database-toolbar #game-library-search,.game-database-toolbar #game-library-export { white-space:nowrap; }
+.game-library-list { display:grid; gap:6px; max-height:490px; overflow:auto; margin-top:8px; }
+.game-library-row { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; gap:12px; padding:8px 10px; border:1px solid var(--border); border-radius:7px; background:var(--surface-2); }
+.game-library-details { display:grid; gap:4px; min-width:0; }
+.game-library-details strong { color:var(--text); font-size:11px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.game-library-details span { color:var(--muted); font-size:9px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.game-library-actions { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:5px; }
+.game-library-empty { margin:0; padding:14px; border:1px dashed var(--border); border-radius:6px; color:var(--muted); font-size:11px; }
+.game-library-pagination { display:flex; justify-content:center; align-items:center; gap:10px; margin-top:9px; color:var(--muted); font-size:10px; }
+@media (max-width:900px) {
+  .game-database-toolbar { grid-template-columns:minmax(0,1fr) minmax(0,1fr); }
+  .game-database-toolbar .game-database-field:first-child { grid-column:1 / -1; }
+}
+@media (max-width:580px) {
+  .game-database-toolbar { grid-template-columns:1fr; }
+  .game-database-toolbar .game-database-field:first-child { grid-column:1; }
+  .game-library-row { grid-template-columns:1fr; align-items:start; }
+  .game-library-actions { justify-content:flex-start; }
+  .game-database-tool > summary { flex-wrap:wrap; }
+  .game-database-tool > summary small { flex-basis:calc(100% - 46px); margin:0 0 0 40px; }
+}
 @media(max-width:640px) {
   #game-analysis-tool .game-analysis-toolbar { grid-template-columns:1fr 1fr; }
   .analysis-game-picker { grid-column:1 / -1; }

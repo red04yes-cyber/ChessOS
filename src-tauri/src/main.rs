@@ -47,6 +47,8 @@ fn main() {
             db::set_app_setting,
             external_games::import_online_games,
             external_games::list_imported_games,
+            external_games::search_imported_games,
+            external_games::export_imported_games_pgn,
             external_games::list_profile_games,
             external_games::get_imported_game,
             external_games::delete_imported_game

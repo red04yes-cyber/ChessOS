@@ -70,6 +70,10 @@ let studyGoals = [];
 let examAttempts = [];
 let examAnswers = [];
 let importedGames = [];
+let gameLibraryRecords = [];
+let gameLibraryPage = 0;
+let gameLibraryTotal = 0;
+let gameLibraryRequest = 0;
 let gameAnalysisResults = [];
 let gameAnalysisBusy = false;
 let opponentReportBusy = false;
@@ -1248,6 +1252,109 @@ function renderGameAnalysisChoices() {
   if (importedGames.some((record) => record.id === selectedId)) select.value = selectedId;
 }
 
+function renderGameLibrary() {
+  const list = $("#game-library-list");
+  if (!list) return;
+  list.replaceChildren();
+  const pageSize = 50;
+  $("#game-library-summary").textContent = `${gameLibraryTotal.toLocaleString("it-IT")} ${gameLibraryTotal === 1 ? "partita" : "partite"}`;
+  $("#game-library-page-label").textContent = gameLibraryTotal
+    ? `Pagina ${gameLibraryPage + 1} · ${gameLibraryRecords.length} mostrate`
+    : "Nessuna partita";
+  $("#game-library-previous").disabled = gameLibraryPage === 0;
+  $("#game-library-next").disabled = (gameLibraryPage + 1) * pageSize >= gameLibraryTotal;
+  if (!gameLibraryRecords.length) {
+    const empty = document.createElement("p");
+    empty.className = "game-library-empty";
+    empty.textContent = persistenceMode === "sqlite" ? "Nessuna partita corrisponde ai filtri." : "Archivio disponibile nell'app desktop.";
+    list.append(empty);
+    return;
+  }
+  for (const record of gameLibraryRecords) {
+    const row = document.createElement("article");
+    row.className = "game-library-row";
+    const details = document.createElement("div");
+    details.className = "game-library-details";
+    const title = document.createElement("strong");
+    title.textContent = `${record.white || "Bianco"} – ${record.black || "Nero"}`;
+    const subtitle = document.createElement("span");
+    subtitle.textContent = [record.playedAt || "Data non disponibile", record.opening || "Apertura non classificata", record.result, record.provider === "lichess" ? "Lichess" : "Chess.com", record.sourceUsername].filter(Boolean).join(" · ");
+    details.append(title, subtitle);
+    const actions = document.createElement("div");
+    actions.className = "game-library-actions";
+    const open = document.createElement("button");
+    open.type = "button"; open.className = "button small ghost"; open.textContent = "Apri";
+    open.addEventListener("click", () => { void openImportedGame(record.id); });
+    const analyze = document.createElement("button");
+    analyze.type = "button"; analyze.className = "button small primary"; analyze.textContent = "Analizza";
+    analyze.addEventListener("click", () => { void runImportedGameAnalysis([record]); });
+    const remove = document.createElement("button");
+    remove.type = "button"; remove.className = "button small ghost"; remove.textContent = "Rimuovi";
+    remove.addEventListener("click", () => { void removeImportedGame(record.id, record); });
+    actions.append(open, analyze, remove);
+    row.append(details, actions);
+    list.append(row);
+  }
+}
+
+async function loadGameLibrary(resetPage = false) {
+  if (!$("#game-library-list")) return;
+  if (resetPage) gameLibraryPage = 0;
+  const request = ++gameLibraryRequest;
+  if (persistenceMode !== "sqlite" || !databaseReady) {
+    gameLibraryRecords = [];
+    gameLibraryTotal = 0;
+    $("#game-library-status").textContent = "Apri ChessOS come app desktop per consultare l'archivio locale.";
+    renderGameLibrary();
+    return;
+  }
+  $("#game-library-status").textContent = "Carico le partite…";
+  $("#game-library-search").disabled = true;
+  try {
+    const page = await invoke("search_imported_games", {
+      query: $("#game-library-query").value.trim(),
+      provider: $("#game-library-provider").value,
+      username: $("#game-library-username").value.trim(),
+      limit: 50,
+      offset: gameLibraryPage * 50,
+    });
+    if (request !== gameLibraryRequest) return;
+    gameLibraryRecords = page.games || [];
+    gameLibraryTotal = page.total || 0;
+    $("#game-library-status").textContent = `${gameLibraryTotal.toLocaleString("it-IT")} partite nell'archivio per i filtri selezionati.`;
+    renderGameLibrary();
+  } catch (error) {
+    if (request !== gameLibraryRequest) return;
+    gameLibraryRecords = [];
+    gameLibraryTotal = 0;
+    $("#game-library-status").textContent = "Non riesco a leggere l'archivio: " + (error?.message || String(error));
+    renderGameLibrary();
+  } finally {
+    if (request === gameLibraryRequest) $("#game-library-search").disabled = false;
+  }
+}
+
+async function exportGameLibraryPgn() {
+  const button = $("#game-library-export");
+  button.disabled = true;
+  try {
+    const pgn = await invoke("export_imported_games_pgn", {
+      query: $("#game-library-query").value.trim(),
+      provider: $("#game-library-provider").value,
+      username: $("#game-library-username").value.trim(),
+    });
+    const url = URL.createObjectURL(new Blob([pgn + "\n"], { type: "application/x-chess-pgn;charset=utf-8" }));
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = "chess-os-partite-" + new Date().toISOString().slice(0, 10) + ".pgn";
+    document.body.append(anchor); anchor.click(); anchor.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    $("#game-library-status").textContent = "PGN esportato con i filtri selezionati.";
+  } catch (error) {
+    $("#game-library-status").textContent = "Esportazione non riuscita: " + (error?.message || String(error));
+  } finally { button.disabled = false; }
+}
+
 function playerArchiveProfile(playerName) {
   const games = importedGames.filter((game) => game.white === playerName || game.black === playerName);
   const totals = { games: games.length, wins: 0, draws: 0, losses: 0 };
@@ -1265,6 +1372,70 @@ function addText(parent, tag, className, text) {
   element.textContent = text;
   parent.append(element);
   return element;
+}
+
+function renderGameReplay(article, moves) {
+  if (!moves.length) return;
+  const replay = document.createElement("div");
+  replay.className = "game-replay";
+  const board = document.createElement("div");
+  board.className = "game-replay-board";
+  board.setAttribute("role", "img");
+  board.setAttribute("aria-label", "Scacchiera della revisione partita");
+  const controls = document.createElement("div");
+  controls.className = "game-replay-controls";
+  const previous = addText(controls, "button", "button small ghost", "← Precedente");
+  const positionLabel = addText(controls, "span", "game-replay-position", "Posizione iniziale");
+  const next = addText(controls, "button", "button small ghost", "Successiva →");
+  previous.type = next.type = "button";
+  const notation = addText(replay, "p", "game-replay-notation", "");
+  replay.append(board, controls, notation);
+  article.append(replay);
+  let currentPly = 0;
+  const draw = () => {
+    const fen = currentPly === 0 ? moves[0].beforeFen : moves[currentPly - 1].afterFen;
+    const ranks = String(fen || "").split(/\s+/)[0].split("/");
+    const pieces = { k:"♚", q:"♛", r:"♜", b:"♝", n:"♞", p:"♟", K:"♔", Q:"♕", R:"♖", B:"♗", N:"♘", P:"♙" };
+    board.replaceChildren();
+    ranks.forEach((rank, rowIndex) => {
+      let fileIndex = 0;
+      for (const symbol of rank) {
+        const count = /\d/.test(symbol) ? Number(symbol) : 1;
+        for (let cell = 0; cell < count; cell += 1) {
+          const square = document.createElement("span");
+          square.className = `game-replay-square ${(rowIndex + fileIndex) % 2 ? "light" : "dark"}`;
+          if (cell === 0 && count === 1) {
+            square.textContent = pieces[symbol] || "";
+            square.classList.add(symbol === symbol.toUpperCase() ? "white-piece" : "black-piece");
+          }
+          board.append(square);
+          fileIndex += 1;
+        }
+      }
+    });
+    const last = currentPly ? moves[currentPly - 1] : null;
+    const upcoming = moves[currentPly];
+    positionLabel.textContent = last ? `Dopo ${last.moveNumber}${last.color === "white" ? "." : "…"} ${last.san}` : "Posizione iniziale";
+    notation.textContent = upcoming ? `Mossa successiva: ${upcoming.moveNumber}${upcoming.color === "white" ? "." : "…"} ${upcoming.san}` : "Fine partita";
+    previous.disabled = currentPly === 0;
+    next.disabled = currentPly >= moves.length;
+    article.querySelectorAll(".game-move-row").forEach((row) => row.classList.toggle("selected", Number(row.dataset.ply) === currentPly - 1));
+  };
+  previous.addEventListener("click", () => { currentPly = Math.max(0, currentPly - 1); draw(); });
+  next.addEventListener("click", () => { currentPly = Math.min(moves.length, currentPly + 1); draw(); });
+  article.addEventListener("click", (event) => {
+    const row = event.target.closest(".game-move-row");
+    if (!row || !article.contains(row)) return;
+    currentPly = Number(row.dataset.ply) + 1;
+    draw();
+  });
+  article.addEventListener("keydown", (event) => {
+    const row = event.target.closest(".game-move-row");
+    if (!row || (event.key !== "Enter" && event.key !== " ")) return;
+    event.preventDefault();
+    currentPly = Number(row.dataset.ply) + 1;
+    draw();
+  });
 }
 
 function renderGameAnalysisReports() {
@@ -1323,12 +1494,17 @@ function renderGameAnalysisReports() {
     article.append(profiles);
 
     addText(article, "h4", "game-report-section-title", "Mossa per mossa");
+    renderGameReplay(article, analysis.moves);
     const moveTable = document.createElement("div");
     moveTable.className = "game-move-table";
     for (const move of analysis.moves) {
       const row = document.createElement("div");
       row.className = "game-move-row" + (move.lossCp >= 50 ? " flagged" : "");
       const moveLabel = `${move.moveNumber}${move.color === "white" ? "." : "…"} ${move.san}`;
+      row.dataset.ply = String(move.ply - 1);
+      row.tabIndex = 0;
+      row.setAttribute("role", "button");
+      row.setAttribute("aria-label", `Rivedi ${moveLabel}`);
       const label = move.lossCp >= 300 ? "Errore grave" : move.lossCp >= 100 ? "Errore" : move.lossCp >= 50 ? "Imprecisione" : "Buona";
       addText(row, "strong", "", moveLabel);
       addText(row, "span", "", `Migliore: ${move.bestSan}`);
@@ -1388,6 +1564,7 @@ function renderOpponentReport(games, username) {
   const normalizedName = username.trim().toLocaleLowerCase();
   const stats = { wins: 0, draws: 0, losses: 0, unknown: 0, white: 0, black: 0, whiteWins: 0, whiteGames: 0, blackWins: 0, blackGames: 0 };
   const openings = new Map(), months = new Map(), controls = new Map();
+  const firstMoves = { white: new Map(), black: new Map() }, ratingMonths = new Map();
   for (const item of games) {
     const isWhite = item.white?.toLocaleLowerCase() === normalizedName;
     const isBlack = item.black?.toLocaleLowerCase() === normalizedName;
@@ -1411,10 +1588,32 @@ function renderOpponentReport(games, username) {
     }
     const control = item.timeControl?.trim() || "Non disponibile";
     controls.set(control, (controls.get(control) || 0) + 1);
+    const firstMove = isWhite ? item.whiteFirstMove : item.blackFirstMove;
+    if (firstMove) {
+      const colorMoves = firstMoves[isWhite ? "white" : "black"];
+      const moveStats = colorMoves.get(firstMove) || { games: 0, wins: 0, draws: 0, losses: 0 };
+      moveStats.games += 1;
+      if (won) moveStats.wins += 1; else if (lost) moveStats.losses += 1; else if (item.result === "1/2-1/2") moveStats.draws += 1;
+      colorMoves.set(firstMove, moveStats);
+    }
+    const opponentElo = Number.parseInt(isWhite ? item.whiteElo : item.blackElo, 10);
+    const ratingMonth = (item.playedAt || "").slice(0, 7);
+    if (Number.isFinite(opponentElo) && opponentElo > 0 && /^\d{4}[.-]\d{2}$/.test(ratingMonth)) {
+      const bucket = ratingMonths.get(ratingMonth) || { total: 0, games: 0, high: 0, low: Number.MAX_SAFE_INTEGER };
+      bucket.total += opponentElo; bucket.games += 1; bucket.high = Math.max(bucket.high, opponentElo); bucket.low = Math.min(bucket.low, opponentElo);
+      ratingMonths.set(ratingMonth, bucket);
+    }
   }
   const decided = stats.wins + stats.draws + stats.losses;
   const score = decided ? Math.round((stats.wins + stats.draws / 2) / decided * 100) : null;
   const dates = games.map((item) => item.playedAt).filter(Boolean).sort();
+  const chronological = [...games].filter((item) => item.white?.toLocaleLowerCase() === normalizedName || item.black?.toLocaleLowerCase() === normalizedName).sort((a, b) => (a.playedAt || "").localeCompare(b.playedAt || ""));
+  const recent = chronological.slice(-20);
+  const recentWins = recent.filter((item) => (item.white?.toLocaleLowerCase() === normalizedName && item.result === "1-0") || (item.black?.toLocaleLowerCase() === normalizedName && item.result === "0-1")).length;
+  const recentDraws = recent.filter((item) => item.result === "1/2-1/2").length;
+  const recentScore = recent.length ? Math.round((recentWins + recentDraws / 2) / recent.length * 100) : null;
+  const recentRatings = recent.map((item) => Number.parseInt(item.white?.toLocaleLowerCase() === normalizedName ? item.whiteElo : item.blackElo, 10)).filter((elo) => Number.isFinite(elo) && elo > 0);
+  const recentAverageElo = recentRatings.length ? Math.round(recentRatings.reduce((sum, elo) => sum + elo, 0) / recentRatings.length) : null;
   const header = document.createElement("header"); header.className = "opponent-report-header";
   addText(header, "h3", "game-report-title", `Profilo di ${username}`);
   addText(header, "p", "game-report-caption", `${games.length} partite · ${dates[0] || "data non disponibile"} – ${dates.at(-1) || "data non disponibile"} · archivi pubblici Chess.com`);
@@ -1425,6 +1624,8 @@ function renderOpponentReport(games, username) {
     ["Punteggio", score === null ? "—" : `${score}%`, `${stats.wins} vittorie · ${stats.draws} patte · ${stats.losses} sconfitte`],
     ["Col Bianco", stats.whiteGames ? `${Math.round(stats.whiteWins / stats.whiteGames * 100)}% vittorie` : "—", `${stats.whiteWins} vittorie su ${stats.whiteGames}`],
     ["Col Nero", stats.blackGames ? `${Math.round(stats.blackWins / stats.blackGames * 100)}% vittorie` : "—", `${stats.blackWins} vittorie su ${stats.blackGames}`],
+    ["Forma · ultime 20", recentScore === null ? "—" : `${recentScore}%`, `${recent.length} partite recenti`],
+    ["Elo medio recente", recentAverageElo === null ? "—" : String(recentAverageElo), `${recentRatings.length} partite con rating`],
   ]) { const card = document.createElement("div"); card.className = "opponent-report-metric"; addText(card, "span", "", label); addText(card, "strong", "", String(value)); addText(card, "small", "", hint); metrics.append(card); }
   root.append(metrics);
   const columns = document.createElement("div"); columns.className = "opponent-report-columns";
@@ -1444,13 +1645,41 @@ function renderOpponentReport(games, username) {
   const controlCard = document.createElement("section"); controlCard.className = "opponent-report-section";
   addText(controlCard, "h4", "game-report-section-title", "Controlli di tempo");
   for (const [name, count] of [...controls.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6)) { const row = document.createElement("div"); row.className = "opponent-report-row"; addText(row, "strong", "", name); addText(row, "span", "", `${count} partite · ${Math.round(count / Math.max(1, games.length) * 100)}%`); controlCard.append(row); }
-  columns.append(openingCard, controlCard); root.append(columns);
+  const tendencyCard = document.createElement("section"); tendencyCard.className = "opponent-report-section";
+  addText(tendencyCard, "h4", "game-report-section-title", "Prime mosse più giocate");
+  for (const [side, label] of [["white", "Quando gioca col Bianco"], ["black", "Quando gioca col Nero"]]) {
+    addText(tendencyCard, "strong", "opponent-insight-title", label);
+    const moves = [...firstMoves[side].entries()].sort((a, b) => b[1].games - a[1].games || a[0].localeCompare(b[0])).slice(0, 5);
+    if (!moves.length) addText(tendencyCard, "p", "opponent-insight", "Prime mosse non presenti nei PGN scaricati.");
+    for (const [move, data] of moves) {
+      const points = data.games ? Math.round((data.wins + data.draws / 2) / data.games * 100) : 0;
+      const row = document.createElement("div"); row.className = "opponent-report-row";
+      addText(row, "strong", "", move); addText(row, "span", "", `${data.games} partite · ${data.wins}V ${data.draws}P ${data.losses}S · ${points}% punti`); tendencyCard.append(row);
+    }
+  }
+  columns.append(openingCard, controlCard, tendencyCard); root.append(columns);
   const recentMonths = [...months.entries()].sort((a, b) => a[0].localeCompare(b[0])).slice(-8);
   if (recentMonths.length) {
     const trend = document.createElement("section"); trend.className = "opponent-report-section"; addText(trend, "h4", "game-report-section-title", "Attività recente");
     const maxGames = Math.max(...recentMonths.map(([, data]) => data.games));
     for (const [month, data] of recentMonths) { const row = document.createElement("div"); row.className = "opponent-report-row opponent-month-row"; addText(row, "strong", "", month.replace(".", "-")); const bar = document.createElement("span"); bar.className = "opponent-month-bar"; bar.style.setProperty("--month-share", `${Math.max(3, data.games / maxGames * 100)}%`); bar.setAttribute("aria-label", `${data.games} partite`); row.append(bar); addText(row, "span", "", `${data.games} · ${data.wins}V ${data.draws}P ${data.losses}S`); trend.append(row); }
     root.append(trend);
+  }
+  const ratings = [...ratingMonths.entries()].sort((a, b) => a[0].localeCompare(b[0])).slice(-12);
+  if (ratings.length) {
+    const ratingCard = document.createElement("section"); ratingCard.className = "opponent-report-section";
+    addText(ratingCard, "h4", "game-report-section-title", "Andamento Elo · media mensile");
+    const averages = ratings.map(([, data]) => Math.round(data.total / data.games));
+    const minElo = Math.min(...averages), maxElo = Math.max(...averages);
+    for (const [month, data] of ratings) {
+      const average = Math.round(data.total / data.games);
+      const width = maxElo === minElo ? 72 : Math.round(12 + (average - minElo) / (maxElo - minElo) * 76);
+      const row = document.createElement("div"); row.className = "opponent-report-row opponent-rating-row";
+      addText(row, "strong", "", month.replace(".", "-"));
+      const bar = document.createElement("span"); bar.className = "opponent-rating-bar"; bar.style.setProperty("--rating-share", `${width}%`); row.append(bar);
+      addText(row, "span", "", `${average} · ${data.games} partite · ${data.low}–${data.high}`); ratingCard.append(row);
+    }
+    root.append(ratingCard);
   }
   const coach = score === null ? "Il campione non contiene risultati sufficienti per calcolare il punteggio." : score >= 58 ? "Nel campione il punteggio dell'avversario supera la parità: prepara con cura le aperture." : score <= 42 ? "Nel campione il punteggio dell'avversario è sotto la parità: controlla comunque le singole partite." : "Nel campione i risultati sono vicini alla parità: valuta quale apertura ti mette più a tuo agio.";
   addText(root, "p", "opponent-coach-note", `Coach · ${coach} Il report riassume i risultati registrati e non valuta la qualità delle mosse.`);
@@ -1479,6 +1708,7 @@ async function refreshImportedGames() {
   if (persistenceMode !== "sqlite" || !databaseReady) {
     importedGames = [];
     renderImportedGames();
+    renderGameLibrary();
     return;
   }
   importedGames = await invoke("list_imported_games", { limit: 15 });
@@ -1501,6 +1731,7 @@ async function refreshImportedGames() {
   } catch (error) {
     console.warn("Non riesco a preparare i PGN per gli strumenti di analisi:", error);
   }
+  void loadGameLibrary(true);
 }
 
 function openOnlineImportDialog() {
@@ -1638,8 +1869,8 @@ async function openImportedGame(id) {
   }
 }
 
-async function removeImportedGame(id) {
-  const record = importedGames.find((item) => item.id === id);
+async function removeImportedGame(id, knownRecord = null) {
+  const record = knownRecord || importedGames.find((item) => item.id === id) || gameLibraryRecords.find((item) => item.id === id);
   if (!record) return;
   if (!window.confirm("Rimuovere questa partita dalla libreria locale? Il repertorio non verrà modificato.")) return;
   try {
@@ -2008,6 +2239,56 @@ function renderLineTrainingChoices() {
     select.append(option);
   }
   if (repertoire.some((entry) => entry.id === selectedId)) select.value = selectedId;
+  renderLineTrainingVariations();
+}
+
+function getRepertoirePaths(tree, maxPaths = 250) {
+  const paths = [];
+  const visit = (nodeId, path, visited) => {
+    if (paths.length >= maxPaths) return;
+    const outgoing = tree.getOutgoing(nodeId);
+    if (!outgoing.length || path.length >= 512) {
+      paths.push(path);
+      return;
+    }
+    for (const edge of outgoing) {
+      if (visited.has(edge.to)) continue;
+      const nextVisited = new Set(visited);
+      nextVisited.add(edge.to);
+      visit(edge.to, [...path, edge.id], nextVisited);
+      if (paths.length >= maxPaths) return;
+    }
+  };
+  visit(tree.rootId, [], new Set([tree.rootId]));
+  return paths;
+}
+
+function renderLineTrainingVariations() {
+  const select = $("#line-training-variation");
+  const entry = repertoire.find((item) => item.id === $("#line-training-repertoire")?.value);
+  if (!select) return;
+  const selectedPath = select.value;
+  select.replaceChildren();
+  if (!entry) {
+    select.append(new Option("Scegli prima un repertorio", ""));
+    select.disabled = true;
+    return;
+  }
+  try {
+    const tree = RepertoireTree.fromJSON(entry.tree);
+    const paths = getRepertoirePaths(tree);
+    select.disabled = paths.length === 0;
+    paths.forEach((path, index) => {
+      const moves = path.map((id) => tree.getEdge(id));
+      const label = moves.map((edge, ply) => `${ply % 2 === 0 ? `${Math.floor(ply / 2) + 1}.` : ""}${edge.san}`).join(" ");
+      const option = new Option(`${index === 0 ? "Linea principale" : `Variante ${index}`} · ${moves.length} semimosse · ${label.slice(0, 84)}`, String(index));
+      select.append(option);
+    });
+    if (paths.length) select.value = selectedPath && Number(selectedPath) < paths.length ? selectedPath : "0";
+  } catch {
+    select.append(new Option("Repertorio non leggibile", ""));
+    select.disabled = true;
+  }
 }
 
 function startFullLineTraining() {
@@ -2022,7 +2303,9 @@ function startFullLineTraining() {
     showToast("Non riesco a leggere questa linea: " + error.message, { type: "error" });
     return;
   }
-  const edgeIds = tree.mainlinePath();
+  const availablePaths = getRepertoirePaths(tree);
+  const selectedPathIndex = Number.parseInt($("#line-training-variation").value, 10) || 0;
+  const edgeIds = availablePaths[selectedPathIndex] || tree.mainlinePath();
   if (!edgeIds.length) {
     showToast("Questa linea non contiene ancora mosse.", { type: "warning" });
     return;
@@ -3128,6 +3411,7 @@ async function switchWorkspace(nextMode) {
   if (mode === "exam" && examAttemptId) await finishRepertoireExam(true);
   mode = nextMode;
   if (nextMode === "endgame") chessSuite?.refreshEndgame?.();
+  if (nextMode === "review") void loadGameLibrary();
   renderAll();
 }
 
@@ -3394,6 +3678,13 @@ boardElement.addEventListener("keydown", (event) => {
 
 $("#open-online-import").addEventListener("click", openOnlineImportDialog);
 $("#import-online-games-sidebar").addEventListener("click", openOnlineImportDialog);
+$("#game-library-search").addEventListener("click", () => { void loadGameLibrary(true); });
+$("#game-library-query").addEventListener("keydown", (event) => { if (event.key === "Enter") { event.preventDefault(); void loadGameLibrary(true); } });
+$("#game-library-username").addEventListener("keydown", (event) => { if (event.key === "Enter") { event.preventDefault(); void loadGameLibrary(true); } });
+$("#game-library-provider").addEventListener("change", () => { void loadGameLibrary(true); });
+$("#game-library-export").addEventListener("click", () => { void exportGameLibraryPgn(); });
+$("#game-library-previous").addEventListener("click", () => { if (gameLibraryPage > 0) { gameLibraryPage -= 1; void loadGameLibrary(); } });
+$("#game-library-next").addEventListener("click", () => { if ((gameLibraryPage + 1) * 50 < gameLibraryTotal) { gameLibraryPage += 1; void loadGameLibrary(); } });
 $("#online-provider").addEventListener("change", updateOnlineImportProvider);
 $("#start-online-import").addEventListener("click", () => { void startOnlineGameImport(); });
 $("#cancel-online-import").addEventListener("click", closeOnlineImportDialog);
@@ -3431,6 +3722,10 @@ $("#exam-next").addEventListener("click", nextExamQuestion);
 $("#review-side").addEventListener("change", renderReviewPanel);
 $("#review-start").addEventListener("click", () => { void beginDailyReviewSession(); });
 $("#line-training-start").addEventListener("click", startFullLineTraining);
+$("#line-training-repertoire").addEventListener("change", () => {
+  $("#line-training-variation").value = "0";
+  renderLineTrainingVariations();
+});
 $("#analyze-imported-game").addEventListener("click", analyzeSelectedImportedGame);
 $("#opponent-report-form").addEventListener("submit", (event) => { void createOpponentReport(event); });
 $("#print-opponent-report").addEventListener("click", () => {

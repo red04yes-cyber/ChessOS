@@ -341,6 +341,30 @@ pub fn migrate(connection: &mut Connection) -> rusqlite::Result<()> {
         )?;
         transaction.commit()?;
     }
+    let version_after_v6: i64 = connection.query_row(
+        "SELECT COALESCE(MAX(version), 0) FROM schema_migrations",
+        [],
+        |row| row.get(0),
+    )?;
+    if version_after_v6 < 7 {
+        let transaction = connection.transaction()?;
+        transaction.execute_batch(
+            "CREATE TABLE imported_game_archives (
+                provider TEXT NOT NULL CHECK (provider IN ('chess_com', 'lichess')),
+                source_username TEXT NOT NULL COLLATE NOCASE,
+                archive_key TEXT NOT NULL,
+                imported_at TEXT NOT NULL,
+                PRIMARY KEY (provider, source_username, archive_key)
+            );
+            CREATE INDEX idx_imported_game_archives_profile
+                ON imported_game_archives(provider, source_username, archive_key);"
+        )?;
+        transaction.execute(
+            "INSERT INTO schema_migrations (version, applied_at) VALUES (7, ?1)",
+            params![now_timestamp()],
+        )?;
+        transaction.commit()?;
+    }
     Ok(())
 }
 

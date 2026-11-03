@@ -244,6 +244,8 @@
                     <div class="line-practice-heading">Allena una linea completa</div>
                     <label class="field-label" for="line-training-repertoire">Repertorio</label>
                     <select id="line-training-repertoire" class="text-input"><option value="">Seleziona una linea…</option></select>
+                    <label class="field-label" for="line-training-variation">Linea da allenare</label>
+                    <select id="line-training-variation" class="text-input" disabled><option value="">Scegli prima un repertorio</option></select>
                     <label class="field-label" for="line-training-start-mode">Posizione iniziale</label>
                     <select id="line-training-start-mode" class="text-input">
                       <option value="start">Dall’inizio, fino alla fine</option>
@@ -504,6 +506,21 @@
               <p id="game-analysis-status" class="tool-output" role="status" aria-live="polite">Le analisi vengono calcolate sul dispositivo e non partono automaticamente.</p>
               <div id="game-analysis-report" class="game-analysis-report"></div>
             </section>
+<details class="detail-card game-database-tool" id="game-database-tool">
+              <summary class="card-heading"><span class="card-icon">▤</span><span>ARCHIVIO COMPLETO DELLE PARTITE</span><small id="game-library-summary">Partite importate in locale</small><b aria-hidden="true">+</b></summary>
+              <div class="game-database-content">
+                <div class="game-database-toolbar">
+                  <div class="game-database-field"><label class="field-label" for="game-library-query">Cerca giocatore, apertura, data o risultato</label><input id="game-library-query" class="text-input" type="search" placeholder="Es. Lucas, Siciliana, 2026.10" /></div>
+                  <div class="game-database-field"><label class="field-label" for="game-library-provider">Piattaforma</label><select id="game-library-provider" class="text-input"><option value="">Tutte</option><option value="chess_com">Chess.com</option><option value="lichess">Lichess</option></select></div>
+                  <div class="game-database-field"><label class="field-label" for="game-library-username">Account importato</label><input id="game-library-username" class="text-input" type="search" placeholder="Qualsiasi account" /></div>
+                  <button class="button small ghost" id="game-library-search" type="button">Cerca</button>
+                  <button class="button small ghost" id="game-library-export" type="button">Esporta PGN filtrati</button>
+                </div>
+                <p id="game-library-status" class="tool-output" role="status" aria-live="polite">Archivio locale pronto.</p>
+                <div id="game-library-list" class="game-library-list"></div>
+                <div class="game-library-pagination"><button class="button small ghost" id="game-library-previous" type="button" disabled>Precedenti</button><span id="game-library-page-label">Pagina 1</span><button class="button small ghost" id="game-library-next" type="button" disabled>Successive</button></div>
+              </div>
+            </details>
 <details class="detail-card feature-card" id="tactics-tool">
               <summary class="card-heading"><span class="card-icon">✧</span><span>TACTICS TRAINER · ESERCIZI DALLE TUE PARTITE</span></summary>
               <p class="tool-description">Stockfish cerca posizioni in cui una mossa giocata perde una possibilità tattica e crea esercizi sulla migliore risposta. I candidati sono indicativi e puoi verificarli sulla scacchiera.</p>

@@ -47,10 +47,31 @@ pub struct ImportedGameSummary {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct ImportedGamePage {
+    pub games: Vec<ImportedGameSummary>,
+    pub total: i64,
+    pub offset: i64,
+    pub limit: i64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ImportedGameRecord {
     #[serde(flatten)]
     pub summary: ImportedGameSummary,
     pub pgn: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OpponentGameRecord {
+    #[serde(flatten)]
+    pub summary: ImportedGameSummary,
+    pub white_elo: Option<String>,
+    pub black_elo: Option<String>,
+    pub eco: Option<String>,
+    pub white_first_move: Option<String>,
+    pub black_first_move: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -151,6 +172,27 @@ fn persist_batch(database: &Database, batch: &mut Vec<ImportedGame>, counts: &mu
     Ok(())
 }
 
+fn archive_was_imported(database: &Database, username: &str, archive_key: &str) -> Result<bool, String> {
+    let connection = database.0.lock().map_err(|_| "Database non disponibile.".to_string())?;
+    connection.query_row(
+        "SELECT EXISTS(SELECT 1 FROM imported_game_archives
+         WHERE provider = 'chess_com' AND source_username = ?1 COLLATE NOCASE AND archive_key = ?2)",
+        rusqlite::params![username, archive_key],
+        |row| row.get(0),
+    ).map_err(|error| error.to_string())
+}
+
+fn mark_archive_imported(database: &Database, username: &str, archive_key: &str) -> Result<(), String> {
+    let connection = database.0.lock().map_err(|_| "Database non disponibile.".to_string())?;
+    connection.execute(
+        "INSERT INTO imported_game_archives(provider, source_username, archive_key, imported_at)
+         VALUES ('chess_com', ?1, ?2, ?3)
+         ON CONFLICT(provider, source_username, archive_key) DO UPDATE SET imported_at = excluded.imported_at",
+        rusqlite::params![username, archive_key, now_timestamp()],
+    ).map_err(|error| error.to_string())?;
+    Ok(())
+}
+
 fn now_timestamp() -> String {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -181,6 +223,33 @@ fn parse_headers(pgn: &str) -> std::collections::HashMap<String, String> {
         headers.insert(key.to_string(), value);
     }
     headers
+}
+
+fn first_two_san_moves(pgn: &str) -> (Option<String>, Option<String>) {
+    let body = pgn.find("\r\n\r\n").map(|index| &pgn[index + 4..])
+        .or_else(|| pgn.find("\n\n").map(|index| &pgn[index + 2..]))
+        .unwrap_or("");
+    let mut clean = String::with_capacity(body.len());
+    let (mut comment_depth, mut variation_depth, mut line_comment) = (0usize, 0usize, false);
+    for ch in body.chars() {
+        if line_comment { if ch == '\n' { line_comment = false; clean.push(' '); } continue; }
+        if comment_depth > 0 { if ch == '{' { comment_depth += 1; } else if ch == '}' { comment_depth -= 1; } continue; }
+        if ch == ';' { line_comment = true; continue; }
+        if ch == '{' { comment_depth = 1; continue; }
+        if ch == '(' { variation_depth += 1; continue; }
+        if ch == ')' { variation_depth = variation_depth.saturating_sub(1); continue; }
+        if variation_depth == 0 { clean.push(ch); }
+    }
+    let mut moves = Vec::with_capacity(2);
+    for raw in clean.split_whitespace() {
+        if matches!(raw, "1-0" | "0-1" | "1/2-1/2" | "*") { break; }
+        let token = raw.rsplit_once('.').map(|(_, san)| san).unwrap_or(raw);
+        let san = token.trim_matches(|ch: char| matches!(ch, '!' | '?' | '+' | '#' | '\r' | '\n'));
+        if san.is_empty() || san.starts_with('$') || san == ")" { continue; }
+        moves.push(san.to_string());
+        if moves.len() == 2 { break; }
+    }
+    (moves.first().cloned(), moves.get(1).cloned())
 }
 
 fn game_id(provider: &str, pgn: &str, site: &str, headers: &std::collections::HashMap<String, String>) -> String {
@@ -433,7 +502,11 @@ pub async fn import_online_games(
             .ok_or_else(|| "Chess.com non ha restituito l'elenco degli archivi.".to_string())?;
         archives = archive_urls.len();
 
-        for archive in archive_urls {
+        // Chess.com lists archives from oldest to newest. Check the newest one
+        // on every import so games from the current month are refreshed, and
+        // skip completed older archives to make interrupted/recurring imports fast.
+        let newest_first: Vec<&Value> = archive_urls.iter().rev().collect();
+        for (archive_index, archive) in newest_first.iter().enumerate() {
             let Some(archive_url) = archive.as_str() else {
                 counts.skipped += 1;
                 continue;
@@ -442,6 +515,11 @@ pub async fn import_online_games(
                 counts.skipped += 1;
                 continue;
             };
+            let archive_key = format!("{}/{}", year, month);
+            if archive_index > 0 && archive_was_imported(database.inner(), &username, &archive_key)? {
+                emit_progress(&app, &provider, &username, &counts, "archive_cached");
+                continue;
+            }
             let pgn_url = format!(
                 "https://api.chess.com/pub/player/{}/games/{}/{}/pgn",
                 username, year, month
@@ -506,6 +584,7 @@ pub async fn import_online_games(
             let remaining = take_complete_games(&mut buffer, true);
             process_games(database.inner(), &app, &provider, &username, remaining, &mut batch, &mut counts)?;
             persist_batch(database.inner(), &mut batch, &mut counts)?;
+            mark_archive_imported(database.inner(), &username, &archive_key)?;
             emit_progress(&app, &provider, &username, &counts, "download");
         }
     } else {
@@ -602,6 +681,96 @@ pub fn list_imported_games(
     rows.collect::<Result<Vec<_>, _>>().map_err(|error| error.to_string())
 }
 
+#[tauri::command]
+pub fn search_imported_games(
+    database: State<'_, Database>,
+    query: Option<String>,
+    provider: Option<String>,
+    username: Option<String>,
+    limit: Option<i64>,
+    offset: Option<i64>,
+) -> Result<ImportedGamePage, String> {
+    let query = query.unwrap_or_default().trim().to_string();
+    let provider = provider.unwrap_or_default();
+    if !provider.is_empty() && provider != "chess_com" && provider != "lichess" {
+        return Err("Piattaforma non valida.".into());
+    }
+    let username = username.unwrap_or_default().trim().to_string();
+    if !username.is_empty() {
+        validate_username(&username)?;
+    }
+    let pattern = format!("%{}%", query);
+    let limit = limit.unwrap_or(50).clamp(1, 100);
+    let offset = offset.unwrap_or(0).max(0);
+    let connection = database.0.lock().map_err(|_| "Database non disponibile.".to_string())?;
+    let total: i64 = connection.query_row(
+        "SELECT COUNT(*) FROM imported_games
+         WHERE (?1 = '' OR provider = ?1)
+           AND (?2 = '' OR source_username = ?2 COLLATE NOCASE)
+           AND (?3 = '' OR white LIKE ?4 OR black LIKE ?4 OR played_at LIKE ?4
+                OR opening LIKE ?4 OR source_username LIKE ?4 OR result LIKE ?4)",
+        rusqlite::params![provider, username, query, pattern],
+        |row| row.get(0),
+    ).map_err(|error| error.to_string())?;
+    let mut statement = connection.prepare(
+        "SELECT id, provider, source_username, source_game_id, white, black, played_at,
+                result, time_control, opening, source_url
+         FROM imported_games
+         WHERE (?1 = '' OR provider = ?1)
+           AND (?2 = '' OR source_username = ?2 COLLATE NOCASE)
+           AND (?3 = '' OR white LIKE ?4 OR black LIKE ?4 OR played_at LIKE ?4
+                OR opening LIKE ?4 OR source_username LIKE ?4 OR result LIKE ?4)
+         ORDER BY played_at DESC, imported_at DESC
+         LIMIT ?5 OFFSET ?6"
+    ).map_err(|error| error.to_string())?;
+    let rows = statement.query_map(
+        rusqlite::params![provider, username, query, pattern, limit, offset],
+        |row| Ok(ImportedGameSummary {
+            id: row.get(0)?, provider: row.get(1)?, source_username: row.get(2)?,
+            source_game_id: row.get(3)?, white: row.get(4)?, black: row.get(5)?,
+            played_at: row.get(6)?, result: row.get(7)?, time_control: row.get(8)?,
+            opening: row.get(9)?, source_url: row.get(10)?,
+        }),
+    ).map_err(|error| error.to_string())?;
+    let games = rows.collect::<Result<Vec<_>, _>>().map_err(|error| error.to_string())?;
+    Ok(ImportedGamePage { games, total, offset, limit })
+}
+
+#[tauri::command]
+pub fn export_imported_games_pgn(
+    database: State<'_, Database>,
+    query: Option<String>,
+    provider: Option<String>,
+    username: Option<String>,
+) -> Result<String, String> {
+    let query = query.unwrap_or_default().trim().to_string();
+    let provider = provider.unwrap_or_default();
+    if !provider.is_empty() && provider != "chess_com" && provider != "lichess" {
+        return Err("Piattaforma non valida.".into());
+    }
+    let username = username.unwrap_or_default().trim().to_string();
+    if !username.is_empty() {
+        validate_username(&username)?;
+    }
+    let pattern = format!("%{}%", query);
+    let connection = database.0.lock().map_err(|_| "Database non disponibile.".to_string())?;
+    let mut statement = connection.prepare(
+        "SELECT pgn FROM imported_games
+         WHERE (?1 = '' OR provider = ?1)
+           AND (?2 = '' OR source_username = ?2 COLLATE NOCASE)
+           AND (?3 = '' OR white LIKE ?4 OR black LIKE ?4 OR played_at LIKE ?4
+                OR opening LIKE ?4 OR source_username LIKE ?4 OR result LIKE ?4)
+         ORDER BY played_at ASC, imported_at ASC"
+    ).map_err(|error| error.to_string())?;
+    let rows = statement.query_map(rusqlite::params![provider, username, query, pattern], |row| row.get::<_, String>(0))
+        .map_err(|error| error.to_string())?;
+    let pgns = rows.collect::<Result<Vec<_>, _>>().map_err(|error| error.to_string())?;
+    if pgns.is_empty() {
+        return Err("Nessuna partita corrisponde ai filtri dell'archivio.".into());
+    }
+    Ok(pgns.join("\n\n"))
+}
+
 /// Returns every locally stored game imported from a Chess.com profile.
 /// PGNs are intentionally omitted so large archives stay cheap to transfer to the UI.
 #[tauri::command]
@@ -609,7 +778,7 @@ pub fn list_profile_games(
     database: State<'_, Database>,
     provider: String,
     username: String,
-) -> Result<Vec<ImportedGameSummary>, String> {
+) -> Result<Vec<OpponentGameRecord>, String> {
     if provider != "chess_com" {
         return Err("I report profilo sono disponibili per Chess.com.".into());
     }
@@ -619,18 +788,28 @@ pub fn list_profile_games(
         "SELECT imported_games.id, imported_games.provider, imported_games.source_username,
                 imported_games.source_game_id, imported_games.white, imported_games.black,
                 imported_games.played_at, imported_games.result, imported_games.time_control,
-                imported_games.opening, imported_games.source_url
+                imported_games.opening, imported_games.source_url, imported_games.pgn
          FROM imported_games
          INNER JOIN imported_game_sources USING (provider, source_game_id)
          WHERE imported_games.provider = ?1 AND imported_game_sources.source_username = ?2 COLLATE NOCASE
          ORDER BY played_at DESC, imported_at DESC"
     ).map_err(|error| error.to_string())?;
     let rows = statement.query_map([provider, username], |row| {
-        Ok(ImportedGameSummary {
-            id: row.get(0)?, provider: row.get(1)?, source_username: row.get(2)?,
-            source_game_id: row.get(3)?, white: row.get(4)?, black: row.get(5)?,
-            played_at: row.get(6)?, result: row.get(7)?, time_control: row.get(8)?,
-            opening: row.get(9)?, source_url: row.get(10)?,
+        let pgn: String = row.get(11)?;
+        let headers = parse_headers(&pgn);
+        let (white_first_move, black_first_move) = first_two_san_moves(&pgn);
+        Ok(OpponentGameRecord {
+            summary: ImportedGameSummary {
+                id: row.get(0)?, provider: row.get(1)?, source_username: row.get(2)?,
+                source_game_id: row.get(3)?, white: row.get(4)?, black: row.get(5)?,
+                played_at: row.get(6)?, result: row.get(7)?, time_control: row.get(8)?,
+                opening: row.get(9)?, source_url: row.get(10)?,
+            },
+            white_elo: headers.get("WhiteElo").cloned(),
+            black_elo: headers.get("BlackElo").cloned(),
+            eco: headers.get("ECO").cloned(),
+            white_first_move,
+            black_first_move,
         })
     }).map_err(|error| error.to_string())?;
     rows.collect::<Result<Vec<_>, _>>().map_err(|error| error.to_string())
