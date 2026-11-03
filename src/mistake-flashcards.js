@@ -19,7 +19,8 @@ export function upsertMistakeFlashcards(existing = [], mistakes = [], now = new 
   let updated = 0;
   for (const mistake of mistakes) {
     if (!mistake?.fen || !mistake?.bestUci || !mistake?.bestSan) continue;
-    const id = stableId(mistake.fen + "|" + mistake.bestUci);
+    const positionKey = String(mistake.fen).trim().split(/\\s+/).slice(0, 4).join(" ");
+    const id = stableId(positionKey + "|" + mistake.bestUci);
     const previous = byId.get(id);
     if (previous) {
       byId.set(id, {
