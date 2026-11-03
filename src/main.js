@@ -4,6 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import { listenForOptionalImportProgress } from "./online-import-progress.js";
 import { squareAccessibleLabel } from "./board-accessibility.js";
 import { nextBoardSquare } from "./board-navigation.js";
+import { downloadPendingAppUpdate, installPendingAppUpdate } from "./app-updater.js";
 import { RepertoireTree } from "./repertoire-tree.js";
 import { initializeChessSuite } from "./chess-suite.js";
 import { fenToEditorState, editorStateToFen } from "./fen-editor.js";
@@ -61,6 +62,9 @@ let examAttempts = [];
 let examAnswers = [];
 let importedGames = [];
 let onlineImportBusy = false;
+let pendingAppUpdate = null;
+let appUpdateCheckRunning = false;
+let appUpdateInstallRunning = false;
 let reviewQueue = [];
 let examQueue = [];
 let currentExamCard = null;
@@ -324,6 +328,55 @@ function showToast(message) {
   toast.classList.add("visible");
   window.clearTimeout(toastTimer);
   toastTimer = window.setTimeout(() => toast.classList.remove("visible"), 2600);
+}
+
+function canInstallPendingAppUpdate() {
+  return mode === "studio"
+    && !dirty
+    && !onlineImportBusy
+    && !pendingPromotion
+    && !examAttemptId
+    && !reviewSessionId;
+}
+
+async function maybeInstallPendingAppUpdate() {
+  if (!pendingAppUpdate || appUpdateInstallRunning || !canInstallPendingAppUpdate()) return;
+  appUpdateInstallRunning = true;
+  const update = pendingAppUpdate;
+  try {
+    const installed = await installPendingAppUpdate(update, canInstallPendingAppUpdate, console);
+    if (installed) {
+      pendingAppUpdate = null;
+    } else {
+      // Avoid retrying a broken installer resource indefinitely.
+      try { await update.close?.(); } catch { /* Il normale utilizzo dell'app resta disponibile. */ }
+      pendingAppUpdate = null;
+    }
+  } finally {
+    appUpdateInstallRunning = false;
+  }
+}
+
+async function checkForAppUpdate() {
+  if (!isTauri() || appUpdateCheckRunning || pendingAppUpdate) return;
+  appUpdateCheckRunning = true;
+  try {
+    const { check } = await import("@tauri-apps/plugin-updater");
+    const update = await downloadPendingAppUpdate(check, console);
+    if (!update) return;
+    pendingAppUpdate = update;
+    showToast(
+      "Aggiornamento " + update.version
+      + " scaricato. Installazione automatica quando non ci saranno modifiche o sessioni in corso."
+    );
+    await maybeInstallPendingAppUpdate();
+  } catch (error) {
+    // A missing release, offline network or invalid signing setup must never
+    // prevent Chess OS from opening or using its local database.
+    console.warn("Controllo aggiornamenti Chess OS non disponibile:", error);
+  } finally {
+    appUpdateCheckRunning = false;
+  }
 }
 
 function setDirty(value = true) {
@@ -2593,4 +2646,17 @@ chessSuite = initializeChessSuite({
 });
 
 renderAll();
-void initializePersistence();
+void initializePersistence().then(() => {
+  void checkForAppUpdate();
+});
+
+if (isTauri()) {
+  // Recheck the stable channel periodically and install as soon as the app is idle.
+  window.setInterval(() => {
+    if (pendingAppUpdate) void maybeInstallPendingAppUpdate();
+    else void checkForAppUpdate();
+  }, 30 * 60 * 1000);
+  window.setInterval(() => {
+    void maybeInstallPendingAppUpdate();
+  }, 30 * 1000);
+}
