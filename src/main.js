@@ -1085,7 +1085,7 @@ function applyFenEditorPosition() {
     selectedSquare = null;
     closePromotionChooser();
     setDirty(true);
-    closeFenEditor(false);
+    closeFenEditor();
     renderAll();
     showToast("Posizione FEN applicata. Ora puoi creare la tua linea.");
   } catch (error) {
