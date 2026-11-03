@@ -49,6 +49,17 @@ function resultForSide(result, color) {
   return "unknown";
 }
 
+function normalizePgnDate(value) {
+  const match = /^(\\d{4})\\.(\\d{2})\\.(\\d{2})$/.exec(String(value || "").trim());
+  if (!match) return null;
+  const [, year, month, day] = match;
+  const date = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day)));
+  if (date.getUTCFullYear() !== Number(year)
+      || date.getUTCMonth() !== Number(month) - 1
+      || date.getUTCDate() !== Number(day)) return null;
+  return date.toISOString().slice(0, 10);
+}
+
 export function analyzeOpponentPreparation(pgn, opponentName = "", preferredSide = "both", maxPly = 24) {
   if (!["white", "black", "both"].includes(preferredSide)) throw new RangeError("Colore avversario non valido.");
   const games = splitPgnGames(pgn);
@@ -60,6 +71,7 @@ export function analyzeOpponentPreparation(pgn, opponentName = "", preferredSide
   const firstMoves = new Map();
   const results = { win: 0, draw: 0, loss: 0, unknown: 0 };
   const colors = { white: 0, black: 0 };
+  const dates = [];
   let gamesRead = 0;
   let ignored = 0;
 
@@ -82,6 +94,8 @@ export function analyzeOpponentPreparation(pgn, opponentName = "", preferredSide
     const moves = chess.history({ verbose: true }).slice(0, maximumPly);
     if (!moves.length) { ignored += 1; continue; }
     gamesRead += 1;
+    const gameDate = normalizePgnDate(headers.Date);
+    if (gameDate) dates.push(gameDate);
     const openingName = String(headers.Opening || headers.ECO || "Apertura non indicata").trim();
     const result = String(headers.Result || "*");
 
@@ -130,6 +144,7 @@ export function analyzeOpponentPreparation(pgn, opponentName = "", preferredSide
     ignored,
     colors,
     results,
+    period: dates.length ? { from: dates.sort()[0], to: dates.at(-1), datedGames: dates.length } : null,
     openings: openingRows.slice(0, 12),
     firstMoves: [...firstMoves.values()].sort((a, b) => b.count - a.count || a.san.localeCompare(b.san))
       .map((item) => ({ ...item, percentage: Math.round(item.count / Math.max(1, [...firstMoves.values()].reduce((sum, move) => sum + move.count, 0)) * 100) }))
