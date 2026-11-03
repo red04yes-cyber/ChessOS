@@ -199,16 +199,40 @@ export function countReviewsToday(logs, now = new Date()) {
   return logs.filter((log) => localDayKey(log.reviewedAt || log.review) === today).length;
 }
 
+function reviewMetadata(log) {
+  const raw = log?.stateJson ?? log?.state_json;
+  if (typeof raw !== "string") return {};
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
 export function getTodayReviewStats(logs, now = new Date()) {
   const today = localDayKey(now);
   const reviews = logs.filter((log) => localDayKey(log.reviewedAt || log.review) === today);
   const again = reviews.filter((log) => Number(log.rating) === Rating.Again).length;
-  const correct = reviews.length - again;
+  const correct = reviews.filter((log) => {
+    const metadata = reviewMetadata(log);
+    return typeof metadata.recalled === "boolean"
+      ? metadata.recalled
+      : Number(log.rating) !== Rating.Again;
+  }).length;
+  const newCards = new Set();
+  for (const log of reviews) {
+    const metadata = reviewMetadata(log);
+    if (Number(metadata.state) !== State.New) continue;
+    const cardId = log.cardId ?? log.card_id ?? log.id;
+    if (cardId != null) newCards.add(String(cardId));
+  }
   return {
     reviews: reviews.length,
     again,
     correct,
     accuracy: reviews.length ? Math.round((correct / reviews.length) * 100) : 0,
+    newCardsReviewed: newCards.size,
   };
 }
 
