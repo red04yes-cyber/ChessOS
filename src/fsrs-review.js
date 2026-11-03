@@ -175,6 +175,19 @@ export function countReviewsToday(logs, now = new Date()) {
   return logs.filter((log) => localDayKey(log.reviewedAt || log.review) === today).length;
 }
 
+export function getTodayReviewStats(logs, now = new Date()) {
+  const today = localDayKey(now);
+  const reviews = logs.filter((log) => localDayKey(log.reviewedAt || log.review) === today);
+  const again = reviews.filter((log) => Number(log.rating) === Rating.Again).length;
+  const correct = reviews.length - again;
+  return {
+    reviews: reviews.length,
+    again,
+    correct,
+    accuracy: reviews.length ? Math.round((correct / reviews.length) * 100) : 0,
+  };
+}
+
 export function parseUci(uci) {
   const match = /^([a-h][1-8])([a-h][1-8])([qrbn])?$/.exec(String(uci || ""));
   if (!match) throw new TypeError("Mossa UCI non valida.");
