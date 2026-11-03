@@ -5,14 +5,18 @@ Windows-first chess repertoire and training desktop app. This repository now con
 ## What works in this rebuild
 
 - Interactive 8×8 chessboard with legal move validation through `chess.js`
+- Castling, en passant and promotion chooser (queen, rook, bishop or knight)
+- Last-move and check highlights; selectable legal destinations
+- Move-by-move position navigation, back/forward controls and arrow-key navigation
+- Board rotation and current-position FEN copy
 - Check, checkmate, stalemate and draw status
 - Create, rename, save, open and delete repertoire lines
 - Local persistence in browser/Tauri WebView storage
 - PGN import and export
-- Undo and reset in Studio mode
+- Undo/redo by navigating the complete move timeline and reset in Studio mode
 - Training mode that asks the user to replay every move in a saved or current line
 - Vite frontend and Tauri 2 desktop shell
-- Automated JavaScript tests and a Windows NSIS installer workflow
+- Automated JavaScript tests for legal moves, castling, en passant, promotion, PGN and terminal positions; Windows NSIS installer workflow
 
 ## Important scope note
 
