@@ -1,24 +1,62 @@
 # Chess OS
 
-Windows-first desktop application for chess repertoire study, training, spaced repetition, and engine-assisted analysis.
+Windows-first chess repertoire and training desktop app. This repository now contains a **fresh MVP rebuild (0.1.0)** because the old 0.7.0 source archive could not be reconstructed from the incomplete recovery fragments.
 
-## Current repository status
+## What works in this rebuild
 
-This repository currently contains project documentation and bootstrap scaffolding. The full application source tree from version 0.7.0 has **not yet been committed**. This README is not a claim that the app can already be built from this checkout.
+- Interactive 8×8 chessboard with legal move validation through `chess.js`
+- Check, checkmate, stalemate and draw status
+- Create, rename, save, open and delete repertoire lines
+- Local persistence in browser/Tauri WebView storage
+- PGN import and export
+- Undo and reset in Studio mode
+- Training mode that asks the user to replay every move in a saved or current line
+- Vite frontend and Tauri 2 desktop shell
+- Automated JavaScript tests and a Windows NSIS installer workflow
 
-## Planned modules
+## Important scope note
 
-- SQLite persistence and schema migrations
-- Repertoire manager with PGN import, RAV variations, and transpositions
-- Interactive training board with legal move handling
-- FSRS spaced-repetition scheduler
-- Stockfish UCI engine integration
-- Dashboard, learning analytics, goals, and exams
-- Tauri desktop packaging for Windows
+This is **not** the recovered 0.7.0 application and is not yet feature-complete against the original roadmap. The following are not implemented in this rebuild:
 
-## Development
+- FSRS scheduling and review history
+- SQLite database and schema migrations
+- Stockfish analysis / evaluation
+- Repertoire tree editor, transpositions and advanced RAV variation editing
+- Dashboard, analytics, goals and exams
+- Cloud sync, account system and backups
 
-The source archive must first be extracted into the repository root. Then install dependencies and run the checks defined by the project's package scripts. Treat the Windows installer as unavailable until a successful Windows CI build produces and verifies the artifact.
+The old archive fragments remain under `recovery/` for provenance only. They are not build inputs.
+
+## Requirements
+
+- Node.js 20 or newer
+- For the Windows desktop build: Rust stable/MSVC toolchain and the Windows WebView2 runtime. GitHub Actions runs the NSIS build on a Windows runner.
+
+## Run locally
+
+```sh
+npm install
+npm test
+npm run dev
+```
+
+Open the local Vite URL printed in the terminal. To run the Tauri desktop shell:
+
+```sh
+npm run tauri:dev
+```
+
+To build the Windows NSIS installer on Windows:
+
+```sh
+npm run tauri:build
+```
+
+The installer, when a successful CI run produces it, is uploaded as the `chess-os-windows-installer` workflow artifact. A successful build has not yet been independently verified.
+
+## Data
+
+Repertoire lines are stored locally in the WebView/browser `localStorage`. Export important lines to PGN for backup. Clearing application/browser data will remove locally stored repertoire data.
 
 ## License
 
