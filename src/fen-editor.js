@@ -5,7 +5,8 @@ const PIECES = new Set(["wK","wQ","wR","wB","wN","wP","bK","bQ","bR","bB","bN","
 
 export function fenToEditorState(fen) {
   const chess = new Chess(fen);
-  const fields = chess.fen().split(/\s+/);
+  const fields = fen.trim().split(/\s+/);
+  if (fields.length !== 6) throw new Error("La FEN deve contenere tutti e sei i campi.");
   const pieces = {};
   chess.board().forEach((rank, row) => rank.forEach((piece, col) => {
     if (piece) {
@@ -37,6 +38,12 @@ export function editorStateToFen(state) {
   const fullmove = Number(state.fullmove);
   if (!Number.isInteger(halfmove) || halfmove < 0 || halfmove > 1000000) throw new Error("Contatore delle 50 mosse non valido.");
   if (!Number.isInteger(fullmove) || fullmove < 1 || fullmove > 1000000) throw new Error("Numero della mossa non valido.");
+
+  for (const [square, code] of Object.entries(state.pieces)) {
+    if (!/^[a-h][1-8]$/.test(square) || !PIECES.has(code)) {
+      throw new Error("Pezzo o casa non valido: " + square + ".");
+    }
+  }
 
   const rows = [];
   for (let rank = 8; rank >= 1; rank -= 1) {
@@ -97,8 +104,8 @@ export function editorStateToFen(state) {
     halfmove,
     fullmove,
   ].join(" ");
-  const chess = new Chess(fen);
-  return chess.fen();
+  new Chess(fen);
+  return fen;
 }
 
 export function validateEditorFen(fen) {
