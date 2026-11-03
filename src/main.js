@@ -240,11 +240,12 @@ function renderBoard() {
       ? chess.moves({ square: selectedSquare, verbose: true }).map((move) => move.to)
       : [],
   );
-  const lastMove = currentLastMove();
+  const blindfoldActive = mode === "training" && blindfoldMode;
+  const lastMove = blindfoldActive ? null : currentLastMove();
   const lastSquares = new Set(lastMove ? [lastMove.from, lastMove.to] : []);
   let checkedKingSquare = null;
 
-  if (chess.isCheck()) {
+  if (chess.isCheck() && !blindfoldActive) {
     for (let row = 0; row < 8; row += 1) {
       for (let col = 0; col < 8; col += 1) {
         const piece = board[row][col];
@@ -569,6 +570,7 @@ function renderFlashcards() {
 let reviewAnswerVisible = false;
 
 function startCardReview() {
+  reviewSessionSeen.clear();
   const next = getDueStudyCards(studyCards).find((card) => !reviewSessionSeen.has(card.id));
   if (!next) {
     showToast(studyCards.length ? "Non ci sono carte dovute al momento." : "Genera prima alcune flashcard da un PGN.");
