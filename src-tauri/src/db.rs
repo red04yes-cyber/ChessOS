@@ -72,14 +72,14 @@ pub struct RepertoireRecord {
     pub tree: RepertoireTreeData,
 }
 
-pub fn open_database(path: &Path) -> Result<Connection, String> {
+pub fn open_database(path: &Path) -> Result<Connection, Box<dyn std::error::Error>> {
     if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+        std::fs::create_dir_all(parent)?;
     }
-    let mut connection = Connection::open(path).map_err(|error| error.to_string())?;
-    connection.busy_timeout(std::time::Duration::from_secs(5)).map_err(|error| error.to_string())?;
-    connection.execute_batch("PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;").map_err(|error| error.to_string())?;
-    migrate(&mut connection).map_err(|error| error.to_string())?;
+    let mut connection = Connection::open(path)?;
+    connection.busy_timeout(std::time::Duration::from_secs(5))?;
+    connection.execute_batch("PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;")?;
+    migrate(&mut connection)?;
     Ok(connection)
 }
 
