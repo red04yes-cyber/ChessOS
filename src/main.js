@@ -383,7 +383,13 @@ coords functionfunction captureBoardAnimation(move) {
   return animation;
 }
 
+function prefersReducedMotion() {
+  return uiPreferences.motion === "reduced"
+    || (uiPreferences.motion === "system" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches);
+}
+
 function animatePieceBetween(fromRect, toRect, selector) {
+  if (prefersReducedMotion()) return;
   const piece = boardElement.querySelector(selector + " .piece");
   if (!piece || typeof piece.animate !== "function") return;
   const dx = fromRect.left - toRect.left;
@@ -425,7 +431,7 @@ function playPendingBoardAnimation() {
     clone.style.zIndex = "5";
     clone.style.pointerEvents = "none";
     document.body.append(clone);
-    if (typeof clone.animate === "function") {
+    if (!prefersReducedMotion() && typeof clone.animate === "function") {
       const fade = clone.animate(
         [{ opacity: 1, transform: "scale(1)" }, { opacity: 0, transform: "scale(.9)" }],
         { duration: 120, easing: "ease-out" },
@@ -583,7 +589,7 @@ function renderMoves() {
   const currentMove = moveListElement.querySelector(".current-move");
   currentMove?.scrollIntoView({
     block: "nearest",
-    behavior: uiPreferences.motion === "reduced" ? "auto" : "smooth",
+    behavior: prefersReducedMotion() ? "auto" : "smooth",
   });
 }
 
@@ -710,7 +716,7 @@ function renderVariations() {
     const incomingCount = studioTree.getIncoming(edge.to).length;
     const labels = [];
     labels.push(index === 0 ? "linea principale" : "variante");
-    if (incomingCount > 1) labels.push("transposizione");
+    if (incomingCount > 1) labels.push("trasposizione");
     meta.textContent = labels.join(" · ");
     button.append(title, meta);
     button.setAttribute("aria-pressed", String(isSelected));
@@ -911,7 +917,7 @@ async function openImportedGame(id) {
     selectedSquare = null;
     closePromotionChooser();
     renderAll();
-    showToast("Partita caricata. Usa «Salva linea» per conservarla nel repertorio.");
+    showToast("Partita caricata. Usa «Salva» per conservarla nel repertorio.");
   } catch (error) {
     showToast("Non riesco ad aprire questa partita: " + (error?.message || String(error)));
   }
@@ -1110,7 +1116,7 @@ function openLine(id) {
     const loaded = line.tree ? RepertoireTree.fromJSON(line.tree) : RepertoireTree.fromPgn(line.pgn);
     rebuildTimeline(loaded);
     activeLineId = line.id;
-    titleInput.value = line.title || "Linea senza nome";
+    titleInput.value = line.title || "Repertorio senza nome";
     setDirty(false);
     mode = "studio";
     trainingGame = null;
@@ -1124,7 +1130,7 @@ function openLine(id) {
 async function deleteLine(id) {
   const line = repertoire.find((item) => item.id === id);
   if (!line) return;
-  const accepted = window.confirm("Eliminare “" + (line.title || "Linea senza nome") + "” dal repertorio?");
+  const accepted = window.confirm("Eliminare “" + (line.title || "Repertorio senza nome") + "” dal repertorio?");
   if (!accepted) return;
   if (mode === "exam" && examAttemptId) {
     await finishRepertoireExam(true);
@@ -1176,7 +1182,7 @@ async function saveLine() {
 
   const pgn = timelinePgn();
   const sans = [...studioSans];
-  const title = titleInput.value.trim() || "Linea senza nome";
+  const title = titleInput.value.trim() || "Repertorio senza nome";
   const id = activeLineId || (globalThis.crypto?.randomUUID?.() ?? "line-" + Date.now());
   const previous = repertoire.find((item) => item.id === id);
   const entry = {
@@ -1631,7 +1637,7 @@ function renderDashboard() {
   for (const line of repertoire) {
     const option = document.createElement("option");
     option.value = line.id;
-    option.textContent = line.title || "Linea senza nome";
+    option.textContent = line.title || "Repertorio senza nome";
     examSelect.append(option);
   }
   if (repertoire.some((line) => line.id === previousSelection)) examSelect.value = previousSelection;
@@ -1773,7 +1779,7 @@ async function startRepertoireExam(event) {
   const attempt = {
     id,
     repertoireId,
-    repertoireTitle: line.title || "Linea senza nome",
+    repertoireTitle: line.title || "Repertorio senza nome",
     startedAt: now.toISOString(),
     finishedAt: null,
     totalQuestions: questions.length,
@@ -2035,11 +2041,11 @@ function importPgn() {
     rebuildTimeline(imported);
     mode = "studio";
     activeLineId = null;
-    titleInput.value = "PGN importato";
+    titleInput.value = "Repertorio importato";
     setDirty(true);
     closePromotionChooser();
     renderAll();
-    showToast("PGN importato: varianti e transposizioni acquisite.");
+    showToast("PGN importato: varianti e trasposizioni caricate.");
   } catch (error) {
     showToast("PGN non valido: " + error.message);
   }
@@ -2083,7 +2089,7 @@ function newPosition() {
   activeLineId = null;
   selectedSquare = null;
   closePromotionChooser();
-  titleInput.value = "Nuova linea";
+  titleInput.value = "Nuovo repertorio";
   setDirty(true);
   function initializeUiPreferences() {
   const controls = [
