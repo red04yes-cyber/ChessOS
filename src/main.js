@@ -3,6 +3,7 @@ import { invoke, isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { RepertoireTree } from "./repertoire-tree.js";
 import { classifyBoardMove } from "./board-input.js";
+import { listenForOptionalImportProgress } from "./online-import-progress.js";
 import {
   buildReviewCards,
   countDueCards,
@@ -736,21 +737,23 @@ async function startOnlineGameImport() {
   $("#online-import-progress").textContent = "Connessione al servizio e download degli archivi…";
   let stopListening = null;
   try {
-    try {
-      stopListening = await listen("online-game-import-progress", (event) => {
+    stopListening = await listenForOptionalImportProgress(
+      listen,
+      (event) => {
         const progress = event.payload || {};
         $("#online-import-progress").textContent =
           "Elaborate: " + (progress.processed || 0)
           + " · nuove: " + (progress.imported || 0)
           + " · già presenti: " + (progress.duplicates || 0)
           + " · non supportate: " + (progress.skipped || 0);
-      });
-    } catch (listenError) {
-      // Progress notifications are optional: a missing Tauri event permission
-      // must never prevent the actual Rust import command from running.
-      console.warn("Aggiornamento avanzamento non disponibile:", listenError);
-      $("#online-import-progress").textContent = "Importazione avviata. Il download continua anche senza aggiornamenti in tempo reale…";
-    }
+      },
+      (listenError) => {
+        // Progress notifications are optional. The command proceeds even when
+        // Tauri denies listen through its Access Control List.
+        console.warn("Aggiornamento avanzamento non disponibile:", listenError);
+        $("#online-import-progress").textContent = "Importazione avviata. Il download continua anche senza aggiornamenti in tempo reale…";
+      },
+    );
 
     const summary = await invoke("import_online_games", { provider, username, token });
     let refreshWarning = "";
