@@ -19,10 +19,10 @@ Windows-first chess repertoire and training desktop app. This repository now con
 - PGN variation export with round-trip regression tests
 - Undo/redo by navigating the complete move timeline and reset in Studio mode
 - Training mode that asks the user to replay every move in a saved or current line
-- Stockfish 19 analysis of complete games with move-loss classification and explanatory chess principles
+- Stockfish 19 review of game moves with quality labels (best, excellent, good, inaccuracy, mistake, blunder and conservative brilliant-sacrifice candidates), explanations and an estimated accuracy score
 - Chess Lab with Lichess Opening Explorer, alternative moves and opening statistics
 - Play against Stockfish from the current position or a selected repertoire variation
-- PGN import from local files, pasted collections, public Chess.com monthly archives and public Lichess game exports
+- One-action account sync for all public Chess.com monthly archives and the complete Lichess game export, with duplicate detection; local PGN and pasted PGN import
 - Vite frontend and Tauri 2 desktop shell
 - Automated JavaScript tests for chess rules, PGN/RAV round-trips, transpositions and UCI parsing; Windows CI smoke-tests Stockfish and builds the NSIS installer
 
@@ -98,3 +98,13 @@ On first desktop startup, Chess OS imports legacy `chess-os.repertoire.v1` entri
 ## License
 
 No license has been selected yet. All rights remain with the project owner unless a license is added.
+
+## Chess Lab: account sync, game review and puzzles
+
+Enter your Chess.com and/or Lichess usernames in the Chess Lab and choose **Sincronizza account**. The sync walks the Chess.com monthly archive list and imports public PGNs in sequence; for Lichess it streams the full user-game export (the API's `max` filter is intentionally omitted). Imported games are saved as independent repertoire entries. Repeated syncs skip games already in the archive using a fingerprint of date, players, site and mainline moves. Usernames are kept as a convenience preference in WebView local storage; a Lichess API token is optional for the export and is held only in memory for the request.
+
+Chess.com's official PubAPI is public and read-only: private games and other logged-in-only information are not available through it. Do not enter a Chess.com password. A private Chess.com integration requires an approved authenticated integration from Chess.com; this client does not implement that approval flow. The Lichess export uses its documented user-games endpoint and supports a personal token; never commit or share the token. When the service rate-limits a request, stop and wait before retrying.
+
+In the Windows desktop app, **Analizza archivio** reviews the latest 10, 25, 50 or all saved games. It uses Stockfish at depth 8 for up to 60 half-moves per game, can be interrupted, skips games with an existing saved report, and can be resumed later. The single-game review retains its selectable depth and its 80-half-move cap. Reports include a White-perspective evaluation graph, move-by-move labels, estimated accuracy for each side and puzzle candidates created from mistakes/blunders. When the connected username matches a PGN player header, puzzle candidates are limited to that account's moves; otherwise both sides are eligible.
+
+The displayed accuracy is an **internal estimate** derived from average centipawn loss. It is not the official Chess.com or Lichess accuracy score, and labels such as Brilliant are conservative heuristic annotations rather than claims of equivalence with either platform. Analysis reports are cached locally in WebView storage, separately from the SQLite repertoire database. Generated puzzles open in the existing training board and ask for the best engine move from the position before the mistake.
