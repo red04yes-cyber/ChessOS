@@ -40,6 +40,7 @@ export function editorStateToFen(state) {
   if (!Number.isInteger(fullmove) || fullmove < 1 || fullmove > 1000000) throw new Error("Numero della mossa non valido.");
 
   for (const [square, code] of Object.entries(state.pieces)) {
+    if (!code) continue;
     if (!/^[a-h][1-8]$/.test(square) || !PIECES.has(code)) {
       throw new Error("Pezzo o casa non valido: " + square + ".");
     }
