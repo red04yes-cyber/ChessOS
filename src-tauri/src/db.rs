@@ -528,12 +528,23 @@ pub struct TrainingSessionInput {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct RestoreReviewDataInput {
+    #[serde(default)]
+    pub cards: Vec<StudyCardInput>,
+    #[serde(default)]
+    pub logs: Vec<StudyReviewLogInput>,
+    #[serde(default)]
+    pub sessions: Vec<TrainingSessionRecord>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct FinishTrainingSessionInput {
     pub id: String,
     pub finished_at: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TrainingSessionRecord {
     pub id: String,
@@ -742,6 +753,124 @@ pub fn finish_training_session(
     if updated != 1 {
         return Err("La sessione di ripasso non esiste.".into());
     }
+    Ok(true)
+}
+
+#[tauri::command]
+pub fn get_app_setting(database: State<'_, Database>, key: String) -> Result<Option<String>, String> {
+    if key.trim().is_empty() || key.len() > 200 {
+        return Err("Chiave impostazione non valida.".into());
+    }
+    let connection = database.0.lock().map_err(|_| "Database non disponibile.".to_string())?;
+    connection.query_row(
+        "SELECT value FROM app_settings WHERE key = ?1",
+        params![key],
+        |row| row.get(0),
+    ).optional().map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn set_app_setting(database: State<'_, Database>, key: String, value: String) -> Result<bool, String> {
+    if key.trim().is_empty() || key.len() > 200 || value.len() > 20_000_000 {
+        return Err("Impostazione non valida o troppo grande.".into());
+    }
+    let connection = database.0.lock().map_err(|_| "Database non disponibile.".to_string())?;
+    connection.execute(
+        "INSERT INTO app_settings (key, value, updated_at)
+         VALUES (?1, ?2, ?3)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
+        params![key, value, now_timestamp()],
+    ).map_err(|error| error.to_string())?;
+    Ok(true)
+}
+
+#[tauri::command]
+pub fn restore_review_data(
+    database: State<'_, Database>,
+    input: RestoreReviewDataInput,
+) -> Result<bool, String> {
+    if input.cards.len() > 100_000 || input.logs.len() > 500_000 || input.sessions.len() > 100_000 {
+        return Err("Il backup supera il numero massimo di record di ripasso.".into());
+    }
+    for card in &input.cards {
+        if card.id.trim().is_empty() || card.repertoire_id.trim().is_empty()
+            || card.edge_id.trim().is_empty() || !["white", "black"].contains(&card.side.as_str())
+            || !card.stability.is_finite() || !card.difficulty.is_finite()
+        {
+            return Err("Il backup contiene una flashcard FSRS non valida.".into());
+        }
+    }
+    for log in &input.logs {
+        if log.id.trim().is_empty() || log.card_id.trim().is_empty()
+            || !(1..=4).contains(&log.rating) || !log.scheduled_days.is_finite()
+        {
+            return Err("Il backup contiene un log FSRS non valido.".into());
+        }
+    }
+    for session in &input.sessions {
+        if session.id.trim().is_empty() || !["white", "black", "both"].contains(&session.side.as_str()) {
+            return Err("Il backup contiene una sessione non valida.".into());
+        }
+    }
+
+    let mut connection = database.0.lock().map_err(|_| "Database non disponibile.".to_string())?;
+    let transaction = connection.transaction().map_err(|error| error.to_string())?;
+
+    {
+        let mut statement = transaction.prepare(
+            "INSERT INTO training_sessions
+             (id, started_at, finished_at, side, cards_reviewed, correct_count, again_count)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+             ON CONFLICT(id) DO UPDATE SET
+               started_at=excluded.started_at, finished_at=excluded.finished_at,
+               side=excluded.side, cards_reviewed=excluded.cards_reviewed,
+               correct_count=excluded.correct_count, again_count=excluded.again_count"
+        ).map_err(|error| error.to_string())?;
+        for session in &input.sessions {
+            statement.execute(params![
+                session.id, session.started_at, session.finished_at, session.side,
+                session.cards_reviewed, session.correct_count, session.again_count
+            ]).map_err(|error| error.to_string())?;
+        }
+    }
+    {
+        let mut statement = transaction.prepare(
+            "INSERT INTO study_cards
+             (id, repertoire_id, edge_id, side, due_at, stability, difficulty, reps,
+              lapses, state, created_at, updated_at, fsrs_json)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
+             ON CONFLICT(id) DO UPDATE SET
+               repertoire_id=excluded.repertoire_id, edge_id=excluded.edge_id,
+               side=excluded.side, due_at=excluded.due_at, stability=excluded.stability,
+               difficulty=excluded.difficulty, reps=excluded.reps, lapses=excluded.lapses,
+               state=excluded.state, updated_at=excluded.updated_at, fsrs_json=excluded.fsrs_json"
+        ).map_err(|error| error.to_string())?;
+        for card in &input.cards {
+            statement.execute(params![
+                card.id, card.repertoire_id, card.edge_id, card.side, card.due_at,
+                card.stability, card.difficulty, card.reps, card.lapses, card.state,
+                card.created_at, card.updated_at, card.fsrs_json
+            ]).map_err(|error| error.to_string())?;
+        }
+    }
+    {
+        let mut statement = transaction.prepare(
+            "INSERT INTO review_logs
+             (id, card_id, session_id, rating, reviewed_at, elapsed_ms, scheduled_days, state_json)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+             ON CONFLICT(id) DO UPDATE SET
+               card_id=excluded.card_id, session_id=excluded.session_id, rating=excluded.rating,
+               reviewed_at=excluded.reviewed_at, elapsed_ms=excluded.elapsed_ms,
+               scheduled_days=excluded.scheduled_days, state_json=excluded.state_json"
+        ).map_err(|error| error.to_string())?;
+        for log in &input.logs {
+            statement.execute(params![
+                log.id, log.card_id, log.session_id, log.rating, log.reviewed_at,
+                log.elapsed_ms, log.scheduled_days, log.state_json
+            ]).map_err(|error| error.to_string())?;
+        }
+    }
+    transaction.commit().map_err(|error| error.to_string())?;
     Ok(true)
 }
 
