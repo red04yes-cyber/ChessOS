@@ -2856,7 +2856,7 @@ document.addEventListener("pointerup", (event) => {
 
   const destination = target.dataset.square;
   suppressNextBoardClick = true;
-  window.setTimeout(() => { suppressNextBoardClick = false; }, 0);
+  window.setTimeout(() => { suppressNextBoardClick = false; }, 500);
   if (destination === gesture.from) {
     selectedSquare = null;
     renderBoard();
