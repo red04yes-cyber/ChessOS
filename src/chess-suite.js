@@ -38,7 +38,7 @@ function persistGames(pgn) {
   try { localStorage.setItem(GAME_IMPORT_KEY, pgn); } catch { throw new Error("Archivio locale pieno: esporta le partite o riduci il numero importato."); }
 }
 function fillPgnFields(pgn) {
-  for (const selector of ["#mistake-pgn", "#opponent-pgn", "#opening-pgn", "#tactics-pgn"]) {
+  for (const selector of ["#mistake-pgn", "#opponent-pgn", "#opening-pgn", "#generator-pgn", "#tactics-pgn"]) {
     const field = $(selector);
     if (field) field.value = pgn;
   }
@@ -645,7 +645,7 @@ export function initializeChessSuite({ getCurrentTree, loadGeneratedTree, getCur
   return {
     refresh() { refreshAnnotation(); },
     refreshEndgame() { updateEndgameSummary(); },
-    loadImportedPgn(pgn) { importedPgn = pgn; fillPgnFields(pgn); persistGames(pgn); },
+    loadImportedPgn(pgn) { importedPgn = pgn; fillPgnFields(pgn); },
     getCurrentEndgameLesson() { return endgameLesson; },
     loadEndgameProgress(progress) {
       if (progress && typeof progress === "object" && !Array.isArray(progress)) {
