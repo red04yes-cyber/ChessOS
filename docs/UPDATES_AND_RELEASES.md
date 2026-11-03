@@ -17,6 +17,8 @@ npm run tauri signer generate -- -w "$HOME\.tauri\chessos.key"
 
 Conserva il file `chessos.key` e la relativa password in un password manager o in un archivio offline protetto. **Non committare e non inviare mai la chiave privata.** La chiave pubblica viene stampata dal comando del signer: sostituisci soltanto il valore segnaposto di `plugins.updater.pubkey` in `src-tauri/tauri.release.conf.json` con quella chiave pubblica.
 
+Nel repository GitHub, crea anche l'ambiente **Settings → Environments → New environment → `release`** e configura il proprietario del progetto come **required reviewer**, disabilitando se disponibile l'auto-approvazione del proprio deployment. Il job che crea la GitHub Release usa questo ambiente e resta in attesa della sua approvazione anche dopo aver superato la conferma testuale. Senza un revisore obbligatorio configurato, l'ambiente da solo non aggiunge una conferma umana.
+
 Nel repository GitHub, crea i seguenti Actions secrets (Settings → Secrets and variables → Actions):
 
 - `TAURI_SIGNING_PRIVATE_KEY`: contenuto completo del file privato `chessos.key`.
