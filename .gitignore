@@ -5,3 +5,6 @@ src-tauri/gen/
 *.log
 .DS_Store
 Thumbs.db
+*.sqlite3
+*.sqlite3-shm
+*.sqlite3-wal
