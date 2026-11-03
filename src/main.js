@@ -52,6 +52,19 @@ let trainingGame = null;
 let trainingMoves = [];
 let trainingIndex = 0;
 let trainingStartFen = DEFAULT_FEN;
+let trainingInitialFen = DEFAULT_FEN;
+let trainingInitialMoves = [];
+let trainingErrors = 0;
+let trainingHints = 0;
+let trainingFirstTryErrors = 0;
+let trainingRevealCount = 0;
+let trainingMistakes = [];
+let trainingMistakePlies = new Set();
+let trainingHintLevel = 0;
+let trainingRevealPending = false;
+let trainingErrorAnimating = false;
+let trainingElapsedSeconds = 0;
+let trainingTimer = null;
 let baseFen = DEFAULT_FEN;
 let studioStates = [DEFAULT_FEN];
 let studioSans = [];
@@ -1163,6 +1176,178 @@ function selectVariation(edgeId) {
   } catch (error) {
     showToast("Impossibile aprire la variante: " + error.message);
   }
+}
+
+function formatElapsed(seconds) {
+  const minutes = Math.floor(seconds / 60);
+  const remainder = seconds % 60;
+  return String(minutes).padStart(2, "0") + ":" + String(remainder).padStart(2, "0");
+}
+
+function stopTrainingTimer() {
+  if (trainingTimer !== null) {
+    window.clearInterval(trainingTimer);
+    trainingTimer = null;
+  }
+}
+
+function startTrainingTimer() {
+  stopTrainingTimer();
+  trainingElapsedSeconds = 0;
+  trainingTimer = window.setInterval(() => {
+    if (mode !== "training" || document.visibilityState !== "visible") return;
+    trainingElapsedSeconds += 1;
+    renderTrainingSession();
+  }, 1000);
+}
+
+function resetTrainingCounters() {
+  trainingErrors = 0;
+  trainingHints = 0;
+  trainingFirstTryErrors = 0;
+  trainingRevealCount = 0;
+  trainingMistakes = [];
+  trainingMistakePlies = new Set();
+  trainingHintLevel = 0;
+  trainingRevealPending = false;
+  trainingErrorAnimating = false;
+  startTrainingTimer();
+}
+
+function trainingPrecision() {
+  if (!trainingMoves.length) return null;
+  const mistakes = trainingFirstTryErrors + trainingRevealCount;
+  return Math.max(0, Math.min(100, (trainingMoves.length - mistakes) / trainingMoves.length * 100));
+}
+
+function setTrainingStatus(message, type = "normal") {
+  const status = $("#training-status");
+  if (!status) return;
+  status.textContent = message;
+  status.classList.toggle("error", type === "error");
+  status.classList.toggle("success", type === "success");
+}
+
+function renderTrainingSession() {
+  const card = $("#training-session-card");
+  if (!card) return;
+  const empty = mode === "training" && trainingMoves.length === 0;
+  $("#training-empty").hidden = !empty;
+  $("#training-session-content").hidden = empty;
+  if (empty) {
+    $("#training-session-heading").textContent = "Allenamento";
+    return;
+  }
+  const completed = mode === "training" && trainingMoves.length > 0 && trainingIndex >= trainingMoves.length;
+  const total = trainingMoves.length;
+  const ratio = total ? Math.min(100, trainingIndex / total * 100) : 0;
+  const progress = $("#training-progressbar");
+  progress.setAttribute("aria-valuemax", String(total));
+  progress.setAttribute("aria-valuenow", String(trainingIndex));
+  progress.setAttribute("aria-valuetext", trainingIndex + " mosse completate su " + total);
+  $("#training-progress-fill").style.width = ratio + "%";
+  $("#training-progress-label").textContent = "Mossa " + Math.min(trainingIndex + (completed ? 0 : 1), total) + " di " + total;
+  $("#training-errors").textContent = String(trainingErrors);
+  $("#training-moves-correct").textContent = String(Math.max(0, trainingIndex - trainingRevealCount));
+  $("#training-hints").textContent = String(trainingHints);
+  $("#training-elapsed").textContent = formatElapsed(trainingElapsedSeconds);
+  $("#training-session-heading").textContent = completed ? "Linea completata" : "Sessione";
+  $("#training-hint").hidden = completed;
+  $("#training-reveal").hidden = completed;
+  $("#training-restart").textContent = completed ? "Ripeti" : "Ricomincia";
+  const summary = $("#training-summary");
+  summary.hidden = !completed;
+  if (completed) {
+    const precision = trainingPrecision();
+    const detail = trainingMistakes.length
+      ? trainingMistakes.sort((a, b) => a - b).join(", ")
+      : "";
+    const title = document.createElement("h3");
+    title.textContent = "Linea completata";
+    const grid = document.createElement("div");
+    grid.className = "training-summary-grid";
+    const values = [
+      ["Mosse", total],
+      ["Errori", trainingErrors],
+      ["Suggerimenti", trainingHints],
+      ["Tempo", formatElapsed(trainingElapsedSeconds)],
+      ["Precisione", precision.toFixed(1) + "%"],
+    ];
+    for (const [label, value] of values) {
+      const cell = document.createElement("span");
+      const strong = document.createElement("b");
+      strong.textContent = String(value);
+      cell.append(strong, document.createElement("br"), document.createTextNode(label));
+      grid.append(cell);
+    }
+    const message = document.createElement("p");
+    message.textContent = trainingErrors === 0
+      ? "Nessun errore: linea memorizzata."
+      : "Hai commesso " + trainingErrors + " errori" + (detail ? ". Ripassa le mosse " + detail + "." : ".");
+    summary.replaceChildren(title, grid, message);
+  } else {
+    summary.replaceChildren();
+  }
+}
+
+function addTrainingError(ply) {
+  trainingErrors += 1;
+  if (!trainingMistakePlies.has(ply)) {
+    trainingMistakePlies.add(ply);
+    trainingMistakes.push(ply);
+    trainingFirstTryErrors += 1;
+  }
+  renderTrainingSession();
+}
+
+function showTrainingHint() {
+  if (mode !== "training" || trainingIndex >= trainingMoves.length || trainingErrorAnimating) return;
+  trainingHintLevel = Math.min(3, trainingHintLevel + 1);
+  trainingHints += 1;
+  const expected = trainingMoves[trainingIndex];
+  const levelText = trainingHintLevel === 1
+    ? "Inizia dalla casa " + expected.from + "."
+    : trainingHintLevel === 2
+      ? "Sposta il pezzo da " + expected.from + " a " + expected.to + "."
+      : "La notazione della mossa è " + expected.san + ".";
+  $("#training-hint-text").textContent = levelText;
+  setTrainingStatus("Suggerimento " + trainingHintLevel + " di 3.");
+  renderBoard();
+  renderTrainingSession();
+}
+
+function revealTrainingMove() {
+  if (mode !== "training" || trainingIndex >= trainingMoves.length || trainingErrorAnimating) return;
+  const expected = trainingMoves[trainingIndex];
+  const move = trainingGame.moves({ square: expected.from, verbose: true }).find((candidate) =>
+    candidate.to === expected.to
+    && (candidate.promotion || undefined) === (expected.promotion || undefined)
+  );
+  if (!move) {
+    setTrainingStatus("La mossa attesa non è legale in questa posizione.", "error");
+    return;
+  }
+  trainingHints += 1;
+  trainingErrors += 1;
+  trainingRevealCount += 1;
+  trainingMistakes.push(trainingIndex + 1);
+  trainingHintLevel = 0;
+  trainingRevealPending = true;
+  setTrainingStatus("Mossa mostrata: " + expected.san + ".", "error");
+  renderTrainingSession();
+  commitSelectedMove(move);
+}
+
+function restartTraining() {
+  if (mode !== "training" || !trainingInitialMoves.length) return;
+  trainingMoves = trainingInitialMoves.map((move) => ({ ...move }));
+  trainingStartFen = trainingInitialFen;
+  trainingGame = new Chess(trainingStartFen);
+  trainingIndex = 0;
+  selectedSquare = null;
+  resetTrainingCounters();
+  renderAll();
+  setTrainingStatus("Allenamento ricominciato. Trova la prima mossa.");
 }
 
 function renderAll() {
