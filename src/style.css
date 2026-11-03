@@ -51,6 +51,7 @@
     --warning: #e8b04a;
     --warning-soft: rgba(232, 176, 74, .14);
     --danger: #ef7d72;
+    --danger-ink: #24100d;
     --danger-soft: rgba(239, 125, 114, .14);
     --info: #6aa6e8;
     --info-soft: rgba(106, 166, 232, .14);
@@ -143,6 +144,7 @@
     --warning: #8b5b08;
     --warning-soft: rgba(139, 91, 8, .10);
     --danger: #a43e35;
+    --danger-ink: #fffaf6;
     --danger-soft: rgba(164, 62, 53, .10);
     --info: #315f91;
     --info-soft: rgba(49, 95, 145, .10);
@@ -201,6 +203,7 @@
       --warning: #8b5b08;
       --warning-soft: rgba(139, 91, 8, .10);
       --danger: #a43e35;
+      --danger-ink: #fffaf6;
       --danger-soft: rgba(164, 62, 53, .10);
       --info: #315f91;
       --info-soft: rgba(49, 95, 145, .10);
@@ -1198,7 +1201,7 @@
   .confirm-card h2 { margin-bottom: 8px; }
   .confirm-message { margin: 0; color: var(--text-2); font-size: 14px; line-height: 1.55; overflow-wrap: anywhere; }
   .confirm-actions { display: flex; justify-content: flex-end; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 22px; }
-  .confirm-actions .button.danger { border-color: var(--danger); background: var(--danger); color: #24100d; }
+  .confirm-actions .button.danger { border-color: var(--danger); background: var(--danger); color: var(--danger-ink); }
   .confirm-actions .button.danger:hover:not(:disabled) { filter: brightness(1.08); }
 
   .promotion-card p { margin: 8px 0 18px; color: var(--text-2); font-size: 14px; }
