@@ -101,10 +101,22 @@ test("serializes and restores the full repertoire graph for persistent storage",
     restored.getOutgoing(restored.rootId).map((edge) => edge.san),
     original.getOutgoing(original.rootId).map((edge) => edge.san),
   );
+  const restoredD4 = restored.getOutgoing(restored.rootId).find((edge) => edge.san === "d4");
+  assert.ok(restoredD4, "the d4 alternative should survive serialization");
+  assert.deepEqual(
+    restored.getOutgoing(restoredD4.to).map((edge) => edge.san),
+    ["d5", "Nf6"],
+  );
   const edgeSnapshot = (tree) => [...tree.edges.values()]
     .map((edge) => [edge.id, edge.from, edge.to, edge.uci, edge.san, edge.nags, edge.comment])
     .sort((a, b) => a[0].localeCompare(b[0]));
   assert.deepEqual(edgeSnapshot(restored), edgeSnapshot(original));
+  for (const node of original.nodes.values()) {
+    assert.deepEqual(
+      restored.getOutgoing(node.id).map((edge) => edge.id),
+      original.getOutgoing(node.id).map((edge) => edge.id),
+    );
+  }
 
   for (const node of original.nodes.values()) {
     assert.deepEqual(
