@@ -1,6 +1,8 @@
 import { Chess } from "chess.js";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { listenForOptionalImportProgress } from "./online-import-progress.js";
+import { squareAccessibleLabel } from "./board-accessibility.js";
 import { RepertoireTree } from "./repertoire-tree.js";
 import { initializeChessSuite } from "./chess-suite.js";
 import { fenToEditorState, editorStateToFen } from "./fen-editor.js";
@@ -286,7 +288,14 @@ async function initializePersistence() {
     databaseReady = true;
     await ensureDemoOpenings();
     records = repertoire;
-    await refreshImportedGames();
+    try {
+      await refreshImportedGames();
+    } catch (error) {
+      // Imported games are an optional library; a failed list query must not
+      // disable the repertoire database or the training features.
+      importedGames = [];
+      console.error("Libreria delle partite importate non disponibile:", error);
+    }
     if (migrationErrors.length === 0) {
       try { localStorage.removeItem(STORAGE_KEY); } catch { /* Non bloccare l'avvio per storage non disponibile. */ }
       updateStorageLabel("Database SQLite", "Dati salvati sul dispositivo · " + records.length + " repertori");
@@ -441,10 +450,9 @@ function renderBoard() {
         pieceSpan.className = "piece " + (piece.color === "w" ? "white-piece" : "black-piece");
         pieceSpan.textContent = symbols[piece.color][piece.type];
         button.append(pieceSpan);
-        button.setAttribute("aria-label", (piece.color === "w" ? "Bianco " : "Nero ") + piece.type + " in " + square);
-      } else {
-        button.setAttribute("aria-label", square);
       }
+      button.setAttribute("aria-label", squareAccessibleLabel(piece, square));
+      button.setAttribute("aria-pressed", selectedSquare === square ? "true" : "false");
       boardElement.append(button);
     }
   }
@@ -1190,21 +1198,36 @@ async function startOnlineGameImport() {
   $("#online-import-progress").textContent = "Connessione al servizio e download degli archivi…";
   let stopListening = null;
   try {
-    stopListening = await listen("online-game-import-progress", (event) => {
-      const progress = event.payload || {};
-      $("#online-import-progress").textContent =
-        "Elaborate: " + (progress.processed || 0)
-        + " · nuove: " + (progress.imported || 0)
-        + " · già presenti: " + (progress.duplicates || 0)
-        + " · non supportate: " + (progress.skipped || 0);
-    });
+    stopListening = await listenForOptionalImportProgress(
+      listen,
+      (event) => {
+        const progress = event.payload || {};
+        $("#online-import-progress").textContent =
+          "Elaborate: " + (progress.processed || 0)
+          + " · nuove: " + (progress.imported || 0)
+          + " · già presenti: " + (progress.duplicates || 0)
+          + " · non supportate: " + (progress.skipped || 0);
+      },
+      (listenError) => {
+        console.warn("Aggiornamento avanzamento non disponibile:", listenError);
+        $("#online-import-progress").textContent =
+          "Importazione avviata. Il download continua anche senza aggiornamenti in tempo reale…";
+      },
+    );
     const summary = await invoke("import_online_games", { provider, username, token });
-    await refreshImportedGames();
+    let refreshWarning = "";
+    try {
+      await refreshImportedGames();
+    } catch (refreshError) {
+      refreshWarning = " La libreria non è stata aggiornata a video: "
+        + (refreshError?.message || String(refreshError));
+    }
     const providerName = provider === "lichess" ? "Lichess" : "Chess.com";
     $("#online-import-progress").textContent =
       providerName + " — " + summary.username + ": " + summary.imported + " nuove partite importate, "
       + summary.duplicates + " già presenti e " + summary.skipped + " ignorate/non supportate."
-      + (provider === "chess_com" ? " Archivi mensili controllati: " + summary.archives + "." : "");
+      + (provider === "chess_com" ? " Archivi mensili controllati: " + summary.archives + "." : "")
+      + refreshWarning;
     $("#lichess-api-token").value = "";
     showToast(summary.imported + " partite aggiunte alla libreria.");
   } catch (error) {
@@ -1212,7 +1235,11 @@ async function startOnlineGameImport() {
     showToast("Importazione partite non riuscita.");
     try { await refreshImportedGames(); } catch { /* Mantieni la libreria già caricata. */ }
   } finally {
-    if (stopListening) stopListening();
+    if (stopListening) {
+      try { stopListening(); } catch (unlistenError) {
+        console.warn("Impossibile rimuovere il listener di avanzamento:", unlistenError);
+      }
+    }
     $("#lichess-api-token").value = "";
     onlineImportBusy = false;
     button.disabled = false;
@@ -2416,7 +2443,6 @@ function newPosition() {
   titleInput.value = "Nuova linea";
   setDirty(true);
   renderAll();
-void initializePersistence();
 }
 
 async function copyFen() {

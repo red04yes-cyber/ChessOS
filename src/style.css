@@ -556,3 +556,21 @@ h1 { margin: 9px 0 5px; font-size: clamp(24px, 2.2vw, 31px); line-height: 1.1; l
 @media (max-width: 850px) {
   .tools-grid { grid-template-columns: 1fr; }
 }
+
+
+/* Keyboard and motion accessibility defaults */
+:where(button, a, input, select, textarea, summary, [role="button"]):focus-visible {
+  outline: 3px solid var(--accent-strong);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

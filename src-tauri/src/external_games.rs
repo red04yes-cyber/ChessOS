@@ -10,6 +10,7 @@ use crate::db::Database;
 
 const BATCH_SIZE: usize = 50;
 const MAX_GAME_PGN_BYTES: usize = 5 * 1024 * 1024;
+const MAX_ARCHIVE_BYTES: usize = 128 * 1024 * 1024;
 const USER_AGENT: &str = "ChessOS/0.1 (https://github.com/red04yes-cyber/ChessOS)";
 
 #[derive(Debug, Clone)]
@@ -308,9 +309,33 @@ fn process_games(
 }
 
 fn parse_chess_com_archive_url(url: &str) -> Option<(String, String)> {
-    let parts: Vec<&str> = url.trim_end_matches('/').split('/').collect();
-    let month = *parts.last()?;
-    let year = *parts.get(parts.len().checked_sub(2)?)?;
+    let parsed = reqwest::Url::parse(url).ok()?;
+    if parsed.scheme() != "https"
+        || parsed.host_str() != Some("api.chess.com")
+        || parsed.port().is_some()
+        || !parsed.username().is_empty()
+        || parsed.password().is_some()
+        || parsed.query().is_some()
+        || parsed.fragment().is_some()
+    {
+        return None;
+    }
+
+    let path = parsed.path().trim_end_matches('/');
+    let parts: Vec<&str> = path.split('/').collect();
+    if parts.len() != 7
+        || parts[0] != ""
+        || parts[1] != "pub"
+        || parts[2] != "player"
+        || parts[3].is_empty()
+        || parts[4] != "games"
+        || !parts[3].chars().all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '-')
+    {
+        return None;
+    }
+
+    let year = parts[5];
+    let month = parts[6];
     if year.len() != 4 || !year.chars().all(|ch| ch.is_ascii_digit()) {
         return None;
     }
@@ -322,6 +347,11 @@ fn parse_chess_com_archive_url(url: &str) -> Option<(String, String)> {
         return None;
     }
     Some((year.to_string(), month.to_string()))
+}
+
+fn bounded_archive_size(current: usize, chunk_len: usize) -> Option<usize> {
+    let next = current.checked_add(chunk_len)?;
+    (next <= MAX_ARCHIVE_BYTES).then_some(next)
 }
 
 fn check_http_status(status: StatusCode, provider: &str) -> Result<(), String> {
@@ -371,7 +401,7 @@ pub async fn import_online_games(
 
     let client = Client::builder()
         .user_agent(USER_AGENT)
-        .timeout(Duration::from_secs(12 * 60 * 60))
+        .timeout(Duration::from_secs(30 * 60))
         .build()
         .map_err(|error| format!("Impossibile inizializzare il client HTTP: {}", error))?;
 
@@ -404,14 +434,57 @@ pub async fn import_online_games(
                 "https://api.chess.com/pub/player/{}/games/{}/{}/pgn",
                 username, year, month
             );
-            let response = client.get(&pgn_url).header("Accept", "application/x-chess-pgn").send().await
+            let response = client.get(&pgn_url)
+                .header("Accept", "application/x-chess-pgn")
+                .send().await
                 .map_err(|error| format!("Download interrotto dopo {} partite elaborate: {}", counts.processed, error))?;
             check_http_status(response.status(), "chess.com")?;
-            let body = response.bytes().await
-                .map_err(|error| format!("Download PGN interrotto dopo {} partite elaborate: {}", counts.processed, error))?;
-            let mut buffer = body.to_vec();
-            let games = take_complete_games(&mut buffer, true);
-            process_games(database.inner(), &app, &provider, &username, games, &mut batch, &mut counts)?;
+
+            // Stream each monthly archive instead of buffering the complete PGN
+            // response. Persist complete games in bounded batches as chunks arrive.
+            let mut response = response;
+            let mut buffer: Vec<u8> = Vec::new();
+            let mut archive_bytes = 0usize;
+            loop {
+                let chunk = match response.chunk().await {
+                    Ok(Some(chunk)) => chunk,
+                    Ok(None) => break,
+                    Err(error) => {
+                        let complete = take_complete_games(&mut buffer, false);
+                        process_games(database.inner(), &app, &provider, &username, complete, &mut batch, &mut counts)?;
+                        let _ = persist_batch(database.inner(), &mut batch, &mut counts);
+                        emit_progress(&app, &provider, &username, &counts, "interrupted");
+                        return Err(format!(
+                            "Download dell'archivio {}/{} interrotto dopo {} partite elaborate: {}. Le partite già salvate restano disponibili.",
+                            year, month, counts.processed, error
+                        ));
+                    }
+                };
+
+                archive_bytes = match bounded_archive_size(archive_bytes, chunk.len()) {
+                    Some(size) => size,
+                    None => {
+                        let complete = take_complete_games(&mut buffer, false);
+                        process_games(database.inner(), &app, &provider, &username, complete, &mut batch, &mut counts)?;
+                        let _ = persist_batch(database.inner(), &mut batch, &mut counts);
+                        emit_progress(&app, &provider, &username, &counts, "interrupted");
+                        return Err(format!(
+                            "L'archivio {}/{} supera il limite di sicurezza di 128 MiB. Le partite già elaborate sono state salvate.",
+                            year, month
+                        ));
+                    }
+                };
+
+                buffer.extend_from_slice(&chunk);
+                let complete = take_complete_games(&mut buffer, false);
+                process_games(database.inner(), &app, &provider, &username, complete, &mut batch, &mut counts)?;
+                if counts.processed > 0 && counts.processed % 100 == 0 {
+                    emit_progress(&app, &provider, &username, &counts, "download");
+                }
+            }
+
+            let remaining = take_complete_games(&mut buffer, true);
+            process_games(database.inner(), &app, &provider, &username, remaining, &mut batch, &mut counts)?;
             persist_batch(database.inner(), &mut batch, &mut counts)?;
             emit_progress(&app, &provider, &username, &counts, "download");
         }
@@ -598,6 +671,39 @@ mod tests {
             "SELECT COUNT(*) FROM imported_games", [], |row| row.get(0)
         ).unwrap();
         assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn accepts_only_the_official_chess_com_archive_url_shape() {
+        assert_eq!(
+            parse_chess_com_archive_url("https://api.chess.com/pub/player/player1/games/2026/11"),
+            Some(("2026".to_string(), "11".to_string()))
+        );
+        assert_eq!(
+            parse_chess_com_archive_url("https://api.chess.com/pub/player/player1/games/2026/02/"),
+            Some(("2026".to_string(), "02".to_string()))
+        );
+        assert_eq!(parse_chess_com_archive_url("https://api.chess.com.evil/pub/player/player1/games/2026/11"), None);
+        assert_eq!(parse_chess_com_archive_url("http://api.chess.com/pub/player/player1/games/2026/11"), None);
+        assert_eq!(parse_chess_com_archive_url("https://api.chess.com/pub/player/player1/games/2026/13"), None);
+        assert_eq!(parse_chess_com_archive_url("https://api.chess.com/pub/player/player1/games/26/01"), None);
+        assert_eq!(parse_chess_com_archive_url("https://api.chess.com/pub/player/player1/games/2026/11?next=1"), None);
+        assert_eq!(parse_chess_com_archive_url("not-an-archive-url"), None);
+    }
+
+    #[test]
+    fn enforces_archive_size_limits_without_integer_overflow() {
+        assert_eq!(bounded_archive_size(0, 1024), Some(1024));
+        assert_eq!(bounded_archive_size(MAX_ARCHIVE_BYTES - 1, 1), Some(MAX_ARCHIVE_BYTES));
+        assert_eq!(bounded_archive_size(MAX_ARCHIVE_BYTES, 1), None);
+        assert_eq!(bounded_archive_size(usize::MAX, 1), None);
+    }
+
+    #[test]
+    fn reports_chess_com_rate_limit_errors_with_a_retry_hint() {
+        let error = check_http_status(StatusCode::TOO_MANY_REQUESTS, "chess.com").unwrap_err();
+        assert!(error.contains("429"));
+        assert!(error.contains("60 secondi"));
     }
 
     #[test]
