@@ -23,7 +23,7 @@ Windows-first chess repertoire and training desktop app. This repository now con
 - Due-card selection, a daily new-card cap, review history and local statistics
 - Atomic SQLite persistence for card scheduling state, review logs and training sessions in the Tauri desktop app; localStorage fallback in browser preview
 - Vite frontend and Tauri 2 desktop shell
-- Automated JavaScript tests for legal moves, castling, en passant, promotion, PGN and terminal positions; Windows NSIS installer workflow
+- Automated JavaScript tests for legal moves, PGN, FSRS scheduling and daily review; Rust SQLite tests and Windows NSIS installer workflow
 
 ## Important scope note
 
@@ -33,6 +33,7 @@ This is **not** the recovered 0.7.0 application and is not yet feature-complete 
 - SQLite database backup/export and restore UI
 - Stockfish analysis / evaluation
 - Dashboard, analytics, goals and exams
+
 The old archive fragments remain under `recovery/` for provenance only. They are not build inputs.
 
 ## Requirements
