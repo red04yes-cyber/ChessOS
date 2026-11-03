@@ -93,8 +93,8 @@ test("game report classifies a played move only when Stockfish prefers another m
   const afterE5 = "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2";
   const values = new Map([
     [start, { scoreCp: 0, bestSan: "e4", bestmove: "e2e4", pvSan: ["e4"], pvUci: ["e2e4"] }],
-    [afterE4, { scoreCp: 0, bestSan: "Nf6", bestmove: "g8f6", pvSan: ["Nf6"], pvUci: ["g8f6"] }],
-    [afterE5, { scoreCp: 200, bestSan: "Nf3", bestmove: "g1f3", pvSan: ["Nf3"], pvUci: ["g1f3"] }],
+    [afterE4, { scoreCp: 100, bestSan: "Nf6", bestmove: "g8f6", pvSan: ["Nf6"], pvUci: ["g8f6"] }],
+    [afterE5, { scoreCp: 100, bestSan: "Nf3", bestmove: "g1f3", pvSan: ["Nf3"], pvUci: ["g1f3"] }],
   ]);
   const engine = {
     async analyze(fen) { return values.get(fen.trim()) || { scoreCp: 0, bestSan: null, bestmove: null, pvSan: [], pvUci: [] }; },
