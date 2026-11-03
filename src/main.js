@@ -7,6 +7,7 @@ import {
   countReviewsToday,
   gradeFsrsCard,
   getTodayReviewStats,
+  NEW_CARDS_PER_DAY,
   parseUci,
   selectDailyCards,
 } from "./fsrs-review.js";
@@ -836,9 +837,13 @@ async function beginDailyReviewSession() {
   const now = new Date();
   const side = $("#review-side").value;
   const cards = buildReviewCards(repertoire, studyCards, now);
-  const queue = selectDailyCards(cards, now, side);
+  const todayStats = getTodayReviewStats(reviewLogs, now);
+  const remainingNewCards = Math.max(0, NEW_CARDS_PER_DAY - todayStats.newCardsReviewed);
+  const queue = selectDailyCards(cards, now, side, remainingNewCards);
   if (!queue.length) {
-    showToast("Nessuna carta in scadenza per il lato selezionato.");
+    showToast(remainingNewCards === 0
+      ? "Limite giornaliero di nuove carte raggiunto; torna domani."
+      : "Nessuna carta in scadenza per il lato selezionato.");
     renderReviewPanel();
     return;
   }
@@ -970,7 +975,7 @@ async function rateCurrentCard(ratingName) {
     reviewedAt: now.toISOString(),
     elapsedMs: Math.max(0, Math.round(performance.now() - reviewCardStartedAt)),
     scheduledDays: result.scheduledDays,
-    stateJson: JSON.stringify(result.log),
+    stateJson: JSON.stringify({ ...result.log, recalled: reviewSolved }),
   };
 
   try {
