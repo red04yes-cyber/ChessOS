@@ -588,3 +588,14 @@ h1 { margin: 9px 0 5px; font-size: clamp(24px, 2.2vw, 31px); line-height: 1.1; l
   .backup-row { align-items: flex-start; flex-direction: column; }
   .backup-row-actions { justify-content: flex-start; }
 }
+
+
+/* Pointer-based drag support for mouse, pen and touch */
+.chessboard .square {
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.chessboard .square.dragging { opacity: .45; cursor: grabbing; }
+.chessboard .square.drop-target { outline: 3px solid var(--accent-strong); outline-offset: -4px; z-index: 2; }
+.chessboard .piece { pointer-events: none; -webkit-user-drag: none; }
