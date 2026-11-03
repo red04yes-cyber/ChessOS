@@ -1,4 +1,5 @@
 import { Chess } from "chess.js";
+import { createTrainingSession } from "./training.js";
 import "./style.css";
 
 const STORAGE_KEY = "chess-os.repertoire.v1";
@@ -278,21 +279,20 @@ function saveLine() {
 }
 
 function startTraining(line = null) {
-  let sourceGame = new Chess();
+  let session;
   try {
-    if (line) sourceGame.loadPgn(line.pgn);
-    else sourceGame.loadPgn(game.pgn());
+    session = createTrainingSession(line ? line.pgn : game.pgn());
   } catch (error) {
     showToast(`Impossibile avviare il ripasso: ${error.message}`);
     return;
   }
 
-  trainingMoves = sourceGame.history({ verbose: true });
+  trainingMoves = session.moves;
   if (!trainingMoves.length) {
     showToast("Salva o crea una linea con almeno una mossa per allenarti.");
     return;
   }
-  trainingGame = new Chess();
+  trainingGame = session.game;
   trainingIndex = 0;
   selectedSquare = null;
   if (line) {
