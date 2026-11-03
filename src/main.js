@@ -118,7 +118,7 @@ function persistRepertoire() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(repertoire));
     return true;
   } catch {
-    showToast("Non riesco a salvare: memoria locale non disponibile.");
+    showToast("Non riesco a salvare: memoria locale non disponibile.", { type: "error" });
     return false;
   }
 }
@@ -256,7 +256,7 @@ async function initializePersistence() {
     databaseReady = false;
     updateStorageLabel("SQLite non disponibile", "Salvataggio temporaneamente disattivato · controlla il database");
     renderAll();
-    showToast("Errore database SQLite: " + error.message);
+    showToast("Errore database SQLite: " + error.message, { type: "error" });
   }
 }
 
@@ -752,7 +752,7 @@ function selectVariation(edgeId) {
     renderAll();
     showToast("Variante selezionata.");
   } catch (error) {
-    showToast("Impossibile aprire la variante: " + error.message);
+    showToast("Impossibile aprire la variante: " + error.message, { type: "error" });
   }
 }
 
@@ -898,7 +898,7 @@ async function startOnlineGameImport() {
     showToast(summary.imported + " partite aggiunte alla libreria.");
   } catch (error) {
     $("#online-import-progress").textContent = "Importazione non completata: " + (error?.message || String(error));
-    showToast("Importazione partite non riuscita.");
+    showToast("Importazione partite non riuscita.", { type: "error" });
     try { await refreshImportedGames(); } catch { /* Mantieni la libreria già caricata. */ }
   } finally {
     if (stopListening) stopListening();
@@ -947,7 +947,7 @@ async function removeImportedGame(id) {
     await refreshImportedGames();
     showToast("Partita rimossa dalla libreria importata.");
   } catch (error) {
-    showToast("Errore durante la rimozione: " + (error?.message || String(error)));
+    showToast("Errore durante la rimozione: " + (error?.message || String(error)), { type: "error" });
   }
 }
 
@@ -1138,7 +1138,7 @@ function openLine(id) {
     closePromotionChooser();
     renderAll();
   } catch (error) {
-    showToast("PGN non leggibile: " + error.message);
+    showToast("PGN non leggibile: " + error.message, { type: "error" });
   }
 }
 
@@ -1151,7 +1151,7 @@ async function deleteLine(id) {
     await finishRepertoireExam(true);
   }
   if (!databaseReady) {
-    showToast("Database non pronto: eliminazione non eseguita.");
+    showToast("Database non pronto: eliminazione non eseguita.", { type: "error" });
     return;
   }
   const removedCardIds = new Set(studyCards
@@ -1180,14 +1180,14 @@ async function deleteLine(id) {
     renderAll();
     showToast("Linea eliminata.");
   } catch (error) {
-    showToast("Errore eliminazione: " + error.message);
+    showToast("Errore eliminazione: " + error.message, { type: "error" });
   }
 }
 
 async function saveLine() {
   if (mode !== "studio") return;
   if (!databaseReady) {
-    showToast("Database non pronto: il salvataggio è disattivato.");
+    showToast("Database non pronto: il salvataggio è disattivato.", { type: "error" });
     return;
   }
   if (!studioTree.edges.size) {
@@ -1227,7 +1227,7 @@ async function saveLine() {
     renderAll();
     showToast("Linea salvata nel database.");
   } catch (error) {
-    showToast("Errore salvataggio SQLite: " + error.message);
+    showToast("Errore salvataggio SQLite: " + error.message, { type: "error" });
   }
 }
 
@@ -1242,7 +1242,7 @@ function startTraining() {
     });
   }
   if (!databaseReady) {
-    showToast("Archivio non pronto: riprova tra qualche istante.");
+    showToast("Archivio non pronto: riprova tra qualche istante.", { type: "warning" });
     return;
   }
   trainingGame = new Chess(DEFAULT_FEN);
@@ -1390,7 +1390,7 @@ async function rateCurrentCard(ratingName) {
     result = gradeFsrsCard(card.fsrs, ratingName, now);
   } catch (error) {
     isSavingReview = false;
-    showToast("Errore nello scheduling FSRS: " + error.message);
+    showToast("Errore nello scheduling FSRS: " + error.message, { type: "error" });
     return;
   }
 
@@ -1475,7 +1475,7 @@ function showReviewAnswer() {
     reviewFeedback = "Soluzione: " + move.san + ". Valuta quanto era facile ricordarla.";
     renderAll();
   } catch (error) {
-    showToast("Impossibile mostrare la soluzione: " + error.message);
+    showToast("Impossibile mostrare la soluzione: " + error.message, { type: "error" });
   }
 }
 
@@ -2062,7 +2062,7 @@ function importPgn() {
     renderAll();
     showToast("PGN importato: varianti e trasposizioni caricate.");
   } catch (error) {
-    showToast("PGN non valido: " + error.message);
+    showToast("PGN non valido: " + error.message, { type: "error" });
   }
 }
 
@@ -2147,7 +2147,7 @@ async function copyFen() {
     await navigator.clipboard.writeText(fen);
     showToast("FEN copiata negli appunti.");
   } catch {
-    showToast("Copia FEN non disponibile in questo contesto.");
+    showToast("Copia FEN non disponibile in questo contesto.", { type: "warning" });
   }
 }
 
