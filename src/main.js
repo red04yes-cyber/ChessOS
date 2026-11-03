@@ -1,6 +1,8 @@
 import { Chess } from "chess.js";
 import { invoke, isTauri } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { RepertoireTree } from "./repertoire-tree.js";
+import { formatUciScore, parseUciInfo, uciPvToSan } from "./engine-uci.js";
 import "./style.css";
 
 const STORAGE_KEY = "chess-os.repertoire.v1";
@@ -34,6 +36,16 @@ let studioPly = 0;
 let studioTree = new RepertoireTree(DEFAULT_FEN);
 let studioPath = [];
 let toastTimer = null;
+const desktopApp = isTauri();
+let engineStarted = false;
+let engineStarting = false;
+let engineSearching = false;
+let engineShuttingDown = false;
+let engineRequestId = 0;
+let engineFen = "";
+let engineSideToMove = "w";
+const engineRows = new Map();
+let engineEventsError = null;
 
 const $ = (selector) => document.querySelector(selector);
 const boardElement = $("#chessboard");
@@ -41,6 +53,15 @@ const titleInput = $("#line-title");
 const moveListElement = $("#move-list");
 const promotionDialog = $("#promotion-dialog");
 const promotionOptions = $("#promotion-options");
+
+const engineEventsReady = desktopApp
+  ? Promise.all([
+      listen("stockfish://line", (event) => handleStockfishLine(event.payload)),
+      listen("stockfish://exit", (event) => handleStockfishExit(event.payload)),
+    ]).then((unlisten) => unlisten).catch((error) => {
+      engineEventsError = error;
+    })
+  : Promise.resolve([]);
 
 function readRepertoire() {
   try {
@@ -144,6 +165,183 @@ function showToast(message) {
   toast.classList.add("visible");
   window.clearTimeout(toastTimer);
   toastTimer = window.setTimeout(() => toast.classList.remove("visible"), 2600);
+}
+
+function setEngineStatus(message, state = "normal") {
+  const element = $("#engine-status");
+  if (!element) return;
+  element.textContent = message;
+  element.className = "engine-status" + (state === "normal" ? "" : " " + state);
+}
+
+function updateEngineControls() {
+  const supported = desktopApp;
+  $("#engine-start").disabled = !supported || engineStarted || engineStarting;
+  $("#engine-analyze").disabled = !supported || !engineStarted || engineStarting;
+  $("#engine-stop").disabled = !supported || !engineStarted || !engineSearching;
+  $("#engine-shutdown").disabled = !supported || !engineStarted || engineStarting || engineShuttingDown;
+}
+
+function renderEngineResults() {
+  const container = $("#engine-results");
+  if (!container) return;
+  container.replaceChildren();
+  if (!engineRows.size) {
+    const empty = document.createElement("span");
+    empty.className = "empty-state";
+    empty.textContent = "In attesa delle prime linee di analisi…";
+    container.append(empty);
+    return;
+  }
+
+  for (const [rank, info] of [...engineRows.entries()].sort((a, b) => a[0] - b[0])) {
+    const row = document.createElement("div");
+    row.className = "engine-line";
+    const number = document.createElement("span");
+    number.className = "engine-line-rank";
+    number.textContent = "LINEA " + rank;
+    const score = document.createElement("span");
+    score.className = "engine-line-score";
+    score.textContent = formatUciScore(info, engineSideToMove);
+    const depth = document.createElement("small");
+    depth.className = "engine-line-depth";
+    depth.textContent = "DEPTH " + info.depth;
+    score.append(depth);
+    const pv = document.createElement("span");
+    pv.className = "engine-line-pv";
+    pv.textContent = uciPvToSan(engineFen, info.pv) || "—";
+    row.append(number, score, pv);
+    container.append(row);
+  }
+}
+
+function handleStockfishLine(payload) {
+  if (!payload || typeof payload.line !== "string") return;
+  const requestId = Number(payload.requestId ?? payload.request_id ?? 0);
+  if (payload.line.startsWith("info ") && requestId === engineRequestId) {
+    const info = parseUciInfo(payload.line);
+    if (info && info.multipv >= 1 && info.multipv <= 5) {
+      engineRows.set(info.multipv, info);
+      renderEngineResults();
+    }
+  } else if (payload.line.startsWith("bestmove ") && requestId === engineRequestId) {
+    engineSearching = false;
+    updateEngineControls();
+    setEngineStatus(payload.line.includes("(none)") ? "Analisi completata · nessuna mossa legale" : "Analisi completata", "ready");
+  }
+}
+
+function handleStockfishExit(payload) {
+  engineStarted = false;
+  engineStarting = false;
+  engineSearching = false;
+  updateEngineControls();
+  if (engineShuttingDown) return;
+  setEngineStatus(payload?.reason || "Stockfish si è arrestato inaspettatamente.", "error");
+}
+
+async function startStockfish() {
+  if (!desktopApp) {
+    setEngineStatus("Stockfish è disponibile nell'app desktop Windows, non nell'anteprima browser.", "error");
+    return false;
+  }
+  if (engineStarted) return true;
+  engineStarting = true;
+  updateEngineControls();
+  setEngineStatus("Avvio Stockfish 19…", "running");
+  try {
+    await engineEventsReady;
+    if (engineEventsError) throw engineEventsError;
+    await invoke("stockfish_start");
+    engineStarted = true;
+    setEngineStatus("Stockfish 19 pronto", "ready");
+    updateEngineControls();
+    return true;
+  } catch (error) {
+    engineStarted = false;
+    setEngineStatus("Avvio non riuscito: " + error.message, "error");
+    showToast("Stockfish non disponibile: " + error.message);
+    updateEngineControls();
+    return false;
+  } finally {
+    engineStarting = false;
+    updateEngineControls();
+  }
+}
+
+async function analyzeCurrentPosition() {
+  if (!(await startStockfish())) return;
+  const chess = activeGame();
+  engineRequestId += 1;
+  engineFen = chess.fen();
+  engineSideToMove = chess.turn();
+  engineRows.clear();
+  renderEngineResults();
+  const depth = Number($("#engine-depth").value) || 16;
+  const multiPv = Number($("#engine-multipv").value) || 1;
+  engineSearching = true;
+  setEngineStatus("Analisi in corso…", "running");
+  updateEngineControls();
+  try {
+    await invoke("stockfish_analyze", {
+      fen: engineFen,
+      depth,
+      multiPv,
+      requestId: engineRequestId,
+    });
+  } catch (error) {
+    engineSearching = false;
+    setEngineStatus("Errore di analisi: " + error.message, "error");
+    showToast("Analisi Stockfish non riuscita: " + error.message);
+    updateEngineControls();
+  }
+}
+
+async function stopStockfishAnalysis() {
+  if (!engineStarted || !engineSearching) return;
+  try {
+    await invoke("stockfish_stop_analysis");
+    engineSearching = false;
+    setEngineStatus("Analisi interrotta", "ready");
+  } catch (error) {
+    engineSearching = false;
+    setEngineStatus("Errore arresto analisi: " + error.message, "error");
+    showToast(error.message);
+  } finally {
+    updateEngineControls();
+  }
+}
+
+async function shutdownStockfish() {
+  if (!engineStarted || engineShuttingDown) return;
+  engineShuttingDown = true;
+  try {
+    if (engineSearching) await stopStockfishAnalysis();
+    await invoke("stockfish_shutdown");
+    engineStarted = false;
+    engineSearching = false;
+    engineRows.clear();
+    renderEngineResults();
+    setEngineStatus("Motore spento", "normal");
+  } catch (error) {
+    setEngineStatus("Errore chiusura motore: " + error.message, "error");
+    showToast("Chiusura Stockfish non riuscita: " + error.message);
+  } finally {
+    engineShuttingDown = false;
+    updateEngineControls();
+  }
+}
+
+function stopAnalysisForChangedPosition() {
+  if (!engineSearching || !engineFen || engineFen === activeGame().fen()) return;
+  engineSearching = false;
+  engineRows.clear();
+  renderEngineResults();
+  setEngineStatus("Analisi interrotta · posizione cambiata", "ready");
+  invoke("stockfish_stop_analysis").catch((error) => {
+    setEngineStatus("Errore arresto analisi: " + error.message, "error");
+  });
+  updateEngineControls();
 }
 
 function setDirty(value = true) {
@@ -461,6 +659,7 @@ function selectVariation(edgeId) {
 }
 
 function renderAll() {
+  stopAnalysisForChangedPosition();
   renderBoard();
   renderMoves();
   renderVariations();
@@ -875,4 +1074,13 @@ document.addEventListener("keydown", (event) => {
 });
 
 renderAll();
+if (!desktopApp) {
+  setEngineStatus("Disponibile nell'app desktop Windows, non nell'anteprima browser.", "error");
+}
+renderEngineResults();
+updateEngineControls();
+$("#engine-start").addEventListener("click", () => { void startStockfish(); });
+$("#engine-analyze").addEventListener("click", () => { void analyzeCurrentPosition(); });
+$("#engine-stop").addEventListener("click", () => { void stopStockfishAnalysis(); });
+$("#engine-shutdown").addEventListener("click", () => { void shutdownStockfish(); });
 void initializePersistence();

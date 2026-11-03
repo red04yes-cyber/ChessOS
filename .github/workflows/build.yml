@@ -51,6 +51,11 @@ jobs:
           targets: x86_64-pc-windows-msvc
       - name: Install dependencies
         run: npm install --no-audit --no-fund
+      - name: Install pinned Stockfish 19 binary and GPL notices
+        shell: powershell
+        run: ./scripts/install-stockfish.ps1
+      - name: Smoke test Stockfish UCI on Windows
+        run: npm run stockfish:smoke
       - name: Run chess logic tests
         run: npm test
       - name: Build frontend for Tauri metadata
