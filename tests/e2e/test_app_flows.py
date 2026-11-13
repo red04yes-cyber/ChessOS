@@ -54,6 +54,9 @@ class ChessOsBrowserFlows(unittest.TestCase):
                 cls.server.wait(timeout=5)
             except subprocess.TimeoutExpired:
                 cls.server.kill()
+                cls.server.wait(timeout=5)
+        if getattr(cls, "server", None) and cls.server.stderr:
+            cls.server.stderr.close()
 
     def setUp(self):
         self.context = self.browser.new_context()
@@ -83,14 +86,14 @@ class ChessOsBrowserFlows(unittest.TestCase):
         self.page.keyboard.press("ArrowUp")
         self.page.keyboard.press("ArrowUp")
         self.page.keyboard.press("Enter")
-        self.page.get_by_text("e4", exact=True).wait_for()
+        self.page.locator('#move-list button.san-move').filter(has_text="e4").first.wait_for()
         self.assertIn("Nero al tratto", self.page.locator("#turn-label").inner_text())
 
     def test_pgn_import_and_local_save_survive_reload(self):
         pgn = '[Event "Browser E2E"]\n\n1. e4 e5 2. Nf3 Nc6 *'
         self.page.locator("#pgn-input").fill(pgn)
         self.page.locator("#import-pgn").click()
-        self.page.get_by_text("e4", exact=True).wait_for()
+        self.page.locator('#move-list button.san-move').filter(has_text="e4").first.wait_for()
         self.page.locator("#line-title").fill("E2E reperto")
         self.page.locator("#save-line").click()
         self.page.locator("#repertoire-list").get_by_text("E2E reperto").wait_for()
