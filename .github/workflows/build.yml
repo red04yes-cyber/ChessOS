@@ -7,6 +7,12 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      release_confirmation:
+        description: "Per pubblicare il tag selezionato, digita esattamente PUBBLICA seguito dal tag (es. PUBBLICA v0.2.1)."
+        required: false
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -19,7 +25,7 @@ jobs:
   verify:
     name: Frontend tests and production build
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -34,10 +40,55 @@ jobs:
       - name: Build frontend
         run: npm run build
 
+  dependency-audit:
+    name: npm and Rust dependency security audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - name: Install exact Node dependency graph
+        run: npm ci --no-audit --no-fund
+      - name: Audit npm dependencies
+        run: npm audit --audit-level=high
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8
+        with:
+          toolchain: stable
+      - name: Install pinned cargo-audit
+        run: cargo install cargo-audit --version 0.23.0 --locked
+      - name: Audit Rust dependencies
+        run: cargo audit --file src-tauri/Cargo.lock
+
+  browser-e2e:
+    name: Browser end-to-end and accessibility smoke tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c # v6.0.0
+        with:
+          python-version: "3.12"
+      - name: Install exact Node dependency graph
+        run: npm ci --no-audit --no-fund
+      - name: Install pinned Playwright runtime
+        run: python -m pip install --disable-pip-version-check -r tests/e2e/requirements.txt
+      - name: Install Chromium for browser tests
+        run: python -m playwright install --with-deps chromium
+      - name: Run browser end-to-end and accessibility tests
+        run: npm run test:e2e
   windows-installer:
     name: Windows NSIS installer
     runs-on: windows-latest
-    timeout-minutes: 75
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -56,13 +107,17 @@ jobs:
         run: npm test
       - name: Build frontend for Tauri metadata
         run: npm run build
+      - name: Check Rust formatting
+        run: cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
+      - name: Run Rust Clippy with warnings denied
+        run: cargo clippy --manifest-path src-tauri/Cargo.toml --locked --all-targets --all-features -- -D warnings
       - name: Run SQLite backend tests
-        run: cargo test --manifest-path src-tauri/Cargo.toml
+        run: cargo test --manifest-path src-tauri/Cargo.toml --locked
       - name: Test clean install, app launch, 0.1.x upgrade and SQLite preservation
         shell: pwsh
         run: ./scripts/windows-installer-smoke.ps1
       - name: Build signed updater bundle for approved releases
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: github.event_name == 'workflow_dispatch' && startsWith(github.ref, 'refs/tags/v') && inputs.release_confirmation == format('PUBBLICA {0}', github.ref_name)
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
@@ -97,8 +152,12 @@ jobs:
   publish-release:
     name: Publish tagged GitHub Release
     runs-on: ubuntu-latest
-    needs: [verify, windows-installer]
-    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [verify, dependency-audit, browser-e2e, windows-installer]
+    environment: release
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      startsWith(github.ref, 'refs/tags/v') &&
+      inputs.release_confirmation == format('PUBBLICA {0}', github.ref_name)
     permissions:
       actions: read
       contents: write

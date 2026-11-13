@@ -14,7 +14,8 @@
     "tauri:build": "tauri build",
     "prepare:engine": "node scripts/prepare-engine.js",
     "predev": "npm run prepare:engine",
-    "prebuild": "npm run prepare:engine"
+    "prebuild": "npm run prepare:engine",
+    "test:e2e": "python -m unittest discover -s tests/e2e -v"
   },
   "dependencies": {
     "@tauri-apps/api": "2.12.4",
