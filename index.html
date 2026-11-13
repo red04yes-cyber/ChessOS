@@ -117,7 +117,7 @@
             <section class="board-panel">
               <div class="board-topline">
                 <div><span class="live-dot"></span><span id="board-label">PARTITA IN CORSO</span></div>
-                <span class="turn-label" id="turn-label">Bianco al tratto</span>
+                <span class="turn-label" id="turn-label" role="status" aria-live="polite">Bianco al tratto</span>
               </div>
               <div class="board-tools">
                 <label for="board-mark-tool">Strumento</label>
@@ -142,7 +142,7 @@
                 <svg id="board-markings" class="board-markings" viewBox="0 0 800 800" preserveAspectRatio="none" aria-hidden="true"></svg>
               </div></div>
               <div class="board-footer">
-                <span id="game-status">Partita pronta</span>
+                <span id="game-status" role="status" aria-live="polite" aria-atomic="true">Partita pronta</span>
                 <span id="move-count">0 mosse</span>
               </div>
               <small id="current-analysis" class="engine-analysis-caption" aria-live="polite">Stockfish analizza automaticamente la posizione dello Studio.</small>
