@@ -11,14 +11,13 @@ fn main() {
     tauri::Builder::default()
         .setup(|app| {
             #[cfg(windows)]
-            app.handle().plugin(tauri_plugin_updater::Builder::new().build())?;
+            app.handle()
+                .plugin(tauri_plugin_updater::Builder::new().build())?;
             #[cfg(windows)]
             app.handle().plugin(tauri_plugin_process::init())?;
-            let database_path = app
-                .path()
-                .app_data_dir()?
-                .join("chess-os.sqlite3");
-            let connection = db::open_database(&database_path).map_err(|error| std::io::Error::other(error.to_string()))?;
+            let database_path = app.path().app_data_dir()?.join("chess-os.sqlite3");
+            let connection = db::open_database(&database_path)
+                .map_err(|error| std::io::Error::other(error.to_string()))?;
             app.manage(db::Database(Mutex::new(connection)));
             Ok(())
         })

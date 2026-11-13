@@ -121,41 +121,54 @@ fn emit_progress(app: &AppHandle, provider: &str, username: &str, counts: &Count
     );
 }
 
-fn persist_batch(database: &Database, batch: &mut Vec<ImportedGame>, counts: &mut Counters) -> Result<(), String> {
+fn persist_batch(
+    database: &Database,
+    batch: &mut Vec<ImportedGame>,
+    counts: &mut Counters,
+) -> Result<(), String> {
     if batch.is_empty() {
         return Ok(());
     }
 
-    let mut connection = database.0.lock().map_err(|_| "Database non disponibile.".to_string())?;
-    let transaction = connection.transaction().map_err(|error| error.to_string())?;
+    let mut connection = database
+        .0
+        .lock()
+        .map_err(|_| "Database non disponibile.".to_string())?;
+    let transaction = connection
+        .transaction()
+        .map_err(|error| error.to_string())?;
     {
-        let mut statement = transaction.prepare(
-            "INSERT INTO imported_games
+        let mut statement = transaction
+            .prepare(
+                "INSERT INTO imported_games
                 (id, provider, source_username, source_game_id, pgn, white, black,
                  played_at, result, time_control, opening, source_url, imported_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
-             ON CONFLICT(provider, source_game_id) DO NOTHING"
-        ).map_err(|error| error.to_string())?;
+             ON CONFLICT(provider, source_game_id) DO NOTHING",
+            )
+            .map_err(|error| error.to_string())?;
 
         for game in batch.drain(..) {
             let source_provider = game.provider.clone();
             let source_username = game.source_username.clone();
             let source_game_id = game.source_game_id.clone();
-            let inserted = statement.execute(rusqlite::params![
-                game.id,
-                game.provider,
-                game.source_username,
-                game.source_game_id,
-                game.pgn,
-                game.white,
-                game.black,
-                game.played_at,
-                game.result,
-                game.time_control,
-                game.opening,
-                game.source_url,
-                now_timestamp()
-            ]).map_err(|error| error.to_string())?;
+            let inserted = statement
+                .execute(rusqlite::params![
+                    game.id,
+                    game.provider,
+                    game.source_username,
+                    game.source_game_id,
+                    game.pgn,
+                    game.white,
+                    game.black,
+                    game.played_at,
+                    game.result,
+                    game.time_control,
+                    game.opening,
+                    game.source_url,
+                    now_timestamp()
+                ])
+                .map_err(|error| error.to_string())?;
             if inserted == 1 {
                 counts.imported += 1;
             } else {
@@ -172,8 +185,15 @@ fn persist_batch(database: &Database, batch: &mut Vec<ImportedGame>, counts: &mu
     Ok(())
 }
 
-fn archive_was_imported(database: &Database, username: &str, archive_key: &str) -> Result<bool, String> {
-    let connection = database.0.lock().map_err(|_| "Database non disponibile.".to_string())?;
+fn archive_was_imported(
+    database: &Database,
+    username: &str,
+    archive_key: &str,
+) -> Result<bool, String> {
+    let connection = database
+        .0
+        .lock()
+        .map_err(|_| "Database non disponibile.".to_string())?;
     connection.query_row(
         "SELECT EXISTS(SELECT 1 FROM imported_game_archives
          WHERE provider = 'chess_com' AND source_username = ?1 COLLATE NOCASE AND archive_key = ?2)",
@@ -182,8 +202,15 @@ fn archive_was_imported(database: &Database, username: &str, archive_key: &str) 
     ).map_err(|error| error.to_string())
 }
 
-fn mark_archive_imported(database: &Database, username: &str, archive_key: &str) -> Result<(), String> {
-    let connection = database.0.lock().map_err(|_| "Database non disponibile.".to_string())?;
+fn mark_archive_imported(
+    database: &Database,
+    username: &str,
+    archive_key: &str,
+) -> Result<(), String> {
+    let connection = database
+        .0
+        .lock()
+        .map_err(|_| "Database non disponibile.".to_string())?;
     connection.execute(
         "INSERT INTO imported_game_archives(provider, source_username, archive_key, imported_at)
          VALUES ('chess_com', ?1, ?2, ?3)
@@ -226,35 +253,77 @@ fn parse_headers(pgn: &str) -> std::collections::HashMap<String, String> {
 }
 
 fn first_two_san_moves(pgn: &str) -> (Option<String>, Option<String>) {
-    let body = pgn.find("\r\n\r\n").map(|index| &pgn[index + 4..])
+    let body = pgn
+        .find("\r\n\r\n")
+        .map(|index| &pgn[index + 4..])
         .or_else(|| pgn.find("\n\n").map(|index| &pgn[index + 2..]))
         .unwrap_or("");
     let mut clean = String::with_capacity(body.len());
     let (mut comment_depth, mut variation_depth, mut line_comment) = (0usize, 0usize, false);
     for ch in body.chars() {
-        if line_comment { if ch == '\n' { line_comment = false; clean.push(' '); } continue; }
-        if comment_depth > 0 { if ch == '{' { comment_depth += 1; } else if ch == '}' { comment_depth -= 1; } continue; }
-        if ch == ';' { line_comment = true; continue; }
-        if ch == '{' { comment_depth = 1; continue; }
-        if ch == '(' { variation_depth += 1; continue; }
-        if ch == ')' { variation_depth = variation_depth.saturating_sub(1); continue; }
-        if variation_depth == 0 { clean.push(ch); }
+        if line_comment {
+            if ch == '\n' {
+                line_comment = false;
+                clean.push(' ');
+            }
+            continue;
+        }
+        if comment_depth > 0 {
+            if ch == '{' {
+                comment_depth += 1;
+            } else if ch == '}' {
+                comment_depth -= 1;
+            }
+            continue;
+        }
+        if ch == ';' {
+            line_comment = true;
+            continue;
+        }
+        if ch == '{' {
+            comment_depth = 1;
+            continue;
+        }
+        if ch == '(' {
+            variation_depth += 1;
+            continue;
+        }
+        if ch == ')' {
+            variation_depth = variation_depth.saturating_sub(1);
+            continue;
+        }
+        if variation_depth == 0 {
+            clean.push(ch);
+        }
     }
     let mut moves = Vec::with_capacity(2);
     for raw in clean.split_whitespace() {
-        if matches!(raw, "1-0" | "0-1" | "1/2-1/2" | "*") { break; }
+        if matches!(raw, "1-0" | "0-1" | "1/2-1/2" | "*") {
+            break;
+        }
         let token = raw.rsplit_once('.').map(|(_, san)| san).unwrap_or(raw);
         let san = token.trim_matches(|ch: char| matches!(ch, '!' | '?' | '+' | '#' | '\r' | '\n'));
-        if san.is_empty() || san.starts_with('$') || san == ")" { continue; }
+        if san.is_empty() || san.starts_with('$') || san == ")" {
+            continue;
+        }
         moves.push(san.to_string());
-        if moves.len() == 2 { break; }
+        if moves.len() == 2 {
+            break;
+        }
     }
     (moves.first().cloned(), moves.get(1).cloned())
 }
 
-fn game_id(provider: &str, pgn: &str, site: &str, headers: &std::collections::HashMap<String, String>) -> String {
+fn game_id(
+    provider: &str,
+    pgn: &str,
+    site: &str,
+    headers: &std::collections::HashMap<String, String>,
+) -> String {
     let path_id = site
-        .split('?').next().unwrap_or(site)
+        .split('?')
+        .next()
+        .unwrap_or(site)
         .trim_end_matches('/')
         .rsplit('/')
         .next()
@@ -280,7 +349,10 @@ fn parse_game(provider: &str, username: &str, pgn: String) -> Option<ImportedGam
         return None;
     }
     let headers = parse_headers(&pgn);
-    let variant = headers.get("Variant").map(|value| value.to_ascii_lowercase()).unwrap_or_default();
+    let variant = headers
+        .get("Variant")
+        .map(|value| value.to_ascii_lowercase())
+        .unwrap_or_default();
     if !variant.is_empty() && variant != "standard" && variant != "chess" {
         return None;
     }
@@ -300,7 +372,8 @@ fn parse_game(provider: &str, username: &str, pgn: String) -> Option<ImportedGam
         return None;
     }
 
-    let source_url = headers.get("Site")
+    let source_url = headers
+        .get("Site")
         .or_else(|| headers.get("Link"))
         .cloned()
         .unwrap_or_default();
@@ -311,8 +384,14 @@ fn parse_game(provider: &str, username: &str, pgn: String) -> Option<ImportedGam
         source_username: username.to_string(),
         source_game_id,
         pgn,
-        white: headers.get("White").cloned().unwrap_or_else(|| "Bianco".into()),
-        black: headers.get("Black").cloned().unwrap_or_else(|| "Nero".into()),
+        white: headers
+            .get("White")
+            .cloned()
+            .unwrap_or_else(|| "Bianco".into()),
+        black: headers
+            .get("Black")
+            .cloned()
+            .unwrap_or_else(|| "Nero".into()),
         played_at: headers.get("Date").cloned().unwrap_or_default(),
         result: headers.get("Result").cloned().unwrap_or_else(|| "*".into()),
         time_control: headers.get("TimeControl").cloned().unwrap_or_default(),
@@ -328,8 +407,7 @@ fn event_offsets(bytes: &[u8]) -> Vec<usize> {
     }
     (0..=bytes.len() - marker.len())
         .filter(|index| {
-            bytes[*index..].starts_with(marker)
-                && (*index == 0 || bytes[*index - 1] == b'\n')
+            bytes[*index..].starts_with(marker) && (*index == 0 || bytes[*index - 1] == b'\n')
         })
         .collect()
 }
@@ -406,7 +484,9 @@ fn parse_chess_com_archive_url(url: &str) -> Option<(String, String)> {
         || parts[2] != "player"
         || parts[3].is_empty()
         || parts[4] != "games"
-        || !parts[3].chars().all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '-')
+        || !parts[3]
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '-')
     {
         return None;
     }
@@ -452,12 +532,21 @@ fn check_http_status(status: StatusCode, provider: &str) -> Result<(), String> {
             Err("Il servizio non ha autorizzato la richiesta.".into())
         };
     }
-    Err(format!("Il servizio {} ha risposto con HTTP {}.", provider, status.as_u16()))
+    Err(format!(
+        "Il servizio {} ha risposto con HTTP {}.",
+        provider,
+        status.as_u16()
+    ))
 }
 
 fn validate_username(username: &str) -> Result<String, String> {
     let value = username.trim();
-    if value.is_empty() || value.len() > 50 || !value.chars().all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '-') {
+    if value.is_empty()
+        || value.len() > 50
+        || !value
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '-')
+    {
         return Err("Username non valido: usa solo lettere, numeri, trattino o underscore.".into());
     }
     Ok(value.to_string())
@@ -492,13 +581,23 @@ pub async fn import_online_games(
     emit_progress(&app, &provider, &username, &counts, "start");
 
     if provider == "chess_com" {
-        let archives_url = format!("https://api.chess.com/pub/player/{}/games/archives", username);
-        let response = client.get(&archives_url).send().await
+        let archives_url = format!(
+            "https://api.chess.com/pub/player/{}/games/archives",
+            username
+        );
+        let response = client
+            .get(&archives_url)
+            .send()
+            .await
             .map_err(|error| format!("Connessione a Chess.com non riuscita: {}", error))?;
         check_http_status(response.status(), "chess.com")?;
-        let payload: Value = response.json().await
+        let payload: Value = response
+            .json()
+            .await
             .map_err(|error| format!("Risposta degli archivi Chess.com non valida: {}", error))?;
-        let archive_urls = payload.get("archives").and_then(Value::as_array)
+        let archive_urls = payload
+            .get("archives")
+            .and_then(Value::as_array)
             .ok_or_else(|| "Chess.com non ha restituito l'elenco degli archivi.".to_string())?;
         archives = archive_urls.len();
 
@@ -516,7 +615,8 @@ pub async fn import_online_games(
                 continue;
             };
             let archive_key = format!("{}/{}", year, month);
-            if archive_index > 0 && archive_was_imported(database.inner(), &username, &archive_key)? {
+            if archive_index > 0 && archive_was_imported(database.inner(), &username, &archive_key)?
+            {
                 emit_progress(&app, &provider, &username, &counts, "archive_cached");
                 continue;
             }
@@ -524,10 +624,17 @@ pub async fn import_online_games(
                 "https://api.chess.com/pub/player/{}/games/{}/{}/pgn",
                 username, year, month
             );
-            let response = client.get(&pgn_url)
+            let response = client
+                .get(&pgn_url)
                 .header("Accept", "application/x-chess-pgn")
-                .send().await
-                .map_err(|error| format!("Download interrotto dopo {} partite elaborate: {}", counts.processed, error))?;
+                .send()
+                .await
+                .map_err(|error| {
+                    format!(
+                        "Download interrotto dopo {} partite elaborate: {}",
+                        counts.processed, error
+                    )
+                })?;
             check_http_status(response.status(), "chess.com")?;
 
             // Stream each monthly archive instead of buffering the complete PGN
@@ -541,7 +648,15 @@ pub async fn import_online_games(
                     Ok(None) => break,
                     Err(error) => {
                         let complete = take_complete_games(&mut buffer, false);
-                        process_games(database.inner(), &app, &provider, &username, complete, &mut batch, &mut counts)?;
+                        process_games(
+                            database.inner(),
+                            &app,
+                            &provider,
+                            &username,
+                            complete,
+                            &mut batch,
+                            &mut counts,
+                        )?;
                         let _ = persist_batch(database.inner(), &mut batch, &mut counts);
                         emit_progress(&app, &provider, &username, &counts, "interrupted");
                         return Err(format!(
@@ -555,7 +670,15 @@ pub async fn import_online_games(
                     Some(size) => size,
                     None => {
                         let complete = take_complete_games(&mut buffer, false);
-                        process_games(database.inner(), &app, &provider, &username, complete, &mut batch, &mut counts)?;
+                        process_games(
+                            database.inner(),
+                            &app,
+                            &provider,
+                            &username,
+                            complete,
+                            &mut batch,
+                            &mut counts,
+                        )?;
                         let _ = persist_batch(database.inner(), &mut batch, &mut counts);
                         emit_progress(&app, &provider, &username, &counts, "interrupted");
                         return Err(format!(
@@ -567,7 +690,15 @@ pub async fn import_online_games(
 
                 buffer.extend_from_slice(&chunk);
                 let complete = take_complete_games(&mut buffer, false);
-                process_games(database.inner(), &app, &provider, &username, complete, &mut batch, &mut counts)?;
+                process_games(
+                    database.inner(),
+                    &app,
+                    &provider,
+                    &username,
+                    complete,
+                    &mut batch,
+                    &mut counts,
+                )?;
                 if pending_game_exceeds_limit(&buffer) {
                     let _ = persist_batch(database.inner(), &mut batch, &mut counts);
                     emit_progress(&app, &provider, &username, &counts, "interrupted");
@@ -582,7 +713,15 @@ pub async fn import_online_games(
             }
 
             let remaining = take_complete_games(&mut buffer, true);
-            process_games(database.inner(), &app, &provider, &username, remaining, &mut batch, &mut counts)?;
+            process_games(
+                database.inner(),
+                &app,
+                &provider,
+                &username,
+                remaining,
+                &mut batch,
+                &mut counts,
+            )?;
             persist_batch(database.inner(), &mut batch, &mut counts)?;
             mark_archive_imported(database.inner(), &username, &archive_key)?;
             emit_progress(&app, &provider, &username, &counts, "download");
@@ -596,7 +735,9 @@ pub async fn import_online_games(
         if !token.is_empty() {
             request = request.bearer_auth(&token);
         }
-        let response = request.send().await
+        let response = request
+            .send()
+            .await
             .map_err(|error| format!("Connessione a Lichess non riuscita: {}", error))?;
         check_http_status(response.status(), "lichess")?;
 
@@ -617,7 +758,15 @@ pub async fn import_online_games(
             };
             buffer.extend_from_slice(&chunk);
             let games = take_complete_games(&mut buffer, false);
-            process_games(database.inner(), &app, &provider, &username, games, &mut batch, &mut counts)?;
+            process_games(
+                database.inner(),
+                &app,
+                &provider,
+                &username,
+                games,
+                &mut batch,
+                &mut counts,
+            )?;
             if pending_game_exceeds_limit(&buffer) {
                 let _ = persist_batch(database.inner(), &mut batch, &mut counts);
                 emit_progress(&app, &provider, &username, &counts, "interrupted");
@@ -630,7 +779,15 @@ pub async fn import_online_games(
             }
         }
         let games = take_complete_games(&mut buffer, true);
-        process_games(database.inner(), &app, &provider, &username, games, &mut batch, &mut counts)?;
+        process_games(
+            database.inner(),
+            &app,
+            &provider,
+            &username,
+            games,
+            &mut batch,
+            &mut counts,
+        )?;
     }
 
     persist_batch(database.inner(), &mut batch, &mut counts)?;
@@ -652,33 +809,41 @@ pub fn list_imported_games(
     database: State<'_, Database>,
     limit: Option<i64>,
 ) -> Result<Vec<ImportedGameSummary>, String> {
-    let connection = database.0.lock().map_err(|_| "Database non disponibile.".to_string())?;
+    let connection = database
+        .0
+        .lock()
+        .map_err(|_| "Database non disponibile.".to_string())?;
     let limit = limit.unwrap_or(20).clamp(1, 100);
-    let mut statement = connection.prepare(
-        "SELECT imported_games.id, imported_games.provider, imported_games.source_username,
+    let mut statement = connection
+        .prepare(
+            "SELECT imported_games.id, imported_games.provider, imported_games.source_username,
                 imported_games.source_game_id, imported_games.white, imported_games.black,
                 imported_games.played_at, imported_games.result, imported_games.time_control,
                 imported_games.opening, imported_games.source_url
          FROM imported_games
          ORDER BY played_at DESC, imported_at DESC
-         LIMIT ?1"
-    ).map_err(|error| error.to_string())?;
-    let rows = statement.query_map([limit], |row| {
-        Ok(ImportedGameSummary {
-            id: row.get(0)?,
-            provider: row.get(1)?,
-            source_username: row.get(2)?,
-            source_game_id: row.get(3)?,
-            white: row.get(4)?,
-            black: row.get(5)?,
-            played_at: row.get(6)?,
-            result: row.get(7)?,
-            time_control: row.get(8)?,
-            opening: row.get(9)?,
-            source_url: row.get(10)?,
+         LIMIT ?1",
+        )
+        .map_err(|error| error.to_string())?;
+    let rows = statement
+        .query_map([limit], |row| {
+            Ok(ImportedGameSummary {
+                id: row.get(0)?,
+                provider: row.get(1)?,
+                source_username: row.get(2)?,
+                source_game_id: row.get(3)?,
+                white: row.get(4)?,
+                black: row.get(5)?,
+                played_at: row.get(6)?,
+                result: row.get(7)?,
+                time_control: row.get(8)?,
+                opening: row.get(9)?,
+                source_url: row.get(10)?,
+            })
         })
-    }).map_err(|error| error.to_string())?;
-    rows.collect::<Result<Vec<_>, _>>().map_err(|error| error.to_string())
+        .map_err(|error| error.to_string())?;
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
@@ -702,18 +867,24 @@ pub fn search_imported_games(
     let pattern = format!("%{}%", query);
     let limit = limit.unwrap_or(50).clamp(1, 100);
     let offset = offset.unwrap_or(0).max(0);
-    let connection = database.0.lock().map_err(|_| "Database non disponibile.".to_string())?;
-    let total: i64 = connection.query_row(
-        "SELECT COUNT(*) FROM imported_games
+    let connection = database
+        .0
+        .lock()
+        .map_err(|_| "Database non disponibile.".to_string())?;
+    let total: i64 = connection
+        .query_row(
+            "SELECT COUNT(*) FROM imported_games
          WHERE (?1 = '' OR provider = ?1)
            AND (?2 = '' OR source_username = ?2 COLLATE NOCASE)
            AND (?3 = '' OR white LIKE ?4 OR black LIKE ?4 OR played_at LIKE ?4
                 OR opening LIKE ?4 OR source_username LIKE ?4 OR result LIKE ?4)",
-        rusqlite::params![provider, username, query, pattern],
-        |row| row.get(0),
-    ).map_err(|error| error.to_string())?;
-    let mut statement = connection.prepare(
-        "SELECT id, provider, source_username, source_game_id, white, black, played_at,
+            rusqlite::params![provider, username, query, pattern],
+            |row| row.get(0),
+        )
+        .map_err(|error| error.to_string())?;
+    let mut statement = connection
+        .prepare(
+            "SELECT id, provider, source_username, source_game_id, white, black, played_at,
                 result, time_control, opening, source_url
          FROM imported_games
          WHERE (?1 = '' OR provider = ?1)
@@ -721,19 +892,38 @@ pub fn search_imported_games(
            AND (?3 = '' OR white LIKE ?4 OR black LIKE ?4 OR played_at LIKE ?4
                 OR opening LIKE ?4 OR source_username LIKE ?4 OR result LIKE ?4)
          ORDER BY played_at DESC, imported_at DESC
-         LIMIT ?5 OFFSET ?6"
-    ).map_err(|error| error.to_string())?;
-    let rows = statement.query_map(
-        rusqlite::params![provider, username, query, pattern, limit, offset],
-        |row| Ok(ImportedGameSummary {
-            id: row.get(0)?, provider: row.get(1)?, source_username: row.get(2)?,
-            source_game_id: row.get(3)?, white: row.get(4)?, black: row.get(5)?,
-            played_at: row.get(6)?, result: row.get(7)?, time_control: row.get(8)?,
-            opening: row.get(9)?, source_url: row.get(10)?,
-        }),
-    ).map_err(|error| error.to_string())?;
-    let games = rows.collect::<Result<Vec<_>, _>>().map_err(|error| error.to_string())?;
-    Ok(ImportedGamePage { games, total, offset, limit })
+         LIMIT ?5 OFFSET ?6",
+        )
+        .map_err(|error| error.to_string())?;
+    let rows = statement
+        .query_map(
+            rusqlite::params![provider, username, query, pattern, limit, offset],
+            |row| {
+                Ok(ImportedGameSummary {
+                    id: row.get(0)?,
+                    provider: row.get(1)?,
+                    source_username: row.get(2)?,
+                    source_game_id: row.get(3)?,
+                    white: row.get(4)?,
+                    black: row.get(5)?,
+                    played_at: row.get(6)?,
+                    result: row.get(7)?,
+                    time_control: row.get(8)?,
+                    opening: row.get(9)?,
+                    source_url: row.get(10)?,
+                })
+            },
+        )
+        .map_err(|error| error.to_string())?;
+    let games = rows
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| error.to_string())?;
+    Ok(ImportedGamePage {
+        games,
+        total,
+        offset,
+        limit,
+    })
 }
 
 #[tauri::command]
@@ -753,18 +943,29 @@ pub fn export_imported_games_pgn(
         validate_username(&username)?;
     }
     let pattern = format!("%{}%", query);
-    let connection = database.0.lock().map_err(|_| "Database non disponibile.".to_string())?;
-    let mut statement = connection.prepare(
-        "SELECT pgn FROM imported_games
+    let connection = database
+        .0
+        .lock()
+        .map_err(|_| "Database non disponibile.".to_string())?;
+    let mut statement = connection
+        .prepare(
+            "SELECT pgn FROM imported_games
          WHERE (?1 = '' OR provider = ?1)
            AND (?2 = '' OR source_username = ?2 COLLATE NOCASE)
            AND (?3 = '' OR white LIKE ?4 OR black LIKE ?4 OR played_at LIKE ?4
                 OR opening LIKE ?4 OR source_username LIKE ?4 OR result LIKE ?4)
-         ORDER BY played_at ASC, imported_at ASC"
-    ).map_err(|error| error.to_string())?;
-    let rows = statement.query_map(rusqlite::params![provider, username, query, pattern], |row| row.get::<_, String>(0))
+         ORDER BY played_at ASC, imported_at ASC",
+        )
         .map_err(|error| error.to_string())?;
-    let pgns = rows.collect::<Result<Vec<_>, _>>().map_err(|error| error.to_string())?;
+    let rows = statement
+        .query_map(
+            rusqlite::params![provider, username, query, pattern],
+            |row| row.get::<_, String>(0),
+        )
+        .map_err(|error| error.to_string())?;
+    let pgns = rows
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| error.to_string())?;
     if pgns.is_empty() {
         return Err("Nessuna partita corrisponde ai filtri dell'archivio.".into());
     }
@@ -783,7 +984,10 @@ pub fn list_profile_games(
         return Err("I report profilo sono disponibili per Chess.com.".into());
     }
     let username = validate_username(&username)?;
-    let connection = database.0.lock().map_err(|_| "Database non disponibile.".to_string())?;
+    let connection = database
+        .0
+        .lock()
+        .map_err(|_| "Database non disponibile.".to_string())?;
     let mut statement = connection.prepare(
         "SELECT imported_games.id, imported_games.provider, imported_games.source_username,
                 imported_games.source_game_id, imported_games.white, imported_games.black,
@@ -794,25 +998,35 @@ pub fn list_profile_games(
          WHERE imported_games.provider = ?1 AND imported_game_sources.source_username = ?2 COLLATE NOCASE
          ORDER BY played_at DESC, imported_at DESC"
     ).map_err(|error| error.to_string())?;
-    let rows = statement.query_map([provider, username], |row| {
-        let pgn: String = row.get(11)?;
-        let headers = parse_headers(&pgn);
-        let (white_first_move, black_first_move) = first_two_san_moves(&pgn);
-        Ok(OpponentGameRecord {
-            summary: ImportedGameSummary {
-                id: row.get(0)?, provider: row.get(1)?, source_username: row.get(2)?,
-                source_game_id: row.get(3)?, white: row.get(4)?, black: row.get(5)?,
-                played_at: row.get(6)?, result: row.get(7)?, time_control: row.get(8)?,
-                opening: row.get(9)?, source_url: row.get(10)?,
-            },
-            white_elo: headers.get("WhiteElo").cloned(),
-            black_elo: headers.get("BlackElo").cloned(),
-            eco: headers.get("ECO").cloned(),
-            white_first_move,
-            black_first_move,
+    let rows = statement
+        .query_map([provider, username], |row| {
+            let pgn: String = row.get(11)?;
+            let headers = parse_headers(&pgn);
+            let (white_first_move, black_first_move) = first_two_san_moves(&pgn);
+            Ok(OpponentGameRecord {
+                summary: ImportedGameSummary {
+                    id: row.get(0)?,
+                    provider: row.get(1)?,
+                    source_username: row.get(2)?,
+                    source_game_id: row.get(3)?,
+                    white: row.get(4)?,
+                    black: row.get(5)?,
+                    played_at: row.get(6)?,
+                    result: row.get(7)?,
+                    time_control: row.get(8)?,
+                    opening: row.get(9)?,
+                    source_url: row.get(10)?,
+                },
+                white_elo: headers.get("WhiteElo").cloned(),
+                black_elo: headers.get("BlackElo").cloned(),
+                eco: headers.get("ECO").cloned(),
+                white_first_move,
+                black_first_move,
+            })
         })
-    }).map_err(|error| error.to_string())?;
-    rows.collect::<Result<Vec<_>, _>>().map_err(|error| error.to_string())
+        .map_err(|error| error.to_string())?;
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
@@ -820,38 +1034,49 @@ pub fn get_imported_game(
     database: State<'_, Database>,
     id: String,
 ) -> Result<ImportedGameRecord, String> {
-    let connection = database.0.lock().map_err(|_| "Database non disponibile.".to_string())?;
-    connection.query_row(
-        "SELECT id, provider, source_username, source_game_id, white, black, played_at,
+    let connection = database
+        .0
+        .lock()
+        .map_err(|_| "Database non disponibile.".to_string())?;
+    connection
+        .query_row(
+            "SELECT id, provider, source_username, source_game_id, white, black, played_at,
                 result, time_control, opening, source_url, pgn
          FROM imported_games WHERE id = ?1",
-        [id],
-        |row| Ok(ImportedGameRecord {
-            summary: ImportedGameSummary {
-                id: row.get(0)?,
-                provider: row.get(1)?,
-                source_username: row.get(2)?,
-                source_game_id: row.get(3)?,
-                white: row.get(4)?,
-                black: row.get(5)?,
-                played_at: row.get(6)?,
-                result: row.get(7)?,
-                time_control: row.get(8)?,
-                opening: row.get(9)?,
-                source_url: row.get(10)?,
+            [id],
+            |row| {
+                Ok(ImportedGameRecord {
+                    summary: ImportedGameSummary {
+                        id: row.get(0)?,
+                        provider: row.get(1)?,
+                        source_username: row.get(2)?,
+                        source_game_id: row.get(3)?,
+                        white: row.get(4)?,
+                        black: row.get(5)?,
+                        played_at: row.get(6)?,
+                        result: row.get(7)?,
+                        time_control: row.get(8)?,
+                        opening: row.get(9)?,
+                        source_url: row.get(10)?,
+                    },
+                    pgn: row.get(11)?,
+                })
             },
-            pgn: row.get(11)?,
+        )
+        .map_err(|error| match error {
+            rusqlite::Error::QueryReturnedNoRows => "Partita importata non trovata.".to_string(),
+            other => other.to_string(),
         })
-    ).map_err(|error| match error {
-        rusqlite::Error::QueryReturnedNoRows => "Partita importata non trovata.".to_string(),
-        other => other.to_string(),
-    })
 }
 
 #[tauri::command]
 pub fn delete_imported_game(database: State<'_, Database>, id: String) -> Result<bool, String> {
-    let connection = database.0.lock().map_err(|_| "Database non disponibile.".to_string())?;
-    let deleted = connection.execute("DELETE FROM imported_games WHERE id = ?1", [id])
+    let connection = database
+        .0
+        .lock()
+        .map_err(|_| "Database non disponibile.".to_string())?;
+    let deleted = connection
+        .execute("DELETE FROM imported_games WHERE id = ?1", [id])
         .map_err(|error| error.to_string())?;
     Ok(deleted > 0)
 }
@@ -909,7 +1134,8 @@ mod tests {
         assert_eq!(counts.imported, 1);
         assert_eq!(counts.duplicates, 1);
 
-        let mut same_game_from_another_profile = parse_game("lichess", "second_player", PGN_ONE.to_string()).unwrap();
+        let mut same_game_from_another_profile =
+            parse_game("lichess", "second_player", PGN_ONE.to_string()).unwrap();
         same_game_from_another_profile.source_username = "second_player".into();
         let mut batch = vec![same_game_from_another_profile];
         persist_batch(&database, &mut batch, &mut counts).unwrap();
@@ -917,13 +1143,15 @@ mod tests {
         assert_eq!(counts.duplicates, 2);
 
         let connection = database.0.lock().unwrap();
-        let count: i64 = connection.query_row(
-            "SELECT COUNT(*) FROM imported_games", [], |row| row.get(0)
-        ).unwrap();
+        let count: i64 = connection
+            .query_row("SELECT COUNT(*) FROM imported_games", [], |row| row.get(0))
+            .unwrap();
         assert_eq!(count, 1);
-        let profile_count: i64 = connection.query_row(
-            "SELECT COUNT(*) FROM imported_game_sources", [], |row| row.get(0)
-        ).unwrap();
+        let profile_count: i64 = connection
+            .query_row("SELECT COUNT(*) FROM imported_game_sources", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
         assert_eq!(profile_count, 2);
     }
 
@@ -937,18 +1165,40 @@ mod tests {
             parse_chess_com_archive_url("https://api.chess.com/pub/player/player1/games/2026/02/"),
             Some(("2026".to_string(), "02".to_string()))
         );
-        assert_eq!(parse_chess_com_archive_url("https://api.chess.com.evil/pub/player/player1/games/2026/11"), None);
-        assert_eq!(parse_chess_com_archive_url("http://api.chess.com/pub/player/player1/games/2026/11"), None);
-        assert_eq!(parse_chess_com_archive_url("https://api.chess.com/pub/player/player1/games/2026/13"), None);
-        assert_eq!(parse_chess_com_archive_url("https://api.chess.com/pub/player/player1/games/26/01"), None);
-        assert_eq!(parse_chess_com_archive_url("https://api.chess.com/pub/player/player1/games/2026/11?next=1"), None);
+        assert_eq!(
+            parse_chess_com_archive_url(
+                "https://api.chess.com.evil/pub/player/player1/games/2026/11"
+            ),
+            None
+        );
+        assert_eq!(
+            parse_chess_com_archive_url("http://api.chess.com/pub/player/player1/games/2026/11"),
+            None
+        );
+        assert_eq!(
+            parse_chess_com_archive_url("https://api.chess.com/pub/player/player1/games/2026/13"),
+            None
+        );
+        assert_eq!(
+            parse_chess_com_archive_url("https://api.chess.com/pub/player/player1/games/26/01"),
+            None
+        );
+        assert_eq!(
+            parse_chess_com_archive_url(
+                "https://api.chess.com/pub/player/player1/games/2026/11?next=1"
+            ),
+            None
+        );
         assert_eq!(parse_chess_com_archive_url("not-an-archive-url"), None);
     }
 
     #[test]
     fn enforces_archive_size_limits_without_integer_overflow() {
         assert_eq!(bounded_archive_size(0, 1024), Some(1024));
-        assert_eq!(bounded_archive_size(MAX_ARCHIVE_BYTES - 1, 1), Some(MAX_ARCHIVE_BYTES));
+        assert_eq!(
+            bounded_archive_size(MAX_ARCHIVE_BYTES - 1, 1),
+            Some(MAX_ARCHIVE_BYTES)
+        );
         assert_eq!(bounded_archive_size(MAX_ARCHIVE_BYTES, 1), None);
         assert_eq!(bounded_archive_size(usize::MAX, 1), None);
     }
@@ -957,7 +1207,10 @@ mod tests {
     fn bounds_the_incomplete_game_buffer_for_both_providers() {
         assert!(!pending_game_exceeds_limit(&[]));
         assert!(!pending_game_exceeds_limit(&vec![b'x'; MAX_GAME_PGN_BYTES]));
-        assert!(pending_game_exceeds_limit(&vec![b'x'; MAX_GAME_PGN_BYTES + 1]));
+        assert!(pending_game_exceeds_limit(&vec![
+            b'x';
+            MAX_GAME_PGN_BYTES + 1
+        ]));
     }
 
     #[test]
