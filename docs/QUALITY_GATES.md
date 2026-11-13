@@ -13,7 +13,7 @@ Ogni pull request verso `main` esegue:
 
 1. Test JavaScript e build Vite di produzione.
 2. `npm audit --audit-level=high` e `cargo audit` (CLI `cargo-audit` installata a versione fissata).
-3. `cargo fmt --check`, Clippy con warning bloccanti e test Rust/SQLite con `--locked`.
+3. `cargo fmt --check` su tutti i sorgenti Rust, Clippy con warning bloccanti e test Rust/SQLite con `--locked`. Il controllo usa il toolchain stable installato dal job Windows.
 4. Test end-to-end Chromium su scacchiera, input da tastiera, importazione PGN, persistenza locale e dialogo.
 5. Build Windows NSIS e smoke test d'installazione, avvio, upgrade e persistenza SQLite.
 
