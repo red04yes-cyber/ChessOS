@@ -99,6 +99,9 @@ class ChessOsBrowserFlows(unittest.TestCase):
 
     def test_online_import_dialog_has_keyboard_escape_and_accessible_state(self):
         dialog = self.page.locator("#online-import-dialog")
+        menu = self.page.locator(".studio-actions-menu")
+        if menu.get_attribute("open") is None:
+            menu.locator("summary").click()
         self.page.locator("#open-online-import").click()
         self.assertFalse(dialog.is_hidden())
         self.assertEqual(dialog.get_attribute("role"), "dialog")
